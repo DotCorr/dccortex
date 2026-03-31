@@ -1,236 +1,97 @@
-# DCCortex: Full-Stack Scripting Platform
+# DCCortex
 
-**Write scripts. Get apps. Multi-tenant SaaS.**
+Build and run full applications with a visual builder, runtime APIs, and deployable self-host infrastructure.
 
-Users write `backend.bgs` and `frontend.bgs` scripts. DCCortex compiles them to production code and hosts everything in isolated Docker containers.
+DCCortex is built for:
+- Product teams that want fast app delivery.
+- Organizations that need self-hosting control.
+- Enterprise environments that require compliance-oriented release gates.
 
----
+## What This Repository Contains
 
-## Quick Start
+- `dashboard/`: Next.js dashboard and visual builder.
+- `platform-api/`: backend service for platform/runtime operations.
+- `docker-compose.yml`: production-style stack baseline.
+- `docker-compose.dev.yml`: local development stack.
+- `docker-compose.scale.yml`: horizontal scale profile.
+- `deployment/kubernetes/charts/dccortex/`: Helm chart scaffold for enterprise Kubernetes mode.
+- `docs/enterprise/`: enterprise release contract, controls, hardening, and operations documentation.
 
-**See `RUN_THIS_FIRST.md` for local setup (Docker + dashboard + DB).**
+## Deployment Modes
 
-**For production deployment, see `DEPLOYMENT.md`**
+### 1. Normal Hosting (managed by you)
 
-### Quick Steps
+Use standard Docker deployment for internet-facing environments where you operate the stack.
 
-1. **Set environment variables**:
-   ```bash
-   cd platform-api
-   cp .env.example .env
-   # Add your ANTHROPIC_API_KEY
-   ```
+### 2. Self-Hosting (customer-owned infra)
 
-2. **Build and start**:
-   ```bash
-   # Build compiler
-   cd compiler && npm install && npm run build && cd ..
-   
-   # Build platform API
-   cd platform-api && npm install && npm run build && cd ..
-   
-   # Start services
-   docker-compose up
-   ```
+Use Compose-based deployment for customer-managed Linux VM environments.
 
-3. **Run test**:
-   ```bash
-   ./test-end-to-end.sh
-   ```
+### 3. Enterprise Hosting (compliance-focused)
 
-### Deploy an App
+Use the enterprise release pack and Kubernetes/Helm pathway for strict operational and compliance requirements.
+
+Start here:
+- `docs/enterprise/README.md`
+- `docs/enterprise/RELEASE_ENTERPRISE_SELF_HOST_1_0.md`
+
+## Quick Start (Local)
+
+1. Start core infra services:
 
 ```bash
-# Deploy user's app
-curl -X POST http://localhost:3001/api/v1/apps/user1/app1/deploy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "script": "model User { id: uuid primary email: string unique } route GET /users { auth required @ai { Get all users } }",
-    "projectName": "my-app"
-  }'
-
-# Returns: {"success": true, "url": "http://user1-app1.localhost"}
+docker compose -f docker-compose.dev.yml up -d postgres redis
 ```
 
----
+2. Start dashboard:
 
-## Architecture
-
-```
-User writes script → Platform API → Compiler → Generated Code → Docker Container → Live App
-```
-
-### Components
-
-1. **Compiler** - Parses `.bgs` scripts and generates Node.js/Express code
-2. **Platform API** - Manages compilation, deployments, and containers
-3. **Traefik** - Routes subdomains to user containers
-4. **Docker** - Isolated containers for each user's app
-
-### Multi-Tenant Flow
-
-```
-user1-app1.dccortex.com → Traefik → Container (user1-app1)
-user2-app1.dccortex.com → Traefik → Container (user2-app1)
-```
-
-Each user gets their own isolated container with their own subdomain.
-
----
-
-## Project Structure
-
-```
-DCCortex/
-├── compiler/              # Script parser and code generator
-│   ├── src/
-│   │   ├── parser/       # Parses .bgs files to AST
-│   │   └── generator/    # Generates Node.js/Express code
-│   └── tests/            # Parser tests
-│
-├── platform-api/         # Main API service
-│   ├── src/
-│   │   ├── routes/       # API endpoints
-│   │   └── services/     # Compiler & Docker services
-│   └── Dockerfile
-│
-├── docker-compose.yml    # Traefik + Platform API
-├── traefik_dynamic.yml   # Traefik config
-└── examples/             # Example .bgs scripts
-```
-
----
-
-## API Endpoints
-
-### Compilation
-- `POST /api/v1/compile/compile` - Compile script to code
-- `POST /api/v1/compile/validate` - Validate script syntax
-- `POST /api/v1/compile/preview` - Preview compilation (for IDE)
-
-### Deployment
-- `POST /api/v1/apps/:userId/:appId/deploy` - Deploy app (compile + container)
-- `POST /api/v1/apps/:userId/:appId/stop` - Stop app container
-- `DELETE /api/v1/apps/:userId/:appId` - Delete app container
-- `GET /api/v1/apps/:userId/apps` - List user's apps
-
-### Usage Tracking
-- `GET /api/v1/usage/:userId` - Get AI usage for user
-- `GET /api/v1/usage/:userId/stats` - Get usage statistics
-
----
-
-## How It Works
-
-### 1. User Writes Script
-
-```hbs
-// backend.bgs
-model User {
-  id: uuid primary
-  email: string unique
-}
-
-route GET /users {
-  auth required
-  @ai { Get all users }
-}
-```
-
-### 2. Platform API Compiles
-
-- Parser converts script to AST
-- Generator creates Express.js code
-- Returns complete project structure
-
-### 3. Platform API Deploys
-
-- Builds Docker image from generated code
-- Creates container with Traefik labels
-- Container starts automatically
-- Returns URL: `http://user1-app1.localhost`
-
-### 4. Traefik Routes Traffic
-
-- Detects new container via Docker API
-- Routes `user1-app1.localhost` → container
-- App is live and accessible
-
----
-
-## Technology Stack
-
-- **Compiler**: TypeScript (parser + generator)
-- **Platform API**: Node.js/Express
-- **Reverse Proxy**: Traefik
-- **Containers**: Docker
-- **Database**: PostgreSQL (via Prisma in generated apps)
-
----
-
-## Development
-
-### Build Everything
 ```bash
-cd compiler && npm run build
-cd ../platform-api && npm run build
+cd dashboard
+npm ci
+npm run dev
 ```
 
-### Run Locally
+3. Start platform API:
+
 ```bash
-docker-compose up
+cd platform-api
+npm ci
+npm run dev
 ```
 
-### Test
+4. Optional end-to-end smoke test:
+
 ```bash
-# Compiler tests
-cd compiler && npm test
-
-# Test API
-curl http://localhost:3001/health
+./test-end-to-end.sh
 ```
 
----
+## Production Baseline
 
-## Production
+For a production-style local/VM startup path:
 
-1. Get wildcard SSL certificate (`*.dccortex.com`)
-2. Update `docker-compose.yml` with cert paths
-3. Set `DOMAIN=dccortex.com` and `NODE_ENV=production`
-4. Deploy to server
+```bash
+./start-production.sh
+```
 
-See `architecture/MULTI_TENANT.md` for production setup.
+This brings up the Compose-managed backend services and checks health.
 
----
+## Enterprise Release Readiness
 
-## Documentation
+This repository includes release gating scaffolding for enterprise delivery:
 
-- `START_HERE.md` - **Start here!** Quick setup guide
-- `HOW_IT_WORKS.md` - Complete flow explanation
-- `TEST_LOCALLY.md` - Detailed testing instructions
-- `architecture/ARCHITECTURE.md` - System architecture
-- `architecture/MULTI_TENANT.md` - Multi-tenant setup
-- `architecture/BACKEND_SCRIPT_SPEC.md` - Script language reference
-- `STATUS.md` - Current status and next steps
+- CI workflows in `.github/workflows/`
+- Gate scripts in `scripts/ci/`
+- Compliance and operations docs in `docs/enterprise/`
 
----
+Minimum release rule:
 
-## Current Status
+Do not tag an enterprise release until all required gates in `docs/enterprise/RELEASE_ENTERPRISE_SELF_HOST_1_0.md` are green with evidence attached.
 
-✅ **Compiler** - Parses scripts, generates Node.js code  
-✅ **Platform API** - Compilation and deployment endpoints  
-✅ **Docker Service** - Container management  
-✅ **Traefik** - Multi-tenant routing  
-✅ **Claude API Integration** - @ai block processing  
-✅ **Usage Tracking** - Per-tenant AI usage tracking  
-✅ **Route Logic Generation** - Full implementations (not stubs)  
-⏳ **Frontend Dashboard** - Next up
+## Current Direction
 
-**Core platform 100% complete. Ready for dashboard!**
+DCCortex is actively focused on:
+- Builder and runtime feature development.
+- Self-host and enterprise deployment maturity.
+- Compliance-aware release operations.
 
-## Environment Variables
-
-Set in `platform-api/.env`:
-- `ANTHROPIC_API_KEY` - Claude API key (for @ai blocks)
-- `DOMAIN` - Domain for subdomains (default: localhost)
-- `PORT` - Platform API port (default: 3001)
+If you are implementing features, build against the enterprise release contract from day one so product velocity and release readiness move together.
