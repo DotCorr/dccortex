@@ -62,7 +62,12 @@ async function GET(req: Request, context: RouteContext) {
   ensurePublicUrl()
   const url = new URL(req.url)
   if (url.pathname.includes('signin')) {
-    console.log('[NextAuth] env check: GOOGLE_CLIENT_ID=', process.env.GOOGLE_CLIENT_ID ? 'set' : 'MISSING', 'GITHUB_CLIENT_ID=', process.env.GITHUB_CLIENT_ID ? 'set' : 'MISSING')
+    console.log(
+      '[NextAuth] env check:',
+      'GOOGLE_CLIENT_ID=', process.env.GOOGLE_CLIENT_ID ? 'set' : 'MISSING',
+      'GITHUB_CLIENT_ID=', process.env.GITHUB_CLIENT_ID ? 'set' : 'MISSING',
+      'OIDC_CLIENT_ID=', process.env.OIDC_CLIENT_ID ? 'set' : 'MISSING'
+    )
   }
   console.log('[NextAuth] GET', url.pathname, url.pathname.includes('callback') ? 'has code=' + !!url.searchParams.get('code') : '')
   const handler = getHandler()

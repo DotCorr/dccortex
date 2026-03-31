@@ -14,6 +14,9 @@ import Link from 'next/link'
 import { LoadingBar } from '@/components/ui/loading-bar'
 import { Eye, EyeOff } from 'lucide-react'
 
+const OIDC_LOGIN_ENABLED = process.env.NEXT_PUBLIC_ENABLE_OIDC_LOGIN === 'true'
+const OIDC_LOGIN_LABEL = process.env.NEXT_PUBLIC_OIDC_LOGIN_LABEL || 'Continue with Enterprise SSO'
+
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
@@ -41,6 +44,7 @@ export default function LoginPage() {
     const errorParam = params?.get('error')
     if (errorParam === 'google') setError('Google sign-in failed. Try again or use email/password.')
     else if (errorParam === 'github') setError('GitHub sign-in failed. Try again or use email/password.')
+    else if (errorParam === 'oidc') setError('Enterprise SSO sign-in failed. Contact your admin or try again.')
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,6 +74,7 @@ export default function LoginPage() {
 
   const handleGoogleAuth = () => { void signIn('google', { callbackUrl }) }
   const handleGithubAuth = () => { void signIn('github', { callbackUrl }) }
+  const handleOidcAuth = () => { void signIn('oidc', { callbackUrl }) }
 
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-background">
@@ -164,6 +169,16 @@ export default function LoginPage() {
 
           {/* OAuth Buttons - POST with CSRF so NextAuth redirects to Google/GitHub */}
           <div className="space-y-3">
+            {OIDC_LOGIN_ENABLED && (
+              <button
+                type="button"
+                onClick={handleOidcAuth}
+                className="w-full bg-card border border-border text-foreground py-3 px-4 text-sm font-medium hover:bg-muted transition-colors flex items-center justify-center gap-3"
+              >
+                {OIDC_LOGIN_LABEL}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleGoogleAuth}
