@@ -15,6 +15,7 @@ import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import GitHubProvider from 'next-auth/providers/github';
+import type { OAuthConfig } from 'next-auth/providers/oauth';
 import { prisma } from './prisma';
 import { LEGACY_ROLE_PERMISSIONS, type Permission } from './permissions';
 
@@ -93,6 +94,47 @@ function buildProviders(): NextAuthOptions['providers'] {
   } else {
     console.warn('[auth] GitHub OAuth skipped: GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET missing')
   }
+
+  const oidcIssuer = process.env.OIDC_ISSUER_URL
+  const oidcClientId = process.env.OIDC_CLIENT_ID
+  const oidcClientSecret = process.env.OIDC_CLIENT_SECRET
+  const oidcScope = process.env.OIDC_SCOPE || 'openid profile email'
+  const oidcProviderName = process.env.OIDC_PROVIDER_NAME || 'Enterprise SSO'
+
+  if (oidcIssuer && oidcClientId && oidcClientSecret) {
+    const oidcProvider: OAuthConfig<Record<string, unknown>> = {
+      id: 'oidc',
+      name: oidcProviderName,
+      type: 'oauth',
+      issuer: oidcIssuer,
+      clientId: oidcClientId,
+      clientSecret: oidcClientSecret,
+      authorization: {
+        params: {
+          scope: oidcScope,
+        },
+      },
+      checks: ['pkce', 'state'],
+      idToken: true,
+      profile(profile, _tokens) {
+        const idValue = profile.sub ?? profile.id ?? profile.email ?? 'oidc-user'
+        const nameValue = profile.name ?? profile.preferred_username ?? profile.email ?? 'OIDC User'
+        const email =
+          typeof profile.email === 'string'
+            ? profile.email
+            : `${String(idValue)}@oidc.local`
+
+        return {
+          id: String(idValue),
+          name: String(nameValue),
+          email,
+        }
+      },
+    }
+    list.push(oidcProvider)
+  } else {
+    console.warn('[auth] OIDC provider skipped: OIDC_ISSUER_URL / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET missing')
+  }
   return list
 }
 
@@ -103,7 +145,7 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       // Handle OAuth sign in - create or update user
-      if (account?.provider === 'google' || account?.provider === 'github') {
+      if (account?.type === 'oauth' && account.provider !== 'credentials') {
         if (user.email) {
           try {
             const existingUser = await prisma.user.findUnique({
