@@ -1,0 +1,37 @@
+<svg width="1200" height="1200" viewBox="0 0 460 460" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dotcorr 3D logo - direct extrusion of canonical 2D mark (black variant) -->
+
+  <!--
+    Canonical 2D mark rectangles (from branding/svg/ico_noBg.svg):
+    A: x=35.402 y=39.516  w=54.598 h=129.453
+    B: x=62.699 y=39.512  w=110.739 h=61.226
+    C: x=140.785 y=144.938 w=49.500 h=106.355
+    D: x=177.074 y=144.938 w=93.031 h=55.516
+    E: x=284.125 y=283.555 w=55.375 h=51.929
+    Extrusion vector: dx=22, dy=18
+  -->
+
+  <g transform="translate(20 24)">
+    <!-- Right faces -->
+    <polygon points="90.000,39.516 90.000,168.969 112.000,186.969 112.000,57.516" fill="#4a4a4a"/>
+    <polygon points="173.438,39.512 173.438,100.738 195.438,118.738 195.438,57.512" fill="#4a4a4a"/>
+    <polygon points="190.285,144.938 190.285,251.293 212.285,269.293 212.285,162.938" fill="#4a4a4a"/>
+    <polygon points="270.105,144.938 270.105,200.454 292.105,218.454 292.105,162.938" fill="#4a4a4a"/>
+    <polygon points="339.500,283.555 339.500,335.484 361.500,353.484 361.500,301.555" fill="#4a4a4a"/>
+
+    <!-- Bottom faces -->
+    <polygon points="35.402,168.969 90.000,168.969 112.000,186.969 57.402,186.969" fill="#2a2a2a"/>
+    <polygon points="62.699,100.738 173.438,100.738 195.438,118.738 84.699,118.738" fill="#2a2a2a"/>
+    <polygon points="140.785,251.293 190.285,251.293 212.285,269.293 162.785,269.293" fill="#2a2a2a"/>
+    <polygon points="177.074,200.454 270.105,200.454 292.105,218.454 199.074,218.454" fill="#2a2a2a"/>
+    <polygon points="284.125,335.484 339.500,335.484 361.500,353.484 306.125,353.484" fill="#2a2a2a"/>
+
+    <!-- Top/front faces = exact 2D mark blocks -->
+    <rect x="35.402" y="39.516" width="54.598" height="129.453" fill="#111111"/>
+    <rect x="62.699" y="39.512" width="110.739" height="61.226" fill="#111111"/>
+    <rect x="140.785" y="144.938" width="49.500" height="106.355" fill="#111111"/>
+    <rect x="177.074" y="144.938" width="93.031" height="55.516" fill="#111111"/>
+    <rect x="284.125" y="283.555" width="55.375" height="51.929" fill="#111111"/>
+  </g>
+
+</svg>

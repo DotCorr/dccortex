@@ -1,0 +1,402 @@
+// Prisma schema for Dashboard
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String    @map("password_hash")
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Organizations
+  organizations        OrganizationMember[]
+  createdOrganizations Organization[]       @relation("OrganizationOwner")
+
+  // Projects
+  projects Project[]
+
+  // Notifications
+  notifications Notification[]
+
+  // Notes
+  notes Note[]
+
+  // Password Reset
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  metadata    Json? // Store AI settings, preferences, etc.
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  ownerId String @map("owner_id")
+  owner   User   @relation("OrganizationOwner", fields: [ownerId], references: [id])
+
+  members     OrganizationMember[]
+  projects    Project[]
+  invitations Invitation[]
+  notes       Note[]
+  roles       Role[]
+
+  @@map("organizations")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   // e.g. "Basic", "Development", "Administration", or custom name
+  organizationId String?  @map("organization_id") // null = system (predefined) role
+  permissions Json     // string[] e.g. ["app.view", "data.read"]
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      OrganizationMember[]
+
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  role           String   @default("member") // legacy: owner, admin, member
+  roleId         String?  @map("role_id")   // no-code: FK to Role (Basic/Development/Administration or custom)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleRef      Role?        @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+}
+
+model Project {
+  id             String   @id @default(uuid())
+  name           String
+  slug           String
+  description    String?
+  backendScript  String?  @map("backend_script") @db.Text
+  frontendScript String?  @map("frontend_script") @db.Text
+  scriptsScript  String?  @map("scripts_script") @db.Text
+  status         String   @default("draft") // draft, deployed, error
+  deployedUrl    String?  @map("deployed_url")
+  containerId    String?  @map("container_id")
+  activeBuildId  String?  @map("active_build_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+customDomain   String?  @map("custom_domain")
+  faviconUrl     String?  @map("favicon_url")
+  seoDefaults    Json?    @map("seo_defaults") // { title, description, ogImage, robots }
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id])
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  
+  notes Note[]
+
+  // No-code: internal DB per project (task 02)
+  internalDatasources InternalDatasource[]
+  // No-code: UI screens per project (task 04)
+  screens AppScreen[]
+  // No-code: external REST API sources
+  externalApiSources ExternalApiSource[]
+  // Uploaded assets (images, audio, video) stored per project
+  assets ProjectAsset[]
+  // Outbound webhooks
+  webhooks ProjectWebhook[]
+
+  @@unique([userId, slug])
+  @@map("projects")
+}
+
+// No-code: app screens (task 04) – layout = tree of nodes { id, type, props, children }
+model AppScreen {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String   // for URL, e.g. "home"
+  layout    Json     // { id, type, props, children: Node[] }
+  script    String?  @db.Text // TS/JS for scripting; nodes have id for getElementById
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([projectId, slug])
+  @@index([projectId])
+  @@map("app_screens")
+}
+
+// Snapshots of screen layout for version history / rollback
+model ScreenVersion {
+  id        String   @id @default(uuid())
+  screenId  String   @map("screen_id")
+  layout    Json
+  script    String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([screenId, createdAt])
+  @@map("screen_versions")
+}
+
+// No-code: built-in datasource per project (task 02)
+model InternalDatasource {
+  id              String   @id @default(uuid())
+  projectId       String   @unique @map("project_id")
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  realtimePollMs  Int      @default(0) @map("realtime_poll_ms")
+
+  tables InternalTable[]
+
+  @@map("internal_datasources")
+}
+
+model InternalTable {
+  id            String   @id @default(uuid())
+  datasourceId  String   @map("datasource_id")
+  datasource    InternalDatasource @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  columns InternalColumn[]
+  rows    InternalRow[]
+
+  @@unique([datasourceId, name])
+  @@map("internal_tables")
+}
+
+model InternalColumn {
+  id        String   @id @default(uuid())
+  tableId   String   @map("table_id")
+  table     InternalTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  name      String   // user-defined; auto columns (id, created_at, updated_at, created_by) are virtual
+  type      String   // text, number, date, boolean, email, url, json
+  options   Json?    // e.g. default, required
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tableId, name])
+  @@map("internal_columns")
+}
+
+model InternalRow {
+  id        String   @id @default(uuid())
+  tableId   String   @map("table_id")
+  table     InternalTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  data      Json     // { columnName: value, ... }; id, created_at, updated_at, created_by set by API
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by") // userId
+
+  @@index([tableId])
+  @@index([tableId, createdAt])
+  @@map("internal_rows")
+}
+
+// No-code: external REST API data sources per project
+model ExternalApiSource {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String   // friendly name, used as {{data.name}} in bindings
+  url         String   // base URL or full endpoint
+  method      String   @default("GET") // GET, POST, PUT, PATCH, DELETE
+  headers     Json?    // { "Authorization": "Bearer ..." }
+  body        String?  @db.Text // optional JSON body
+  authType    String   @default("none") // none, bearer, basic, apiKey
+  authValue   String?  // token, credentials, or api key
+  authHeader  String?  // custom header name for apiKey auth
+  schema      Json?    // inferred schema [{name, type}]
+  urlParams   Json?    @map("url_params") // [{name, defaultValue, description?}] for {{name}} templates in URL
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([projectId])
+  @@map("external_api_sources")
+}
+
+// Outbound webhooks: triggered by app events (form.submit, automation.trigger, etc.)
+model ProjectWebhook {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  url       String   @db.Text
+  events    Json     // string[] e.g. ["form.submit", "btn.click"]
+  secret    String?  // HMAC-SHA256 signing secret
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([projectId])
+  @@map("project_webhooks")
+}
+
+model Invitation {
+  id             String    @id @default(uuid())
+  email          String
+  organizationId String    @map("organization_id")
+  role           String    @default("member")
+  token          String    @unique
+  expiresAt      DateTime  @map("expires_at")
+  acceptedAt     DateTime? @map("accepted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("invitations")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // 'compilation_success', 'compilation_error', 'deployment_success', etc.
+  title     String
+  message   String
+  metadata  Json? // Additional data (buildId, projectId, etc.)
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model Note {
+  id         String   @id @default(uuid())
+  title      String
+  content    String   @db.Text // Markdown content
+  tags       String[] @default([]) // Array of tags for organization
+  isPublic   Boolean  @default(false) @map("is_public")
+  shareToken String?  @unique @map("share_token") // Token for public sharing
+  isBlog     Boolean  @default(false) @map("is_blog") // Can be converted to blog post
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relationships - notes can be tied to user, project, or organization
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projectId String?  @map("project_id")
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  organizationId String?       @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([projectId])
+  @@index([organizationId])
+  @@index([shareToken])
+  @@index([isPublic])
+  @@map("notes")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([token])
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// No-code: installable packages (published reusable components)
+// Table is created via raw SQL in the API to work on deployed containers
+// that predate this schema change. Keep in sync with ensureTable() in app/api/packages/route.ts
+model Package {
+  id             String   @id @default(uuid())
+  organizationId String?  @map("organization_id")
+  authorUserId   String   @map("author_user_id")
+  name           String
+  description    String   @default("")
+  thumbnailUrl   String   @default("") @map("thumbnail_url")
+  tags           Json     @default("[]")
+  content        Json
+  isPublic       Boolean  @default(false) @map("is_public")
+  version        String   @default("1.0.0")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId])
+  @@index([authorUserId])
+  @@map("packages")
+}
+
+// Uploaded project assets: images, audio, video stored per project
+model ProjectAsset {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String   // original filename
+  mimetype  String
+  size      Int
+  path      String   // relative path under public/uploads, e.g. "projectId/uuid.png"
+  url       String   // public URL, e.g. "/uploads/projectId/uuid.png"
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([projectId])
+  @@map("project_assets")
+}
+
+// Cortex AI assistant: conversation threads
+model CortexThread {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  organizationId String   @map("organization_id")
+  title          String   @default("New conversation")
+  projectId      String?  @map("project_id")    // active @project context (nullable)
+  summary        String?  @db.Text              // rolling summary for long conversations
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  messages CortexMessage[]
+
+  @@index([userId, organizationId])
+  @@index([userId, updatedAt])
+  @@map("viber_threads")
+}
+
+// Cortex AI assistant: individual messages
+model CortexMessage {
+  id        String   @id @default(uuid())
+  threadId  String   @map("thread_id")
+  thread    CortexThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role      String   // "user" | "assistant" | "system"
+  content   String   @db.Text
+  metadata  Json?    // tool calls, actions taken, errors, context switches
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([threadId, createdAt])
+  @@map("viber_messages")
+}

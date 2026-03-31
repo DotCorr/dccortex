@@ -1,0 +1,23 @@
+# Cloudflare Tunnel config for Docker (docker-compose.dev.yml).
+# Mounted as /etc/cloudflared/config.yml so paths work inside the container.
+# Credentials are mounted at /etc/cloudflared/credentials.json from .env CLOUDFLARED_CREDENTIALS_FILE.
+
+tunnel: 3666df8a-9515-411a-83af-eb641f477755
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: dccortex.com
+    service: http://dashboard:3000
+    originRequest:
+      httpHostHeader: dccortex.com
+  - hostname: www.dccortex.com
+    service: http://dashboard:3000
+    originRequest:
+      httpHostHeader: www.dccortex.com
+  - hostname: active.dccortex.com
+    service: http://dashboard:3000
+    originRequest:
+      httpHostHeader: active.dccortex.com
+  - hostname: api.dccortex.com
+    service: http://platform-api:3001
+  - service: http_status:404

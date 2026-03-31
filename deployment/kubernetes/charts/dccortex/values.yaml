@@ -1,0 +1,47 @@
+global:
+  imagePullSecrets: []
+  domain: dccortex.local
+
+dashboard:
+  replicaCount: 1
+  image:
+    repository: dccortex/dashboard
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  env:
+    NODE_ENV: production
+    NEXTAUTH_URL: "https://dccortex.local"
+
+platformApi:
+  replicaCount: 1
+  image:
+    repository: dccortex/platform-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3001
+  env:
+    NODE_ENV: production
+    PORT: "3001"
+
+ingress:
+  enabled: true
+  className: traefik
+  annotations: {}
+  tls: []
+
+postgres:
+  host: postgres
+  port: 5432
+  database: dccortex_dashboard
+  user: dccortex
+  passwordSecretName: dccortex-postgres
+  passwordSecretKey: password
+
+redis:
+  host: redis
+  port: 6379

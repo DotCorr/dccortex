@@ -1,0 +1,90 @@
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dccortex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dccortex_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-dccortex_dashboard}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dccortex}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for caching / real-time features
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Dashboard (No-Code Builder) - Dev server with hot reload
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile.dev
+    env_file:
+      - .env
+      - ./dashboard/.env
+    environment:
+      - NODE_ENV=development
+      - NEXTAUTH_URL=https://dccortex.com
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - DATABASE_URL=postgresql://dccortex:dccortex_dev@postgres:5432/dccortex_dashboard
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+    volumes:
+      - ./dashboard:/app
+      - ./.skills:/app/.skills:ro
+      - /app/node_modules
+      - /app/.next
+      - dashboard_uploads:/app/uploads
+    ports:
+      - "${DASHBOARD_PORT:-3002}:3000"
+    networks:
+      - default
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared-docker.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared-credentials.json:/etc/cloudflared/credentials.json:ro
+    networks:
+      - default
+    depends_on:
+      - dashboard
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  dashboard_uploads:
+
+networks:
+  default:
+    name: dccortex_default

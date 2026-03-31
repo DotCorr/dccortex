@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dccortex.fullname" . }}-platform-api
+  labels:
+    {{- include "dccortex.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.platformApi.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: platform-api
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "dccortex.labels" . | nindent 8 }}
+        app.kubernetes.io/component: platform-api
+    spec:
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: platform-api
+          image: "{{ .Values.platformApi.image.repository }}:{{ .Values.platformApi.image.tag }}"
+          imagePullPolicy: {{ .Values.platformApi.image.pullPolicy }}
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.platformApi.env.NODE_ENV | quote }}
+            - name: PORT
+              value: {{ .Values.platformApi.env.PORT | quote }}
+          ports:
+            - name: http
+              containerPort: 3001
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15

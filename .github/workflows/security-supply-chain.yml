@@ -1,0 +1,81 @@
+name: Security and Supply Chain
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sbom_and_scan:
+    name: SBOM and Vulnerability Scans
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate SBOM (dashboard)
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./dashboard
+          format: cyclonedx-json
+          output-file: ./docs/enterprise/evidence/sbom-dashboard.cdx.json
+
+      - name: Generate SBOM (platform-api)
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./platform-api
+          format: cyclonedx-json
+          output-file: ./docs/enterprise/evidence/sbom-platform-api.cdx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-artifacts
+          path: docs/enterprise/evidence/*.cdx.json
+
+      - name: Trivy scan (dashboard - block critical)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: ./dashboard
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Trivy scan (platform-api - block critical)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: ./platform-api
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Trivy scan (dashboard - report high)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: ./dashboard
+          format: table
+          severity: HIGH
+          ignore-unfixed: false
+          exit-code: '0'
+
+      - name: Trivy scan (platform-api - report high)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: ./platform-api
+          format: table
+          severity: HIGH
+          ignore-unfixed: false
+          exit-code: '0'

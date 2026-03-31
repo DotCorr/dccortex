@@ -1,0 +1,11 @@
+.env
+.env.local
+.env*.local
+
+# Next.js build output
+.next/
+out/
+node_modules/
+
+# Uploaded assets (stored persistently, not in repo)
+/uploads/

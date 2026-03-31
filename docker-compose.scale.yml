@@ -1,0 +1,56 @@
+# Multi-instance Platform API setup for horizontal scaling
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.scale.yml up -d
+
+services:
+  platform-api-1:
+    extends:
+      service: platform-api
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DOCKER_HOST=${DOCKER_HOST:-}
+      - MAX_ORG_CONNECTIONS=${MAX_ORG_CONNECTIONS:-10}
+      - MAX_USER_CONNECTIONS=${MAX_USER_CONNECTIONS:-5}
+    ports:
+      - "3001:3001"
+    depends_on:
+      - redis
+
+  platform-api-2:
+    extends:
+      service: platform-api
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DOCKER_HOST=${DOCKER_HOST:-}
+      - MAX_ORG_CONNECTIONS=${MAX_ORG_CONNECTIONS:-10}
+      - MAX_USER_CONNECTIONS=${MAX_USER_CONNECTIONS:-5}
+    ports:
+      - "3002:3001"
+    depends_on:
+      - redis
+
+  platform-api-3:
+    extends:
+      service: platform-api
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DOCKER_HOST=${DOCKER_HOST:-}
+      - MAX_ORG_CONNECTIONS=${MAX_ORG_CONNECTIONS:-10}
+      - MAX_USER_CONNECTIONS=${MAX_USER_CONNECTIONS:-5}
+    ports:
+      - "3003:3001"
+    depends_on:
+      - redis
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./platform-api/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - platform-api-1
+      - platform-api-2
+      - platform-api-3
+    restart: unless-stopped
+

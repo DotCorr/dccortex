@@ -1,0 +1,246 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radius: 1.125rem;
+  --background: #fafbfc;
+  --foreground: #16181d;
+  --card: #ffffff;
+  --card-foreground: #16181d;
+  --popover: #ffffff;
+  --popover-foreground: #16181d;
+  --primary: #0a7ea4;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f4f6;
+  --secondary-foreground: #16181d;
+  --muted: #f8f9fa;
+  --muted-foreground: #6e7781;
+  --accent: #e0f2fe;
+  --accent-foreground: #16181d;
+  --destructive: #dc2626;
+  --border: #e1e4e8;
+  --input: #e1e4e8;
+  --ring: #0a7ea4;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #16181d;
+  --sidebar-primary: #0a7ea4;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e0f2fe;
+  --sidebar-accent-foreground: #16181d;
+  --sidebar-border: #e1e4e8;
+  --sidebar-ring: #0a7ea4;
+}
+
+.dark {
+  --background: #0d1117;
+  --foreground: #f0f6fc;
+  --card: #161b22;
+  --card-foreground: #f0f6fc;
+  --popover: #161b22;
+  --popover-foreground: #f0f6fc;
+  --primary: #58a6ff;
+  --primary-foreground: #0d1117;
+  --secondary: #21262d;
+  --secondary-foreground: #f0f6fc;
+  --muted: #161b22;
+  --muted-foreground: #8b949e;
+  --accent: #1f2937;
+  --accent-foreground: #f0f6fc;
+  --destructive: #f85149;
+  --border: #30363d;
+  --input: #30363d;
+  --ring: #58a6ff;
+  --sidebar: #161b22;
+  --sidebar-foreground: #f0f6fc;
+  --sidebar-primary: #58a6ff;
+  --sidebar-primary-foreground: #0d1117;
+  --sidebar-accent: #1f2937;
+  --sidebar-accent-foreground: #f0f6fc;
+  --sidebar-border: #30363d;
+  --sidebar-ring: #58a6ff;
+}
+
+/* CSS-level dark mode fallback — activates when the OS prefers dark
+   and JavaScript hasn't explicitly set the page to light mode.
+   This prevents a white flash / stuck-light-mode on landing & login. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: #0d1117;
+    --foreground: #f0f6fc;
+    --card: #161b22;
+    --card-foreground: #f0f6fc;
+    --popover: #161b22;
+    --popover-foreground: #f0f6fc;
+    --primary: #58a6ff;
+    --primary-foreground: #0d1117;
+    --secondary: #21262d;
+    --secondary-foreground: #f0f6fc;
+    --muted: #161b22;
+    --muted-foreground: #8b949e;
+    --accent: #1f2937;
+    --accent-foreground: #f0f6fc;
+    --destructive: #f85149;
+    --border: #30363d;
+    --input: #30363d;
+    --ring: #58a6ff;
+    --sidebar: #161b22;
+    --sidebar-foreground: #f0f6fc;
+    --sidebar-primary: #58a6ff;
+    --sidebar-primary-foreground: #0d1117;
+    --sidebar-accent: #1f2937;
+    --sidebar-accent-foreground: #f0f6fc;
+    --sidebar-border: #30363d;
+    --sidebar-ring: #58a6ff;
+    color-scheme: dark;
+  }
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  html {
+    font-size: 90%;
+  }
+  
+  body {
+    min-height: 100vh;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    letter-spacing: -0.011em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Electron app - transparent background only */
+  html.electron-app,
+  html.electron-app body {
+    background: transparent !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: 100vh !important;
+    /* Allow scrolling - don't set overflow: hidden */
+  }
+  
+  html.electron-app {
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-weight: 700;
+    color: var(--foreground);
+    letter-spacing: -0.022em;
+    line-height: 1.2;
+  }
+  
+  h1 {
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 800;
+    margin-bottom: 1rem;
+  }
+  
+  h2 {
+    font-size: clamp(1.5rem, 3vw, 2.25rem);
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+  }
+  
+  h3 {
+    font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  
+  p {
+    margin-bottom: 1em;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  
+  a {
+    color: var(--primary);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  
+  a:hover {
+    opacity: 0.85;
+  }
+  
+  .card {
+    background: var(--card);
+    color: var(--card-foreground);
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    padding: 1.5rem;
+  }
+  
+  .soft-shadow {
+    box-shadow: 
+      0 1px 3px rgba(0, 0, 0, 0.02),
+      0 8px 24px rgba(149, 157, 165, 0.08);
+  }
+  
+  .rounded {
+    border-radius: 1.125rem;
+  }
+}
+
+/* Horizontal loading bar animation */
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.animate-loading-bar {
+  animation: loading-bar 1s ease-in-out infinite;
+}
+
+@keyframes login-headline {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-login-headline {
+  animation: login-headline 0.35s ease-out forwards;
+}
+
+/* Landing page typing cursor */
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.typing-animation::after {
+  content: '|';
+  display: inline-block;
+  animation: blink-cursor 0.8s step-end infinite;
+  color: var(--primary);
+  font-weight: 300;
+  margin-left: 1px;
+}
+
+/* Smooth scroll for anchor links */
+html {
+  scroll-behavior: smooth;
+}
+

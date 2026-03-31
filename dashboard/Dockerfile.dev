@@ -1,0 +1,36 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install OpenSSL and other dependencies for Prisma
+RUN apt-get update && apt-get install -y \
+    openssl \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dependencies first (cached layer)
+# Note: Source code will be mounted as volume, so we only copy package files
+COPY package*.json ./
+RUN npm install --legacy-peer-deps
+
+# Copy Prisma schema (will be overridden by volume mount, but needed for initial build)
+COPY prisma ./prisma
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Entrypoint runs migrations then CMD (so users table exists before NextAuth callback)
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Ensure uploads directory exists
+RUN mkdir -p /app/uploads
+
+# Expose port
+EXPOSE 3000
+
+# Start Next.js dev server (hot reload enabled)
+# Source code is mounted as volume, so changes reflect immediately
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["npm", "run", "dev"]
+

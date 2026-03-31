@@ -1,0 +1,16 @@
+# Traefik Dynamic Configuration
+# For local development (HTTP only)
+# For production, add TLS certificates here
+
+http:
+  middlewares:
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+# TLS configuration (uncomment for production)
+# tls:
+#   certificates:
+#     - certFile: /certs/fullchain.pem
+#       keyFile: /certs/privkey.pem

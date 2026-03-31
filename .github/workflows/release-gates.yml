@@ -1,0 +1,30 @@
+name: Enterprise Release Gates
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  gate_validation:
+    name: Gate Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.4
+
+      - name: Enterprise release gate checks
+        run: bash scripts/ci/release-gate-check.sh

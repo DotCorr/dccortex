@@ -1,0 +1,634 @@
+// ============================================
+// CalT - Diet Tracking App Backend
+// ============================================
+
+// ============================================
+// USER & AUTHENTICATION MODELS
+// ============================================
+
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  name String
+  passwordHash String
+  age Int?
+  height Float? // in cm
+  weight Float? // in kg
+  gender String? // 'male', 'female', 'other'
+  activityLevel String @default("moderate") // 'sedentary', 'light', 'moderate', 'active', 'very_active'
+  dailyCalorieGoal Int @default(2000)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  foodEntries FoodEntry[]
+  partnerRelationships PartnerRelationship[] @relation("UserAsPrimary")
+  partnerRelationshipsAsPartner PartnerRelationship[] @relation("UserAsPartner")
+  webhookSubscriptions WebhookSubscription[]
+  notifications Notification[]
+  dailySummaries DailySummary[]
+}
+
+model PartnerRelationship {
+  id String @id @default(uuid())
+  primaryUserId String
+  partnerUserId String
+  status String @default("pending") // 'pending', 'accepted', 'rejected'
+  canViewEntries Boolean @default(true)
+  canViewGoals Boolean @default(true)
+  canSendReminders Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  primaryUser User @relation("UserAsPrimary", fields: [primaryUserId], references: [id], onDelete: Cascade)
+  partnerUser User @relation("UserAsPartner", fields: [partnerUserId], references: [id], onDelete: Cascade)
+  
+  @@unique([primaryUserId, partnerUserId])
+}
+
+// ============================================
+// FOOD & DIET TRACKING MODELS
+// ============================================
+
+model FoodEntry {
+  id String @id @default(uuid())
+  userId String
+  foodName String
+  calories Int
+  protein Float?
+  carbs Float?
+  fat Float?
+  fiber Float?
+  servingSize String?
+  quantity Float @default(1.0)
+  mealType String @default("lunch") // 'breakfast', 'lunch', 'dinner', 'snack'
+  imageUrl String?
+  recognizedVia String? // 'manual', 'barcode', 'ocr', 'api'
+  apiFoodId String?
+  notes String?
+  consumedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, consumedAt])
+}
+
+model FoodDatabase {
+  id String @id @default(uuid())
+  name String
+  brand String?
+  caloriesPer100g Int
+  proteinPer100g Float
+  carbsPer100g Float
+  fatPer100g Float
+  fiberPer100g Float?
+  barcode String? @unique
+  imageUrl String?
+  apiSource String? // 'edamam', 'usda', 'custom'
+  apiId String?
+  createdAt DateTime @default(now())
+  
+  @@index([name])
+  @@index([barcode])
+}
+
+model DailySummary {
+  id String @id @default(uuid())
+  userId String
+  date DateTime @db.Date
+  totalCalories Int @default(0)
+  totalProtein Float @default(0)
+  totalCarbs Float @default(0)
+  totalFat Float @default(0)
+  totalFiber Float @default(0)
+  entryCount Int @default(0)
+  goalMet Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+// ============================================
+// WEBHOOKS & NOTIFICATIONS
+// ============================================
+
+model WebhookSubscription {
+  id String @id @default(uuid())
+  userId String
+  url String
+  events String[] // ['food_entry_created', 'goal_met', 'partner_joined', 'daily_summary']
+  secret String
+  isActive Boolean @default(true)
+  lastTriggeredAt DateTime?
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model Notification {
+  id String @id @default(uuid())
+  userId String
+  type String // 'goal_met', 'partner_activity', 'reminder', 'achievement'
+  title String
+  message String
+  isRead Boolean @default(false)
+  metadata Json?
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, isRead])
+}
+
+// ============================================
+// AUTHENTICATION ROUTES
+// ============================================
+
+route POST /api/auth/register {
+  public @ai {
+    Register a new user with email, password, name, and optional profile data (age, height, weight, gender, activityLevel).
+    
+    Validate:
+    - email: must be valid email format
+    - password: minimum 8 characters
+    - name: required
+    
+    Check if user already exists by email, return 409 if exists.
+    
+    Hash password using bcrypt with salt rounds 12.
+    
+    Calculate dailyCalorieGoal using BMR (Basal Metabolic Rate) formula:
+    - Male: BMR = 10 * weight + 6.25 * height - 5 * age + 5
+    - Female: BMR = 10 * weight + 6.25 * height - 5 * age - 161
+    - Other: BMR = 10 * weight + 6.25 * height - 5 * age - 78
+    
+    Multiply BMR by activity level multiplier:
+    - sedentary: 1.2
+    - light: 1.375
+    - moderate: 1.55
+    - active: 1.725
+    - very_active: 1.9
+    
+    Create user in database with all fields.
+    Generate JWT token with userId, expires in 30 days.
+    Return user (without passwordHash) and token.
+  }
+}
+
+route POST /api/auth/login {
+  public @ai {
+    Login user with email and password.
+    
+    Find user by email.
+    Compare password with bcrypt.
+    If invalid, return 401.
+    
+    Generate JWT token with userId, expires in 30 days.
+    Return user (without passwordHash) and token.
+  }
+}
+
+route GET /api/users/me {
+  auth required @ai {
+    Get current authenticated user's profile.
+    Use req.user.userId from JWT token.
+    Return user data without passwordHash.
+    Return 404 if user not found.
+  }
+}
+
+route PUT /api/users/me {
+  auth required @ai {
+    Update current user's profile.
+    Allow updating: name, age, height, weight, gender, activityLevel, dailyCalorieGoal.
+    
+    If activityLevel or body metrics (weight, height, age, gender) change, recalculate dailyCalorieGoal using BMR formula.
+    
+    Return updated user.
+  }
+}
+
+// ============================================
+// FOOD SEARCH API (Edamam - Free Tier)
+// ============================================
+
+route GET /api/foods/search {
+  auth required query {
+    q String
+    limit Int? default(10)
+  } @ai {
+    Search for foods using Edamam Food Database API.
+    
+    Use environment variables EDAMAM_API_KEY and EDAMAM_APP_ID.
+    Make GET request to https://api.edamam.com/api/food-database/v2/parser with params:
+    - q (search term)
+    - app_id (EDAMAM_APP_ID)
+    - app_key (EDAMAM_API_KEY)
+    - limit (max 50, default 10)
+    
+    Parse response.hints array and return foods with:
+    - id: hint.food.foodId
+    - name: hint.food.label
+    - brand: hint.food.brand
+    - calories: Math.round(hint.food.nutrients.ENERC_KCAL)
+    - protein: hint.food.nutrients.PROCNT
+    - carbs: hint.food.nutrients.CHOCDF
+    - fat: hint.food.nutrients.FAT
+    - fiber: hint.food.nutrients.FIBTG
+    - image: hint.food.image
+    - source: 'edamam'
+    
+    Handle errors gracefully, return empty array if API fails.
+    Return { foods: [], count: 0 } on error.
+  }
+}
+
+route GET /api/foods/autocomplete {
+  auth required query {
+    q String
+  } @ai {
+    Quick autocomplete for food search using Edamam API.
+    Return top 5 suggestions with id, name, brand.
+    Return empty array if query too short (< 2 chars) or API fails.
+  }
+}
+
+// ============================================
+// FOOD ENTRIES
+// ============================================
+
+route POST /api/food-entries {
+  auth required @ai {
+    Create a new food entry for authenticated user.
+    
+    Extract from req.body:
+    - foodName (required)
+    - calories (required)
+    - protein, carbs, fat, fiber (optional)
+    - servingSize (optional)
+    - quantity (default 1.0)
+    - mealType (default 'lunch')
+    - imageUrl (optional)
+    - recognizedVia (optional: 'manual', 'barcode', 'ocr', 'api')
+    - apiFoodId (optional)
+    - notes (optional)
+    - consumedAt (default now())
+    
+    Multiply all nutritional values by quantity before storing.
+    Create FoodEntry in database.
+    
+    Update or create DailySummary for today (date = start of day, hours set to 0):
+    - Increment: totalCalories, totalProtein, totalCarbs, totalFat, totalFiber, entryCount
+    - Get user's dailyCalorieGoal
+    - If summary.totalCalories >= dailyCalorieGoal, set goalMet = true
+    - If goalMet changed to true, create Notification with:
+      type: 'goal_met',
+      title: 'Daily Goal Achieved! 🎉',
+      message: 'You've reached your daily calorie goal of {dailyCalorieGoal} calories!'
+    
+    Trigger webhooks for event 'food_entry_created' with payload: { entry, summary }.
+    To trigger webhooks:
+    - Find all WebhookSubscription for userId where events includes 'food_entry_created' and isActive = true
+    - For each, make POST request to url with payload
+    - Include X-Webhook-Signature header (HMAC SHA256 of JSON payload using subscription.secret)
+    - Update lastTriggeredAt on success
+    
+    Return created entry and updated summary.
+  }
+}
+
+route GET /api/food-entries {
+  auth required query {
+    startDate String?
+    endDate String?
+    mealType String?
+    limit Int? default(50)
+    offset Int? default(0)
+  } @ai {
+    Get food entries for authenticated user.
+    
+    Support filtering by:
+    - startDate (ISO date string)
+    - endDate (ISO date string)
+    - mealType ('breakfast', 'lunch', 'dinner', 'snack')
+    
+    Support pagination with limit and offset.
+    Order by consumedAt descending.
+    
+    Return entries array and pagination info (total, limit, offset, hasMore).
+  }
+}
+
+route GET /api/food-entries/:id {
+  auth required @ai {
+    Get single food entry by id.
+    Verify entry belongs to authenticated user.
+    Return 404 if not found or not owned by user.
+    Return entry.
+  }
+}
+
+route PUT /api/food-entries/:id {
+  auth required @ai {
+    Update a food entry that belongs to authenticated user.
+    
+    Verify entry belongs to user, return 404 if not found.
+    Allow updating: foodName, calories, protein, carbs, fat, fiber, servingSize, quantity, mealType, notes, consumedAt.
+    
+    Before updating, get old entry to get old nutritional values and date.
+    After updating, recalculate DailySummary for both old date and new date (if consumedAt changed):
+    - Remove old values from old date's summary
+    - Add new values to new date's summary (or create if doesn't exist)
+    - Recalculate goalMet for both dates
+    
+    Return updated entry.
+  }
+}
+
+route DELETE /api/food-entries/:id {
+  auth required @ai {
+    Delete food entry that belongs to authenticated user.
+    
+    Before deleting, get the entry to get its nutritional values and date.
+    Update DailySummary for that date by decrementing:
+    - totalCalories, totalProtein, totalCarbs, totalFat, totalFiber, entryCount
+    - Recalculate goalMet (set to false if totalCalories < dailyCalorieGoal)
+    
+    Then delete the entry.
+    Return success message.
+  }
+}
+
+// ============================================
+// PARTNER RELATIONSHIPS
+// ============================================
+
+route POST /api/partners/invite {
+  auth required @ai {
+    Invite a partner by email to monitor diet together.
+    
+    Extract partnerEmail from req.body.
+    Check if partnerEmail === req.user.email, return 400 if same.
+    
+    Find partner user by email, return 404 if not found.
+    
+    Check if relationship already exists (either direction), return 409 if exists.
+    
+    Create PartnerRelationship with:
+    - primaryUserId = req.user.userId
+    - partnerUserId = partner user id
+    - status = 'pending'
+    
+    Create Notification for partner user with:
+    - type: 'partner_activity'
+    - title: 'New Partnership Request'
+    - message: '{primaryUser.name} wants to share their diet progress with you'
+    
+    Return created relationship with partner user info.
+  }
+}
+
+route GET /api/partners {
+  auth required @ai {
+    Get all accepted partnerships for authenticated user.
+    
+    Find relationships where user is either primary or partner and status = 'accepted'.
+    For each relationship, determine if current user is primary or partner.
+    
+    Return array of partners with:
+    - id
+    - partner (user info)
+    - canViewEntries
+    - canViewGoals
+    - canSendReminders
+    - createdAt
+  }
+}
+
+route POST /api/partners/:id/accept {
+  auth required @ai {
+    Accept a partnership request where current user is the partner.
+    
+    Find relationship by id where partnerUserId = req.user.userId and status = 'pending'.
+    Return 404 if not found.
+    
+    Update status to 'accepted'.
+    
+    Create Notification for primary user with:
+    - type: 'partner_activity'
+    - title: 'Partnership Accepted'
+    - message: '{partner.name} accepted your partnership request'
+    
+    Trigger webhook for event 'partner_joined' with relationship data.
+    
+    Return updated relationship.
+  }
+}
+
+route DELETE /api/partners/:id {
+  auth required @ai {
+    Remove a partnership (either as primary or partner).
+    
+    Find relationship where user is either primary or partner.
+    Return 404 if not found.
+    
+    Delete the relationship.
+    Return success message.
+  }
+}
+
+route GET /api/partners/:partnerId/entries {
+  auth required query {
+    limit Int? default(50)
+  } @ai {
+    Get food entries for a partner user.
+    
+    Verify partnership exists and is accepted (either direction).
+    Check canViewEntries permission:
+    - If current user is primary, use relationship.canViewEntries
+    - If current user is partner, always allow (partner can view primary's entries)
+    
+    Return 403 if no permission.
+    
+    Get partner's food entries ordered by consumedAt desc, limit 50.
+    Return entries array.
+  }
+}
+
+route GET /api/partners/:partnerId/summary {
+  auth required @ai {
+    Get today's daily summary for a partner.
+    
+    Verify partnership exists and is accepted.
+    Check canViewGoals permission.
+    
+    Get today's DailySummary for partner user (date = start of today).
+    Get partner user's dailyCalorieGoal.
+    
+    Return summary (or default zeros if none) and partner info with goal.
+  }
+}
+
+// ============================================
+// DAILY SUMMARIES
+// ============================================
+
+route GET /api/summaries {
+  auth required query {
+    startDate String?
+    endDate String?
+  } @ai {
+    Get daily summaries for authenticated user.
+    
+    Support filtering by startDate and endDate.
+    Order by date descending.
+    Limit to 30 most recent.
+    
+    Return summaries array.
+  }
+}
+
+route GET /api/summaries/today {
+  auth required @ai {
+    Get today's daily summary for authenticated user.
+    
+    Date = start of today (hours set to 0).
+    Get DailySummary for today, or return default zeros if none exists.
+    Get user's dailyCalorieGoal.
+    
+    Calculate:
+    - remaining = goal - totalCalories
+    - percentage = (totalCalories / goal) * 100
+    
+    Return summary, goal, remaining, and percentage.
+  }
+}
+
+// ============================================
+// WEBHOOKS
+// ============================================
+
+route POST /api/webhooks {
+  auth required @ai {
+    Create a webhook subscription for authenticated user.
+    
+    Extract url and events array from req.body.
+    Validate URL format (try new URL(url)).
+    Validate events is array and not empty.
+    
+    Generate random 32-byte hex secret using crypto.randomBytes(32).toString('hex').
+    
+    Create WebhookSubscription with:
+    - userId
+    - url
+    - events
+    - secret
+    - isActive = true
+    
+    Return subscription (without secret) and the secret (only returned once).
+  }
+}
+
+route GET /api/webhooks {
+  auth required @ai {
+    Get all webhook subscriptions for authenticated user.
+    Return array of subscriptions (without secrets) with:
+    - id, url, events, isActive, lastTriggeredAt, createdAt
+  }
+}
+
+route DELETE /api/webhooks/:id {
+  auth required @ai {
+    Delete webhook subscription that belongs to authenticated user.
+    Verify subscription exists and userId matches.
+    Return 404 if not found.
+    Delete subscription.
+    Return success message.
+  }
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+route GET /api/notifications {
+  auth required query {
+    unreadOnly Boolean? default(false)
+    limit Int? default(50)
+  } @ai {
+    Get notifications for authenticated user.
+    
+    If unreadOnly = true, filter by isRead = false.
+    Order by createdAt descending.
+    Limit by limit parameter.
+    
+    Return notifications array.
+  }
+}
+
+route PUT /api/notifications/:id/read {
+  auth required @ai {
+    Mark notification as read.
+    Verify notification belongs to authenticated user.
+    Return 404 if not found.
+    Update isRead = true.
+    Return updated notification.
+  }
+}
+
+route PUT /api/notifications/read-all {
+  auth required @ai {
+    Mark all notifications as read for authenticated user.
+    Update all notifications where userId = req.user.userId and isRead = false.
+    Return success message.
+  }
+}
+
+// ============================================
+// SCHEDULED JOBS
+// ============================================
+
+job daily_summary_generation {
+  schedule: "0 0 * * *" @ai {
+    Generate daily summaries for all users who had food entries yesterday.
+    
+    Calculate yesterday's date (today - 1 day, hours set to 0).
+    Find all unique userIds from FoodEntry where consumedAt is between yesterday start and end.
+    
+    For each userId:
+    - Get all food entries for yesterday
+    - Calculate totals: totalCalories, totalProtein, totalCarbs, totalFat, totalFiber, entryCount
+    - Get user's dailyCalorieGoal
+    - Set goalMet = totalCalories >= dailyCalorieGoal
+    - Upsert DailySummary for userId and yesterday's date
+    
+    Trigger 'daily_summary' webhook event for each user with summary data.
+    Use same webhook triggering logic as in food entry creation.
+  }
+}
+
+job goal_reminders {
+  schedule: "0 20 * * *" @ai {
+    Send goal reminders at 8 PM to users who haven't met 80% of their daily goal.
+    Only for users who have partners with canSendReminders = true.
+    
+    Get today's date (hours set to 0).
+    Find users who have PartnerRelationship where canSendReminders = true and status = 'accepted'.
+    
+    For each user:
+    - Get today's DailySummary
+    - Get user's dailyCalorieGoal
+    - If summary doesn't exist or totalCalories < dailyCalorieGoal * 0.8:
+      Create Notification with:
+      - type: 'reminder'
+      - title: 'Daily Goal Reminder'
+      - message: 'You're at {totalCalories} / {dailyCalorieGoal} calories ({percentage}%). Keep going! 💪'
+  }
+}
+
