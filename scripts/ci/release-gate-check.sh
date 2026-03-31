@@ -4,6 +4,10 @@ set -euo pipefail
 echo "[Gate] Enterprise structure"
 bash scripts/ci/verify-enterprise-structure.sh
 
+if [ ! -f .env ]; then
+	touch .env
+fi
+
 echo "[Gate] Docker compose render"
 docker compose -f docker-compose.yml config > /tmp/dccortex-compose.yml
 

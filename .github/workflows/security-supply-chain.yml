@@ -41,7 +41,7 @@ jobs:
           path: docs/enterprise/evidence/*.cdx.json
 
       - name: Trivy scan (dashboard - block critical)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: ./dashboard
@@ -51,7 +51,7 @@ jobs:
           exit-code: '1'
 
       - name: Trivy scan (platform-api - block critical)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: ./platform-api
@@ -61,7 +61,7 @@ jobs:
           exit-code: '1'
 
       - name: Trivy scan (dashboard - report high)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: ./dashboard
@@ -71,7 +71,7 @@ jobs:
           exit-code: '0'
 
       - name: Trivy scan (platform-api - report high)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: ./platform-api
