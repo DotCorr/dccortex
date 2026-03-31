@@ -157,3 +157,17 @@ export function TauriDetector() {
 
   return null
 }
+
+export function detectDesktopShell(): boolean {
+  if (typeof window === 'undefined') return false
+  return !!(window as any).__TAURI__
+}
+
+export function detectPlatform(): string {
+  if (typeof window === 'undefined') return ''
+  const ua = navigator.userAgent.toLowerCase()
+  if (ua.includes('mac')) return 'darwin'
+  if (ua.includes('win')) return 'windows'
+  if (ua.includes('linux')) return 'linux'
+  return ''
+}

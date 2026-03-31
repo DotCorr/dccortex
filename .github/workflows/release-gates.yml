@@ -1,6 +1,7 @@
 name: Enterprise Release Gates
 
 on:
+  pull_request:
   workflow_dispatch:
   schedule:
     - cron: '0 12 * * 1'

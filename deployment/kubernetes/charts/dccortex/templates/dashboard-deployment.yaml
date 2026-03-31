@@ -30,7 +30,7 @@ spec:
             - name: NEXTAUTH_URL
               value: {{ .Values.dashboard.env.NEXTAUTH_URL | quote }}
             - name: PLATFORM_API_URL
-              value: "http://{{ include \"dccortex.fullname\" . }}-platform-api:{{ .Values.platformApi.service.port }}"
+              value: "http://{{ include "dccortex.fullname" . }}-platform-api:{{ .Values.platformApi.service.port }}"
             - name: DATABASE_URL
               value: "postgresql://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ .Values.postgres.host }}:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}"
             - name: POSTGRES_PASSWORD
