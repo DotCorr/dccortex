@@ -22,6 +22,7 @@ Purpose: run, maintain, and recover DCCortex enterprise deployments.
 - Review failed auth and admin audit events.
 - Verify backup job success.
 - Track resource saturation and capacity trend.
+- Keep incident timeline templates ready from INCIDENT_RESPONSE_RUNBOOK.md.
 
 ## 4. Upgrade Procedure
 
@@ -45,3 +46,12 @@ Purpose: run, maintain, and recover DCCortex enterprise deployments.
 - Rollback log
 - Backup and restore drill output
 - Security scan outputs
+- Incident response readiness drill output
+
+## 7. Evidence Pack Generation
+
+Before release-candidate sign-off:
+
+1. Run `scripts/ops/generate-enterprise-evidence-pack.sh <release-tag>`.
+2. Attach latest gate evidence into generated `security/`, `iam/`, `ops/`, and `release/` folders.
+3. Update gate status template and collect reviewer sign-off.

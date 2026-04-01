@@ -7,6 +7,7 @@ Purpose: single entry point for enterprise self-host release planning, complianc
 - [Release Contract](RELEASE_ENTERPRISE_SELF_HOST_1_0.md)
 - [Compliance Control Matrix](COMPLIANCE_CONTROL_MATRIX.md)
 - [Hardening Guide](HARDENING_GUIDE.md)
+- [Incident Response Runbook](INCIDENT_RESPONSE_RUNBOOK.md)
 - [Air-Gapped Install Guide](AIRGAP_INSTALL.md)
 - [Helm Migration Plan](HELM_MIGRATION_PLAN.md)
 - [Operator Guide](OPERATOR_GUIDE.md)
@@ -28,6 +29,7 @@ Purpose: single entry point for enterprise self-host release planning, complianc
 3. Apply and verify platform hardening using the Hardening Guide.
 4. Validate offline operation using the Air-Gapped Install Guide.
 5. Ship Kubernetes enterprise mode using the Helm Migration Plan.
+6. Generate evidence pack folders with `scripts/ops/generate-enterprise-evidence-pack.sh <release-tag>`.
 
 ## CI Enforcement
 

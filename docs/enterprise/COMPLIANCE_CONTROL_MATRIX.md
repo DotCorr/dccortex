@@ -16,7 +16,7 @@ Note: this is a practical engineering matrix aligned to NIST-style domains. It i
 | Configuration Management | Controlled changes | Versioned infra and app configs; PR approval rules | Git history, approvals | Release Manager | Planned |
 | Configuration Management | Environment separation | Distinct dev/stage/prod configs and secrets | Env docs, secrets inventory | Ops Lead | Planned |
 | Identification and Auth | Strong auth | SSO support and MFA compatibility | SSO test run | IAM Lead | Planned |
-| Incident Response | Respond and recover | Incident runbook, severity model, on-call ownership | Incident policy doc | Ops Lead | Planned |
+| Incident Response | Respond and recover | Incident runbook, severity model, on-call ownership | Incident policy doc | Ops Lead | Implemented |
 | Maintenance | Patch management | CVE review process, patch SLA by severity | Patch logs, SLA policy | Security Lead | Planned |
 | Media Protection | Data protection at rest | DB and storage encryption strategy documented | Storage and DB config evidence | Ops Lead | Planned |
 | System and Comm Protection | Data protection in transit | TLS 1.2+ only, managed cert rotation | TLS scan report | Security Lead | Planned |
