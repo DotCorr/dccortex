@@ -35,6 +35,14 @@ Start here:
 - `docs/enterprise/README.md`
 - `docs/enterprise/RELEASE_ENTERPRISE_SELF_HOST_1_0.md`
 
+## Visual Builder
+
+DCCortex provides a drag-and-drop visual editor for building production applications without code. Connect any database or API, design interfaces in real-time, and deploy instantly.
+
+![DCCortex Builder - Visual App Development](docs/images/builder-weather-dashboard.png)
+
+The builder generates production-grade applications with automatic data binding, real-time validation, and enterprise controls built in.
+
 ## Quick Start (Local)
 
 1. Start core infra services:
