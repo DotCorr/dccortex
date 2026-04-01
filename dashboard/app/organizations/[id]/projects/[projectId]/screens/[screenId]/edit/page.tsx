@@ -451,6 +451,7 @@ export default function ScreenEditPage() {
   const redoStackRef = useRef<Node[]>([])
   const reusableUndoStackRef = useRef<Node[]>([])
   const reusableRedoStackRef = useRef<Node[]>([])
+  const reusableRestoreAttemptedRef = useRef(false)
   const globalStateUndoRef = useRef<StateDefinition[][]>([])
   const globalStateRedoRef = useRef<StateDefinition[][]>([])
   const editingReusableRootRef = useRef<Node | null>(null)
@@ -474,6 +475,7 @@ export default function ScreenEditPage() {
   const propertyPanelTabStorageKey = useMemo(() => `dccortex:property-tab:${projectId}:${screenId}`, [projectId, screenId])
   const debugConsoleStorageKey = useMemo(() => `dccortex:debug-console:${projectId}:${screenId}`, [projectId, screenId])
   const selectedNodeStorageKey = useMemo(() => `dccortex:selected-node:${projectId}:${screenId}`, [projectId, screenId])
+  const reusableEditorStateStorageKey = useMemo(() => `dccortex:reusable-editor:${projectId}:${screenId}`, [projectId, screenId])
   const treeStorageKey = useMemo(() => `dccortex:node-tree:${projectId}:${screenId}`, [projectId, screenId])
   const paletteScrollStorageKey = useMemo(() => `dccortex:palette:${projectId}:${screenId}`, [projectId, screenId])
   const propertyPanelScrollStorageKey = useMemo(() => `dccortex:property-scroll:${projectId}:${screenId}`, [projectId, screenId])
@@ -620,6 +622,74 @@ export default function ScreenEditPage() {
     if (editingReusableId || !selectedId) return
     if (!findNode(root, selectedId)) setSelectedId(null)
   }, [root, selectedId, editingReusableId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      if (editingReusableId) {
+        window.localStorage.setItem(reusableEditorStateStorageKey, JSON.stringify({
+          reusableId: editingReusableId,
+          selectedId: reusableSelectedId,
+        }))
+      } else {
+        window.localStorage.removeItem(reusableEditorStateStorageKey)
+      }
+    } catch {}
+  }, [reusableEditorStateStorageKey, editingReusableId, reusableSelectedId])
+
+  useEffect(() => {
+    if (reusableRestoreAttemptedRef.current) return
+    if (typeof window === 'undefined') return
+    if (editingReusableId) {
+      reusableRestoreAttemptedRef.current = true
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(reusableEditorStateStorageKey)
+      if (!raw) {
+        reusableRestoreAttemptedRef.current = true
+        return
+      }
+      if (globalReusables.length === 0) return
+      const parsed = JSON.parse(raw) as { reusableId?: string; selectedId?: string | null }
+      const reusableId = typeof parsed.reusableId === 'string' ? parsed.reusableId : null
+      if (!reusableId) {
+        window.localStorage.removeItem(reusableEditorStateStorageKey)
+        reusableRestoreAttemptedRef.current = true
+        return
+      }
+      const exists = globalReusables.some((r) => r.id === reusableId)
+      if (!exists) {
+        window.localStorage.removeItem(reusableEditorStateStorageKey)
+        reusableRestoreAttemptedRef.current = true
+        return
+      }
+      const target = globalReusables.find((r) => r.id === reusableId)
+      if (!target) return
+      setPreviewSize('freeform')
+      setDeviceFrameEnabled(false)
+      setEditingReusableId(reusableId)
+      const cloned = deepCloneNode(target.root)
+      setEditingReusableRoot(cloned)
+      editingReusableRootRef.current = cloned
+      const preferredSelected = parsed.selectedId ?? null
+      const initialSelected = preferredSelected && findNode(cloned, preferredSelected) ? preferredSelected : cloned.id
+      setReusableSelectedId(initialSelected)
+      reusableUndoStackRef.current = []
+      reusableRedoStackRef.current = []
+      setUndoRedoVersion((v) => v + 1)
+      reusableRestoreAttemptedRef.current = true
+    } catch {
+      reusableRestoreAttemptedRef.current = true
+    }
+  }, [reusableEditorStateStorageKey, globalReusables, editingReusableId])
+
+  useEffect(() => {
+    if (!editingReusableId || !editingReusableRoot || !reusableSelectedId) return
+    if (!findNode(editingReusableRoot, reusableSelectedId)) {
+      setReusableSelectedId(editingReusableRoot.id)
+    }
+  }, [editingReusableId, editingReusableRoot, reusableSelectedId])
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
@@ -1718,7 +1788,7 @@ export default function ScreenEditPage() {
     [globalReusables, doInsertReusable]
   )
 
-  const startEditingReusable = useCallback((reusableId: string) => {
+  const startEditingReusable = useCallback((reusableId: string, preferredSelectedId?: string | null) => {
     const target = globalReusables.find((r) => r.id === reusableId)
     if (!target) return
     // Source editing should always open in freeform without device frame chrome.
@@ -1728,7 +1798,8 @@ export default function ScreenEditPage() {
     const cloned = deepCloneNode(target.root)
     setEditingReusableRoot(cloned)
     editingReusableRootRef.current = cloned
-    setReusableSelectedId(cloned.id)
+    const initialSelected = preferredSelectedId && findNode(cloned, preferredSelectedId) ? preferredSelectedId : cloned.id
+    setReusableSelectedId(initialSelected)
     reusableUndoStackRef.current = []
     reusableRedoStackRef.current = []
     setUndoRedoVersion((v) => v + 1)
