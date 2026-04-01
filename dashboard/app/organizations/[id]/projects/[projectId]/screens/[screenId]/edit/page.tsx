@@ -471,6 +471,8 @@ export default function ScreenEditPage() {
   const [systemDark, setSystemDark] = useState(false)
   const previewSettingsKey = useMemo(() => `dccortex:preview-settings:${projectId}:${screenId}`, [projectId, screenId])
   const panelWidthsStorageKey = useMemo(() => `dccortex:panel-widths:${projectId}:${screenId}`, [projectId, screenId])
+  const propertyPanelTabStorageKey = useMemo(() => `dccortex:property-tab:${projectId}:${screenId}`, [projectId, screenId])
+  const debugConsoleStorageKey = useMemo(() => `dccortex:debug-console:${projectId}:${screenId}`, [projectId, screenId])
   const frameCategory: FrameCategory = previewSize === 'mobile' ? 'mobile' : previewSize === 'tablet' ? 'tablet' : 'desktop'
   const framesAllowed = !editingReusableId
   const effectiveDeviceFrameEnabled = framesAllowed && deviceFrameEnabled
@@ -530,6 +532,7 @@ export default function ScreenEditPage() {
       const raw = window.localStorage.getItem(previewSettingsKey)
       if (!raw) return
       const parsed = JSON.parse(raw) as {
+        previewMode?: boolean
         previewSize?: PreviewViewport
         canvasZoom?: number
         canvasExpanded?: boolean
@@ -540,6 +543,7 @@ export default function ScreenEditPage() {
         showCanvasMesh?: boolean
         frameConfigByCategory?: Partial<Record<FrameCategory, Partial<FrameConfig>>>
       }
+      if (typeof parsed.previewMode === 'boolean') setPreviewMode(parsed.previewMode)
       if (parsed.previewSize === 'mobile' || parsed.previewSize === 'tablet' || parsed.previewSize === 'desktop' || parsed.previewSize === 'freeform') {
         setPreviewSize(parsed.previewSize)
       }
@@ -566,6 +570,7 @@ export default function ScreenEditPage() {
     if (typeof window === 'undefined') return
     try {
       window.localStorage.setItem(previewSettingsKey, JSON.stringify({
+        previewMode,
         previewSize,
         canvasZoom,
         canvasExpanded,
@@ -577,7 +582,7 @@ export default function ScreenEditPage() {
         frameConfigByCategory,
       }))
     } catch {}
-  }, [previewSettingsKey, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory])
+  }, [previewSettingsKey, previewMode, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -3041,6 +3046,7 @@ export default function ScreenEditPage() {
                 inspection={inspection}
                 apiLogs={apiLogs}
                 handleRef={(h) => { debugHandleRef.current = h }}
+                storageKey={debugConsoleStorageKey}
               />
               <GlobalReusablesPane
                 reusables={globalReusables}
@@ -3111,6 +3117,7 @@ export default function ScreenEditPage() {
               onCustomTypesChange={handleCustomTypesChange}
               aiProtected={aiProtected}
               onAiProtectedChange={(locked) => { setAiProtected(locked); aiProtectedRef.current = locked }}
+              tabStorageKey={propertyPanelTabStorageKey}
             />
           }
         />

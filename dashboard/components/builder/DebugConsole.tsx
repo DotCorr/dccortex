@@ -73,6 +73,8 @@ type Props = {
   apiLogs?: ApiLogEntry[]
   /** Ref that callers use to push log entries */
   handleRef?: (h: DebugConsoleHandle) => void
+  /** Optional browser storage key to persist console UI state. */
+  storageKey?: string
 }
 
 const LEVEL_COLOR: Record<LogLevel, string> = {
@@ -321,7 +323,7 @@ function highlightHtmlLine(line: string) {
   )
 }
 
-export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLogs = [], handleRef }: Props) {
+export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLogs = [], handleRef, storageKey }: Props) {
   const [open, setOpen] = useState(false)
   const [height, setHeight] = useState(220)
   const [tab, setTab] = useState<Tab>('log')
@@ -340,6 +342,26 @@ export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLo
   const [diffLeftId, setDiffLeftId] = useState<number | null>(null)
   const [diffRightId, setDiffRightId] = useState<number | null>(null)
   const [jsonViewer, setJsonViewer] = useState<JsonViewerState>(null)
+
+  useEffect(() => {
+    if (!storageKey || typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { open?: boolean; height?: number }
+      if (typeof parsed.open === 'boolean') setOpen(parsed.open)
+      if (typeof parsed.height === 'number' && Number.isFinite(parsed.height)) {
+        setHeight(Math.min(600, Math.max(120, parsed.height)))
+      }
+    } catch {}
+  }, [storageKey])
+
+  useEffect(() => {
+    if (!storageKey || typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify({ open, height }))
+    } catch {}
+  }, [storageKey, open, height])
   const [copiedCurlId, setCopiedCurlId] = useState<number | null>(null)
   const [copiedExportKind, setCopiedExportKind] = useState<'json' | 'csv' | null>(null)
   const logBottomRef = useRef<HTMLDivElement>(null)

@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Zap } from 'lucide-react'
 import type { Node } from './registry'
 import { getComponentDef, STYLE_PROP_KEYS } from './registry'
@@ -109,6 +109,8 @@ type Props = {
   /** AI edit lock state for this screen. */
   aiProtected?: boolean
   onAiProtectedChange?: (locked: boolean) => void
+  /** Optional browser storage key to persist active tab for this editor session. */
+  tabStorageKey?: string
 }
 
 const LAYOUT_KEYS = ['display', 'flexDirection', 'flexWrap', 'alignItems', 'alignContent', 'justifyContent', 'gap', 'rowGap', 'columnGap', 'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft', 'width', 'height', 'minHeight', 'maxHeight', 'minWidth', 'maxWidth', 'flexGrow', 'flexShrink', 'flexBasis', 'flex', 'alignSelf', 'justifySelf', 'order', 'gridTemplateColumns', 'gridTemplateRows', 'gridColumn', 'gridRow']
@@ -463,6 +465,7 @@ export function PropertyPanel({
   projectAssets,
   seoSettings = {},
   onSeoChange,
+  tabStorageKey,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('layout')
   const [bindingFor, setBindingFor] = useState<string | null>(null)
@@ -474,6 +477,25 @@ export function PropertyPanel({
   const [propExpressionKey, setPropExpressionKey] = useState<string | null>(null)
 
   const props = node?.props ?? {}
+
+  useEffect(() => {
+    if (!tabStorageKey || typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(tabStorageKey)
+      if (!raw) return
+      const validTabs: PanelTab[] = ['theme', 'layout', 'content', 'style', 'animation', 'events', 'state', 'assets', 'data', 'seo']
+      if ((validTabs as string[]).includes(raw)) {
+        setActiveTab(raw as PanelTab)
+      }
+    } catch {}
+  }, [tabStorageKey])
+
+  useEffect(() => {
+    if (!tabStorageKey || typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(tabStorageKey, activeTab)
+    } catch {}
+  }, [tabStorageKey, activeTab])
   const setProp = useCallback(
     (key: string, value: unknown) => {
       if (!node) return
