@@ -104,11 +104,16 @@ Every code change is validated against compliance requirements before commit. Th
 2. Use the [Quick Checklist](docs/enterprise/COMPLIANCE_CHECKLIST.md)
 3. Run: `bash scripts/compliance/pre-commit-check.sh`
 
-**Key documents:**
+**Quick start:**
+- [GETTING_STARTED_COMPLIANCE.md](docs/enterprise/GETTING_STARTED_COMPLIANCE.md): Your first commit with auto-validation (start here)
+- [COMPLIANCE_CHECKLIST.md](docs/enterprise/COMPLIANCE_CHECKLIST.md): Quick reference before committing (1 page)
+
+**Full guidance:**
 - [COMPLIANCE_FRAMEWORK.md](COMPLIANCE_FRAMEWORK.md): Full framework with examples and escalation paths
-- [COMPLIANCE_CHECKLIST.md](docs/enterprise/COMPLIANCE_CHECKLIST.md): Quick reference before committing
 - [COMPLIANCE_CONTROL_MATRIX.md](docs/enterprise/COMPLIANCE_CONTROL_MATRIX.md): Status of all 16 controls
 - [ADDING_CONTROLS.md](docs/enterprise/ADDING_CONTROLS.md): Process for adding new controls incrementally
+- [CODE_REVIEW_COMPLIANCE.md](docs/enterprise/CODE_REVIEW_COMPLIANCE.md): Template for reviewing PRs
+- [CODEBASE_COMPLIANCE_MAPPING.md](docs/enterprise/CODEBASE_COMPLIANCE_MAPPING.md): Maps compliance to code files
 
 **Domains covered:**
 - AC (Access Control) — RBAC, permission gates, session security
