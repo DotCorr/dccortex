@@ -7,9 +7,10 @@
 
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
+import { PERMISSIONS } from '@/lib/permissions'
+import { logAuditEvent } from '@/lib/audit'
 
 function parseOrgReusables(metadata) {
   if (!metadata || typeof metadata !== 'object') return []
@@ -31,25 +32,18 @@ async function getAccess(params) {
   const { id: organizationId } = await Promise.resolve(params)
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
-    include: {
-      members: {
-        where: { userId },
-        select: { role: true },
-        take: 1,
-      },
-    },
+    select: { id: true },
   })
 
   if (!org) return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
 
-  const member = org.members[0]
-  const isOwner = org.ownerId === userId
-  if (!isOwner && !member) {
+  const canView = await hasPermission(organizationId, PERMISSIONS.APP_VIEW, session)
+  if (!canView) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const canWrite = isOwner || member?.role === 'owner' || member?.role === 'admin'
-  return { organizationId: org.id, canWrite }
+  const canWrite = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+  return { organizationId: org.id, canWrite, userId }
 }
 
 export async function GET(_request, { params }) {
@@ -74,7 +68,16 @@ export async function POST(request, { params }) {
     const access = await getAccess(params)
     if (access instanceof NextResponse) return access
     if (!access.canWrite) {
-      return NextResponse.json({ error: 'Only owner/admin can promote reusables' }, { status: 403 })
+      await logAuditEvent({
+        action: 'org.reusable.promote',
+        status: 'denied',
+        actorUserId: access.userId,
+        organizationId: access.organizationId,
+        targetType: 'reusable',
+        reason: 'insufficient_permissions',
+        request,
+      })
+      return NextResponse.json({ error: 'Insufficient permissions to promote reusables' }, { status: 403 })
     }
 
     const body = await request.json().catch(() => ({}))
@@ -116,9 +119,23 @@ export async function POST(request, { params }) {
     const nextMetadata = JSON.parse(JSON.stringify(metadata ?? {}))
     nextMetadata.orgReusables = JSON.parse(JSON.stringify(next))
 
-    await prisma.$executeRaw(
-      Prisma.sql`UPDATE organizations SET metadata = ${JSON.stringify(nextMetadata)}::jsonb, updated_at = NOW() WHERE id = ${access.organizationId}`
-    )
+    await prisma.organization.update({
+      where: { id: access.organizationId },
+      data: { metadata: nextMetadata },
+    })
+
+    await logAuditEvent({
+      action: 'org.reusable.promote',
+      status: 'success',
+      actorUserId: access.userId,
+      organizationId: access.organizationId,
+      targetType: 'reusable',
+      targetId: normalized.id,
+      metadata: {
+        reusableName: normalized.name,
+      },
+      request,
+    })
 
     return NextResponse.json({
       ok: true,
@@ -127,6 +144,16 @@ export async function POST(request, { params }) {
     })
   } catch (err) {
     console.error('[org reusables POST]', err)
+    const { id: organizationId } = await Promise.resolve(params)
+    await logAuditEvent({
+      action: 'org.reusable.promote',
+      status: 'failure',
+      actorUserId: null,
+      organizationId,
+      targetType: 'reusable',
+      reason: err instanceof Error ? err.message : 'unknown_error',
+      request,
+    })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
