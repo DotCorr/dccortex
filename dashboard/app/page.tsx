@@ -659,11 +659,11 @@ export default function Home() {
             <div className="text-center mb-16">
               <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Security and Trust</p>
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-                Claims you can make today, with a clear path to certification
+                Security posture you can verify today
               </h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
-                DCCortex is not claiming formal certification yet. It is positioned as SOC2-ready and FedRAMP-ready path with controls,
-                documentation, and evidence automation designed to support staged certification after launch.
+                DCCortex ships with enterprise controls, operational runbooks, and release evidence automation.
+                Buyers and security teams can review exactly what is implemented in product, policy, and operations.
               </p>
             </div>
           </Reveal>
@@ -672,14 +672,14 @@ export default function Home() {
             {[
               {
                 icon: FileCheck2,
-                title: 'SOC2-Adjacent / SOC2-Ready Positioning',
-                desc: 'Self-attested controls aligned to SOC2 trust service criteria, appropriate for early-stage enterprise SaaS trust messaging.',
+                title: 'SOC2-Adjacent Controls',
+                desc: 'Control coverage aligned to SOC2 trust criteria with concrete evidence paths for release reviews.',
                 href: '/trust#soc2-ready',
               },
               {
                 icon: Landmark,
                 title: 'FedRAMP-Ready Path',
-                desc: 'Documentation and operational artifacts are structured to support future ATO-focused implementation programs.',
+                desc: 'Documentation and operational artifacts are structured for security-heavy procurement and ATO-style reviews.',
                 href: '/trust#fedramp-ready',
               },
               {
@@ -691,7 +691,7 @@ export default function Home() {
               {
                 icon: Lock,
                 title: 'NIST-Aligned Coverage',
-                desc: 'Controls are mapped to NIST SP 800-53 style domains in the enterprise compliance matrix for repeatable governance.',
+                desc: 'Controls are mapped to NIST SP 800-53 style domains for repeatable governance and internal audits.',
                 href: '/trust#nist-aligned',
               },
             ].map(({ icon: Icon, title, desc, href }, i) => (

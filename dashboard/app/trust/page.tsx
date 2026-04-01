@@ -5,8 +5,8 @@ const claimSections = [
   {
     id: 'soc2-ready',
     icon: FileCheck2,
-    title: 'SOC2-Adjacent / SOC2-Ready',
-    summary: 'Self-attested controls aligned to SOC2 trust criteria, with evidence automation in place.',
+    title: 'SOC2-Adjacent Controls',
+    summary: 'Controls aligned to SOC2 trust criteria, with evidence automation and release-gate validation in place.',
     implemented: [
       'OIDC SSO and RBAC enforcement are implemented across core API routes.',
       'Immutable audit log flow with retention automation is implemented.',
@@ -37,7 +37,7 @@ const claimSections = [
     id: 'fedramp-ready',
     icon: Landmark,
     title: 'FedRAMP-Ready Path',
-    summary: 'Documentation and operational scaffolding are prepared to support ATO-oriented implementation phases.',
+    summary: 'Documentation and operational scaffolding are prepared for ATO-style implementation and security review workflows.',
     implemented: [
       'Structured enterprise policy set is in place under enterprise docs.',
       'Incident response and operational runbooks exist with clear role ownership.',
@@ -135,8 +135,8 @@ export default function TrustPage() {
           </Link>
           <h1 className="mt-6 text-4xl font-black tracking-tight">Trust and Compliance Detail</h1>
           <p className="mt-4 max-w-3xl text-sm text-muted-foreground">
-            This page gives an honest view of what is implemented now, what is adjacent/readiness positioning, and what remains before formal certification.
-            It is designed to help buyers, security reviewers, and procurement teams evaluate risk clearly.
+            This page gives a transparent, implementation-first view of security controls, code coverage, and operational evidence.
+            It is designed to help buyers, security reviewers, and procurement teams evaluate risk with clarity and confidence.
           </p>
           <div className="mt-6 flex flex-wrap gap-2">
             <a href="#soc2-ready" className="px-3 py-2 border border-border text-xs font-semibold uppercase tracking-wide hover:bg-muted">SOC2-Ready</a>
@@ -160,9 +160,9 @@ export default function TrustPage() {
             <p className="mt-1 text-sm text-muted-foreground">Audit to release-evidence automation chain implemented</p>
           </div>
           <div className="p-4 border border-border bg-card">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Certification</p>
-            <p className="mt-2 text-3xl font-black">0</p>
-            <p className="mt-1 text-sm text-muted-foreground">Formal external certificates completed today</p>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">Assurance</p>
+            <p className="mt-2 text-3xl font-black">Transparent</p>
+            <p className="mt-1 text-sm text-muted-foreground">Implemented controls and known gaps are disclosed in one place</p>
           </div>
         </div>
       </section>
@@ -231,10 +231,10 @@ export default function TrustPage() {
 
       <section className="border-t border-border bg-black text-white">
         <div className="max-w-6xl mx-auto px-6 py-12">
-          <h2 className="text-2xl font-bold">Certification Roadmap (Realistic)</h2>
+          <h2 className="text-2xl font-bold">Assurance Roadmap</h2>
           <p className="mt-3 text-sm text-neutral-300 max-w-4xl">
-            Stage 1: ship with SOC2-ready/FedRAMP-path claims and maintain release evidence every tag. Stage 2: close remaining planned controls,
-            enforce supply-chain checks in CI, and run quarterly drills. Stage 3: engage external assessor for formal certification scope.
+            Stage 1: maintain evidence-backed controls on every release. Stage 2: close remaining planned controls and enforce supply-chain gates in CI.
+            Stage 3: continue quarterly drills and strengthen enterprise assurance for larger procurement requirements.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <a
