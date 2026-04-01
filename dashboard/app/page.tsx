@@ -674,29 +674,37 @@ export default function Home() {
                 icon: FileCheck2,
                 title: 'SOC2-Adjacent / SOC2-Ready Positioning',
                 desc: 'Self-attested controls aligned to SOC2 trust service criteria, appropriate for early-stage enterprise SaaS trust messaging.',
+                href: '/trust#soc2-ready',
               },
               {
                 icon: Landmark,
                 title: 'FedRAMP-Ready Path',
                 desc: 'Documentation and operational artifacts are structured to support future ATO-focused implementation programs.',
+                href: '/trust#fedramp-ready',
               },
               {
                 icon: Shield,
                 title: 'Enterprise-Grade Security Controls',
                 desc: 'OIDC SSO, RBAC, immutable audit logging, backup and restore workflows, incident response runbooks, and evidence pack automation.',
+                href: '/trust#enterprise-controls',
               },
               {
                 icon: Lock,
                 title: 'NIST-Aligned Coverage',
                 desc: 'Controls are mapped to NIST SP 800-53 style domains in the enterprise compliance matrix for repeatable governance.',
+                href: '/trust#nist-aligned',
               },
-            ].map(({ icon: Icon, title, desc }, i) => (
+            ].map(({ icon: Icon, title, desc, href }, i) => (
               <Reveal key={title} delay={i * 80}>
-                <div className="p-6 bg-card border border-border h-full">
+                <Link href={href} className="block p-6 bg-card border border-border h-full hover:bg-muted transition-colors">
                   <Icon className="w-6 h-6 text-foreground mb-4" />
                   <h3 className="text-base font-semibold text-foreground mb-2">{title}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
-                </div>
+                  <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-foreground uppercase tracking-wide">
+                    View Details
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                </Link>
               </Reveal>
             ))}
           </div>
