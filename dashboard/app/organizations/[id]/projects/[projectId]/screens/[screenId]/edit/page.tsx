@@ -473,6 +473,10 @@ export default function ScreenEditPage() {
   const panelWidthsStorageKey = useMemo(() => `dccortex:panel-widths:${projectId}:${screenId}`, [projectId, screenId])
   const propertyPanelTabStorageKey = useMemo(() => `dccortex:property-tab:${projectId}:${screenId}`, [projectId, screenId])
   const debugConsoleStorageKey = useMemo(() => `dccortex:debug-console:${projectId}:${screenId}`, [projectId, screenId])
+  const selectedNodeStorageKey = useMemo(() => `dccortex:selected-node:${projectId}:${screenId}`, [projectId, screenId])
+  const treeStorageKey = useMemo(() => `dccortex:node-tree:${projectId}:${screenId}`, [projectId, screenId])
+  const paletteScrollStorageKey = useMemo(() => `dccortex:palette:${projectId}:${screenId}`, [projectId, screenId])
+  const propertyPanelScrollStorageKey = useMemo(() => `dccortex:property-scroll:${projectId}:${screenId}`, [projectId, screenId])
   const frameCategory: FrameCategory = previewSize === 'mobile' ? 'mobile' : previewSize === 'tablet' ? 'tablet' : 'desktop'
   const framesAllowed = !editingReusableId
   const effectiveDeviceFrameEnabled = framesAllowed && deviceFrameEnabled
@@ -594,6 +598,29 @@ export default function ScreenEditPage() {
   useEffect(() => {
     if (presenceMode === 'off') setPresence([])
   }, [presenceMode])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || editingReusableId) return
+    try {
+      const raw = window.localStorage.getItem(selectedNodeStorageKey)
+      if (!raw) return
+      setSelectedId(raw)
+    } catch {}
+  }, [selectedNodeStorageKey, editingReusableId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || editingReusableId) return
+    try {
+      if (selectedId) window.localStorage.setItem(selectedNodeStorageKey, selectedId)
+      else window.localStorage.removeItem(selectedNodeStorageKey)
+    } catch {}
+  }, [selectedNodeStorageKey, selectedId, editingReusableId])
+
+  useEffect(() => {
+    if (editingReusableId || !selectedId) return
+    if (!findNode(root, selectedId)) setSelectedId(null)
+  }, [root, selectedId, editingReusableId])
+
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     setSystemDark(mq.matches)
@@ -2647,6 +2674,7 @@ export default function ScreenEditPage() {
               onCreateReusable={handleCreateReusableFromNode}
               onMove={handleMoveNode}
               globalReusables={globalReusables}
+              storageKey={treeStorageKey}
             />
           }
           leftPalette={({ isMobile, closeMobileSheet }) => (
@@ -2655,6 +2683,7 @@ export default function ScreenEditPage() {
               autoCloseAfterAdd={mobileAutoClosePalette}
               onAutoCloseAfterAddChange={isMobile ? setMobileAutoClosePalette : undefined}
               onRequestClose={closeMobileSheet}
+              scrollStorageKey={paletteScrollStorageKey}
             />
           )}
           center={
@@ -3118,6 +3147,7 @@ export default function ScreenEditPage() {
               aiProtected={aiProtected}
               onAiProtectedChange={(locked) => { setAiProtected(locked); aiProtectedRef.current = locked }}
               tabStorageKey={propertyPanelTabStorageKey}
+              scrollStorageKey={propertyPanelScrollStorageKey}
             />
           }
         />
