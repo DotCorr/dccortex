@@ -95,6 +95,35 @@ Minimum release rule:
 
 Do not tag an enterprise release until all required gates in `docs/enterprise/RELEASE_ENTERPRISE_SELF_HOST_1_0.md` are green with evidence attached.
 
+## Compliance-First Development
+
+Every code change is validated against compliance requirements before commit. This ensures production readiness grows with the codebase instead of becoming a scramble at release time.
+
+**Before you commit:**
+1. Read [COMPLIANCE_FRAMEWORK.md](COMPLIANCE_FRAMEWORK.md) for full guidance
+2. Use the [Quick Checklist](docs/enterprise/COMPLIANCE_CHECKLIST.md)
+3. Run: `bash scripts/compliance/pre-commit-check.sh`
+
+**Quick start:**
+- [GETTING_STARTED_COMPLIANCE.md](docs/enterprise/GETTING_STARTED_COMPLIANCE.md): Your first commit with auto-validation (start here)
+- [COMPLIANCE_CHECKLIST.md](docs/enterprise/COMPLIANCE_CHECKLIST.md): Quick reference before committing (1 page)
+
+**Full guidance:**
+- [COMPLIANCE_FRAMEWORK.md](COMPLIANCE_FRAMEWORK.md): Full framework with examples and escalation paths
+- [COMPLIANCE_CONTROL_MATRIX.md](docs/enterprise/COMPLIANCE_CONTROL_MATRIX.md): Status of all 16 controls
+- [ADDING_CONTROLS.md](docs/enterprise/ADDING_CONTROLS.md): Process for adding new controls incrementally
+- [CODE_REVIEW_COMPLIANCE.md](docs/enterprise/CODE_REVIEW_COMPLIANCE.md): Template for reviewing PRs
+- [CODEBASE_COMPLIANCE_MAPPING.md](docs/enterprise/CODEBASE_COMPLIANCE_MAPPING.md): Maps compliance to code files
+
+**Domains covered:**
+- AC (Access Control) — RBAC, permission gates, session security
+- AU (Audit) — immutable logging, event tracking, evidence extraction
+- CP (Contingency Planning) — backup, restore, recovery validation
+- IR (Incident Response) — runbooks, evidence templates, severity models
+- DE (Data Evidence) — release gates, artifact packaging, CI validation
+
+**Peace of mind:** Every change is checked. Compliance grows with features. Go to production without surprises.
+
 ## Current Direction
 
 DCCortex is actively focused on:
