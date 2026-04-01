@@ -239,6 +239,38 @@
   margin-left: 1px;
 }
 
+/* Landing page enterprise visual language: monochrome + hard edges */
+.landing-monochrome {
+  --background: #ffffff;
+  --foreground: #000000;
+  --card: #ffffff;
+  --card-foreground: #000000;
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f2f2;
+  --secondary-foreground: #000000;
+  --muted: #f7f7f7;
+  --muted-foreground: #444444;
+  --accent: #ececec;
+  --accent-foreground: #000000;
+  --destructive: #000000;
+  --border: #1a1a1a;
+  --input: #1a1a1a;
+  --ring: #000000;
+  filter: grayscale(1);
+}
+
+.landing-monochrome,
+.landing-monochrome * {
+  border-radius: 0 !important;
+}
+
+.landing-monochrome .typing-animation::after {
+  color: var(--foreground);
+}
+
 /* Smooth scroll for anchor links */
 html {
   scroll-behavior: smooth;
