@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Zap } from 'lucide-react'
 import type { Node } from './registry'
 import { getComponentDef, STYLE_PROP_KEYS } from './registry'
@@ -109,6 +109,10 @@ type Props = {
   /** AI edit lock state for this screen. */
   aiProtected?: boolean
   onAiProtectedChange?: (locked: boolean) => void
+  /** Optional browser storage key to persist active tab for this editor session. */
+  tabStorageKey?: string
+  /** Optional browser storage key to persist property panel scroll position. */
+  scrollStorageKey?: string
 }
 
 const LAYOUT_KEYS = ['display', 'flexDirection', 'flexWrap', 'alignItems', 'alignContent', 'justifyContent', 'gap', 'rowGap', 'columnGap', 'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft', 'width', 'height', 'minHeight', 'maxHeight', 'minWidth', 'maxWidth', 'flexGrow', 'flexShrink', 'flexBasis', 'flex', 'alignSelf', 'justifySelf', 'order', 'gridTemplateColumns', 'gridTemplateRows', 'gridColumn', 'gridRow']
@@ -463,6 +467,8 @@ export function PropertyPanel({
   projectAssets,
   seoSettings = {},
   onSeoChange,
+  tabStorageKey,
+  scrollStorageKey,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('layout')
   const [bindingFor, setBindingFor] = useState<string | null>(null)
@@ -472,8 +478,46 @@ export function PropertyPanel({
   const [expressionModal, setExpressionModal] = useState<{ ev: string; stepIdx: number; field: 'value' | 'conditionLeft' | 'conditionRight' } | null>(null)
   const [assetPickerFor, setAssetPickerFor] = useState<{ ev: string; stepIdx: number } | { propKey: string; filterType?: 'image' | 'audio' | 'video' | 'all' } | null>(null)
   const [propExpressionKey, setPropExpressionKey] = useState<string | null>(null)
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null)
 
   const props = node?.props ?? {}
+
+  useEffect(() => {
+    if (!tabStorageKey || typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(tabStorageKey)
+      if (!raw) return
+      const validTabs: PanelTab[] = ['theme', 'layout', 'content', 'style', 'animation', 'events', 'state', 'assets', 'data', 'seo']
+      if ((validTabs as string[]).includes(raw)) {
+        setActiveTab(raw as PanelTab)
+      }
+    } catch {}
+  }, [tabStorageKey])
+
+  useEffect(() => {
+    if (!tabStorageKey || typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(tabStorageKey, activeTab)
+    } catch {}
+  }, [tabStorageKey, activeTab])
+
+  useEffect(() => {
+    if (!scrollStorageKey || typeof window === 'undefined' || !bodyScrollRef.current) return
+    try {
+      const raw = window.localStorage.getItem(`${scrollStorageKey}:scrollTop`)
+      if (raw) bodyScrollRef.current.scrollTop = Math.max(0, Number(raw) || 0)
+    } catch {}
+  }, [scrollStorageKey, activeTab])
+
+  useEffect(() => {
+    if (!scrollStorageKey || typeof window === 'undefined' || !bodyScrollRef.current) return
+    const el = bodyScrollRef.current
+    const onScroll = () => {
+      try { window.localStorage.setItem(`${scrollStorageKey}:scrollTop`, String(el.scrollTop)) } catch {}
+    }
+    el.addEventListener('scroll', onScroll)
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [scrollStorageKey])
   const setProp = useCallback(
     (key: string, value: unknown) => {
       if (!node) return
@@ -1501,7 +1545,7 @@ export function PropertyPanel({
           </div>
         </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3">
+      <div ref={bodyScrollRef} className="flex-1 min-h-0 overflow-auto p-3 space-y-3">
         {activeTab === 'theme' && onThemeChange && (() => {
           const ThemeColorRow = ({ label, themeKey, placeholder }: { label: string; themeKey: keyof ScreenTheme; placeholder: string }) => {
             const val = (theme[themeKey] as string) ?? ''

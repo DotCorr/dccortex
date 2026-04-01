@@ -27,6 +27,7 @@ type Props = {
   onCreateReusable?: (id: string) => void
   onMove?: (nodeId: string, targetParentId: string, index: number) => void
   globalReusables?: ReusableMeta[]
+  storageKey?: string
 }
 
 type DropZone = 'above' | 'below' | 'inside' | null
@@ -38,7 +39,7 @@ function NodeTreeItem({
   node, rootId, parentId, indexInParent,
   selectedId, onSelect, onDelete, onCreateReusable, onMove,
   depth, ancestorLines, draggingNodeId, onDragStartNode, onDragEndNode,
-  reusablesMap,
+  reusablesMap, storageKey,
 }: {
   node: Node; rootId: string; parentId: string; indexInParent: number
   selectedId: string | null; onSelect: (id: string) => void
@@ -47,10 +48,21 @@ function NodeTreeItem({
   depth: number; ancestorLines: boolean[]
   draggingNodeId: string | null; onDragStartNode: (id: string) => void; onDragEndNode: () => void
   reusablesMap?: Map<string, ReusableMeta>
+  storageKey?: string
 }) {
   // Auto-collapse deep subtrees with many children to keep the tree performant
   const childCount = node.children?.length ?? 0
-  const [expanded, setExpanded] = useState(depth < 3 || childCount <= 10)
+  const expandedStorageKey = storageKey ? `${storageKey}:expanded:${node.id}` : null
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window !== 'undefined' && expandedStorageKey) {
+      try {
+        const raw = window.localStorage.getItem(expandedStorageKey)
+        if (raw === '1') return true
+        if (raw === '0') return false
+      } catch {}
+    }
+    return depth < 3 || childCount <= 10
+  })
   const [dropZone, setDropZone] = useState<DropZone>(null)
   const isSelected = selectedId === node.id
   const domId = getDomId(node)
@@ -62,6 +74,13 @@ function NodeTreeItem({
   useEffect(() => {
     if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [isSelected])
+
+  useEffect(() => {
+    if (!expandedStorageKey || typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(expandedStorageKey, expanded ? '1' : '0')
+    } catch {}
+  }, [expandedStorageKey, expanded])
 
   // Auto-expand if selected node is a descendant of this collapsed node
   useEffect(() => {
@@ -265,6 +284,7 @@ function NodeTreeItem({
                 ancestorLines={[...ancestorLines, !isLast]}
                 draggingNodeId={draggingNodeId} onDragStartNode={onDragStartNode} onDragEndNode={onDragEndNode}
                 reusablesMap={reusablesMap}
+                storageKey={storageKey}
               />
             )
           })}
@@ -274,13 +294,33 @@ function NodeTreeItem({
   )
 }
 
-export function NodeTree({ root, selectedId, onSelect, onDelete, onCreateReusable, onMove, globalReusables }: Props) {
+export function NodeTree({ root, selectedId, onSelect, onDelete, onCreateReusable, onMove, globalReusables, storageKey }: Props) {
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   const reusablesMap = globalReusables?.length
     ? new Map(globalReusables.map((r) => [r.id, r]))
     : undefined
+
+  useEffect(() => {
+    if (!storageKey || typeof window === 'undefined' || !scrollRef.current) return
+    try {
+      const raw = window.localStorage.getItem(`${storageKey}:scrollTop`)
+      if (raw) scrollRef.current.scrollTop = Math.max(0, Number(raw) || 0)
+    } catch {}
+  }, [storageKey, root.id])
+
+  useEffect(() => {
+    if (!storageKey || typeof window === 'undefined' || !scrollRef.current) return
+    const el = scrollRef.current
+    const onScroll = () => {
+      try { window.localStorage.setItem(`${storageKey}:scrollTop`, String(el.scrollTop)) } catch {}
+    }
+    el.addEventListener('scroll', onScroll)
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [storageKey])
+
   return (
-    <div className="h-full overflow-y-auto overflow-x-hidden py-1 bg-white dark:bg-[#1e1e1e]" role="tree" aria-label="Component Tree">
+    <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden py-1 bg-white dark:bg-[#1e1e1e]" role="tree" aria-label="Component Tree">
       <div className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-[0.1em] mb-1 px-2 pt-1 select-none">
         Component Tree
       </div>
@@ -293,6 +333,7 @@ export function NodeTree({ root, selectedId, onSelect, onDelete, onCreateReusabl
         onDragStartNode={setDraggingNodeId}
         onDragEndNode={() => setDraggingNodeId(null)}
         reusablesMap={reusablesMap}
+        storageKey={storageKey}
       />
     </div>
   )

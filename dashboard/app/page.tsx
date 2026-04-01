@@ -675,13 +675,19 @@ export default function Home() {
               </h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
                 Launch with a single platform plan, then scale by deployment size and support tier. Security and compliance foundations are included,
-                with formal certification workstreams completed as your program matures.
+                with formal certification workstreams completed as your program matures. Community use remains free, while enterprise plans fund
+                long-term support, prioritized feature requests, and direct developer support.
               </p>
             </div>
           </Reveal>
 
           <div className="grid md:grid-cols-3 gap-6">
             {[
+              {
+                title: 'Community (Free)',
+                desc: 'Free forever for teams building and learning with the open community version.',
+                items: ['Core builder and runtime', 'Community docs and updates', 'Self-serve GitHub workflow'],
+              },
               {
                 title: 'Starter Self-Host',
                 desc: 'Core builder, API access, and deployment tooling for internal platform teams.',
@@ -714,6 +720,13 @@ export default function Home() {
               </Reveal>
             ))}
           </div>
+
+          <Reveal delay={120}>
+            <div className="mt-8 border border-border bg-card p-5 text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">Enterprise-first model:</span> DCCortex keeps the community version free for broad
+              adoption, while enterprise subscriptions cover long-term maintenance, enterprise-grade support SLAs, and roadmap feature requests.
+            </div>
+          </Reveal>
         </div>
       </section>
 
@@ -1187,7 +1200,7 @@ export default function Home() {
                 <span className="text-base font-bold text-white">DCCortex</span>
               </div>
               <p className="text-sm leading-relaxed">
-                The open-source no-code platform for building internal tools, portals, and automations.
+                Enterprise-first platform with a free community version for builders, and paid enterprise plans for long-term support and roadmap acceleration.
               </p>
             </div>
             <div>
@@ -1205,7 +1218,7 @@ export default function Home() {
               <ul className="space-y-2 text-sm">
                 <li><a href="https://github.com/dotcorr/dccortex" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a></li>
                 <li><a href="https://github.com/DotCorr/dccortex/tree/feature/oidc-sso-slice/docs/enterprise" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Enterprise Documentation</a></li>
-                <li><Link href="/login" className="hover:text-white transition-colors">Community</Link></li>
+                <li><a href="https://github.com/dotcorr/dccortex" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Community Edition (Free)</a></li>
               </ul>
             </div>
             <div>

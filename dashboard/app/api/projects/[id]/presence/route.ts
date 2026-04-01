@@ -77,6 +77,9 @@ export async function POST(
     const cursorY = typeof body.cursorY === 'number' && Number.isFinite(body.cursorY)
       ? Math.min(1, Math.max(0, body.cursorY))
       : null
+    const viewState = body.viewState && typeof body.viewState === 'object'
+      ? (body.viewState as Record<string, unknown>)
+      : null
 
     const presence = upsertPresence({
       projectId: auth.projectId,
@@ -86,6 +89,7 @@ export async function POST(
       selectionId,
       cursorX,
       cursorY,
+      viewState,
       clientId,
     })
 

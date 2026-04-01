@@ -67,14 +67,16 @@ type Props = {
   autoCloseAfterAdd?: boolean
   onAutoCloseAfterAddChange?: (enabled: boolean) => void
   onRequestClose?: () => void
+  scrollStorageKey?: string
 }
 
 /** Reusable instance is only added when inserting from Global Reusables pane; hide from palette. */
 const PALETTE_HIDDEN_TYPES = new Set(['reusableInstance'])
 
-export function ComponentPalette({ onDragStart, onAddComponent, autoCloseAfterAdd = false, onAutoCloseAfterAddChange, onRequestClose }: Props) {
+export function ComponentPalette({ onDragStart, onAddComponent, autoCloseAfterAdd = false, onAutoCloseAfterAddChange, onRequestClose, scrollStorageKey }: Props) {
   const [search, setSearch] = React.useState('')
   const [category, setCategory] = React.useState<string>('All')
+  const scrollRef = React.useRef<HTMLDivElement | null>(null)
   const allDefs = getAllComponentDefs().filter((c) => !PALETTE_HIDDEN_TYPES.has(c.id))
   const categoryFiltered = category === 'All' ? allDefs : allDefs.filter((c) => c.category === category)
   const q = String(search ?? '').trim().toLowerCase()
@@ -85,8 +87,26 @@ export function ComponentPalette({ onDragStart, onAddComponent, autoCloseAfterAd
     if (onAddComponent && autoCloseAfterAdd) onRequestClose?.()
   }
 
+  React.useEffect(() => {
+    if (!scrollStorageKey || typeof window === 'undefined' || !scrollRef.current) return
+    try {
+      const raw = window.localStorage.getItem(`${scrollStorageKey}:scrollTop`)
+      if (raw) scrollRef.current.scrollTop = Math.max(0, Number(raw) || 0)
+    } catch {}
+  }, [scrollStorageKey])
+
+  React.useEffect(() => {
+    if (!scrollStorageKey || typeof window === 'undefined' || !scrollRef.current) return
+    const el = scrollRef.current
+    const onScroll = () => {
+      try { window.localStorage.setItem(`${scrollStorageKey}:scrollTop`, String(el.scrollTop)) } catch {}
+    }
+    el.addEventListener('scroll', onScroll)
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [scrollStorageKey])
+
   return (
-    <div className="p-3 border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] h-full overflow-auto shrink-0 flex flex-col">
+    <div ref={scrollRef} className="p-3 border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] h-full overflow-auto shrink-0 flex flex-col">
       <div className="mb-3">
         <input
           type="text"
