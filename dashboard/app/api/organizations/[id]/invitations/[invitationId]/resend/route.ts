@@ -11,8 +11,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PERMISSIONS } from '@/lib/permissions'
+import { logAuditEvent } from '@/lib/audit'
 import { sendInvitationEmail } from '@/lib/email'
 
 function getBaseUrl(req: NextRequest): string {
@@ -44,17 +46,18 @@ export async function POST(
     const organizationId = resolvedParams.id
     const invitationId = resolvedParams.invitationId
 
-    // Check if user is member of organization
-    const membership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId,
-          userId: session.user.id,
-        },
-      },
-    })
-
-    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    const canManage = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+    if (!canManage) {
+      await logAuditEvent({
+        action: 'org.invitation.resend',
+        status: 'denied',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'invitation',
+        targetId: invitationId,
+        reason: 'insufficient_permissions',
+        request: req,
+      })
       return NextResponse.json(
         { error: 'Insufficient permissions' },
         { status: 403 }
@@ -107,22 +110,58 @@ export async function POST(
         invitation.organization.name,
         invitationLink
       )
-    } catch (emailError: any) {
+    } catch (emailError: unknown) {
+      const emailErrorMessage = emailError instanceof Error ? emailError.message : 'email_send_failed'
       // Log email error but don't fail the request
-      console.error('[Resend Invitation] Email error:', emailError.message)
+      console.error('[Resend Invitation] Email error:', emailErrorMessage)
+      await logAuditEvent({
+        action: 'org.invitation.resend',
+        status: 'failure',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'invitation',
+        targetId: invitation.id,
+        reason: emailErrorMessage,
+        request: req,
+      })
       // Still return success - invitation exists and is valid, email might have issues
       return NextResponse.json({ 
         success: true, 
         message: 'Invitation link is valid. Email may not have been sent due to SMTP configuration.',
-        warning: emailError.message 
+        warning: emailErrorMessage 
       })
     }
 
+    await logAuditEvent({
+      action: 'org.invitation.resend',
+      status: 'success',
+      actorUserId: session.user.id,
+      organizationId,
+      targetType: 'invitation',
+      targetId: invitation.id,
+      metadata: {
+        invitedEmail: normalizedEmail,
+      },
+      request: req,
+    })
+
     return NextResponse.json({ success: true, message: 'Invitation resent successfully' })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Resend Invitation] Error:', error)
+    const resolvedParams = await Promise.resolve(params)
+    const message = error instanceof Error ? error.message : 'unknown_error'
+    await logAuditEvent({
+      action: 'org.invitation.resend',
+      status: 'failure',
+      actorUserId: null,
+      organizationId: resolvedParams.id,
+      targetType: 'invitation',
+      targetId: resolvedParams.invitationId,
+      reason: message,
+      request: req,
+    })
     return NextResponse.json(
-      { error: 'Failed to resend invitation', message: error.message },
+      { error: 'Failed to resend invitation', message },
       { status: 500 }
     )
   }

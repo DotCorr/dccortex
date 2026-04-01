@@ -11,8 +11,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PERMISSIONS } from '@/lib/permissions'
+import { logAuditEvent } from '@/lib/audit'
 
 export async function DELETE(
   req: NextRequest,
@@ -29,7 +31,25 @@ export async function DELETE(
     const organizationId = resolvedParams.id
     const memberId = resolvedParams.memberId
 
-    // Check if requester is owner or admin
+    const canManage = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+    if (!canManage) {
+      await logAuditEvent({
+        action: 'org.member.remove',
+        status: 'denied',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'organization_member',
+        targetId: memberId,
+        reason: 'insufficient_permissions',
+        request: req,
+      })
+      return NextResponse.json(
+        { error: 'Insufficient permissions' },
+        { status: 403 }
+      )
+    }
+
+    // Check if requester exists as a member for owner-specific guardrails
     const requesterMembership = await prisma.organizationMember.findUnique({
       where: {
         organizationId_userId: {
@@ -39,7 +59,7 @@ export async function DELETE(
       },
     })
 
-    if (!requesterMembership || !['owner', 'admin'].includes(requesterMembership.role)) {
+    if (!requesterMembership) {
       return NextResponse.json(
         { error: 'Insufficient permissions' },
         { status: 403 }
@@ -60,6 +80,16 @@ export async function DELETE(
 
     // Prevent removing owner
     if (member.role === 'owner') {
+      await logAuditEvent({
+        action: 'org.member.remove',
+        status: 'denied',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'organization_member',
+        targetId: member.id,
+        reason: 'owner_protected',
+        request: req,
+      })
       return NextResponse.json(
         { error: 'Cannot remove the organization owner' },
         { status: 400 }
@@ -68,6 +98,16 @@ export async function DELETE(
 
     // Prevent removing yourself (unless you're the owner)
     if (member.userId === session.user.id && requesterMembership.role !== 'owner') {
+      await logAuditEvent({
+        action: 'org.member.remove',
+        status: 'denied',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'organization_member',
+        targetId: member.id,
+        reason: 'self_removal_blocked',
+        request: req,
+      })
       return NextResponse.json(
         { error: 'You cannot remove yourself' },
         { status: 400 }
@@ -79,10 +119,36 @@ export async function DELETE(
       where: { id: memberId },
     })
 
+    await logAuditEvent({
+      action: 'org.member.remove',
+      status: 'success',
+      actorUserId: session.user.id,
+      organizationId,
+      targetType: 'organization_member',
+      targetId: member.id,
+      metadata: {
+        removedUserId: member.userId,
+        removedRole: member.role,
+      },
+      request: req,
+    })
+
     return NextResponse.json({ success: true, message: 'Member removed successfully' })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const resolvedParams = await Promise.resolve(params)
+    const message = error instanceof Error ? error.message : 'unknown_error'
+    await logAuditEvent({
+      action: 'org.member.remove',
+      status: 'failure',
+      actorUserId: null,
+      organizationId: resolvedParams.id,
+      targetType: 'organization_member',
+      targetId: resolvedParams.memberId,
+      reason: message,
+      request: req,
+    })
     return NextResponse.json(
-      { error: 'Failed to remove member', message: error.message },
+      { error: 'Failed to remove member', message },
       { status: 500 }
     )
   }

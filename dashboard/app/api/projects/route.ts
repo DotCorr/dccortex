@@ -13,6 +13,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PERMISSIONS } from '@/lib/permissions'
+import { logAuditEvent } from '@/lib/audit'
 import { z } from 'zod'
 
 const createProjectSchema = z.object({
@@ -72,11 +74,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const whereClause = organizationId
+      ? { organizationId }
+      : { userId: session.user.id }
+
     const projects = await prisma.project.findMany({
-      where: {
-        userId: session.user.id,
-        ...(organizationId && { organizationId }),
-      },
+      where: whereClause,
       include: {
         organization: {
           select: {
@@ -112,20 +115,24 @@ export async function POST(req: NextRequest) {
 
     const slug = await generateUniqueProjectSlug(session.user.id, name)
 
-    // If organizationId provided, verify user is member
+    // If organizationId provided, verify user has app.edit permission
     if (organizationId) {
-      const membership = await prisma.organizationMember.findUnique({
-        where: {
-          organizationId_userId: {
-            organizationId,
-            userId: session.user.id,
+      const canEdit = await hasPermission(organizationId, PERMISSIONS.APP_EDIT, session)
+      if (!canEdit) {
+        await logAuditEvent({
+          action: 'project.create',
+          status: 'denied',
+          actorUserId: session.user.id,
+          organizationId,
+          targetType: 'project',
+          reason: 'insufficient_permissions',
+          metadata: {
+            requestedName: name,
           },
-        },
-      })
-
-      if (!membership) {
+          request: req,
+        })
         return NextResponse.json(
-          { error: 'Not a member of this organization' },
+          { error: 'Insufficient permissions to create project in this organization' },
           { status: 403 }
         )
       }
@@ -150,9 +157,33 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    await logAuditEvent({
+      action: 'project.create',
+      status: 'success',
+      actorUserId: session.user.id,
+      organizationId: project.organizationId,
+      projectId: project.id,
+      targetType: 'project',
+      targetId: project.id,
+      metadata: {
+        projectName: project.name,
+        slug: project.slug,
+      },
+      request: req,
+    })
+
     return NextResponse.json({ project }, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Projects API] Error creating project:', error)
+    const message = error instanceof Error ? error.message : 'unknown_error'
+    await logAuditEvent({
+      action: 'project.create',
+      status: 'failure',
+      actorUserId: null,
+      targetType: 'project',
+      reason: message,
+      request: req,
+    })
     
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -162,7 +193,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: 'Failed to create project', message: error.message },
+      { error: 'Failed to create project', message },
       { status: 500 }
     )
   }

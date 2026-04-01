@@ -11,8 +11,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PERMISSIONS } from '@/lib/permissions'
+import { logAuditEvent } from '@/lib/audit'
 import { sendInvitationEmail } from '@/lib/email'
 import { z } from 'zod'
 import { randomBytes } from 'crypto'
@@ -48,17 +50,17 @@ export async function POST(
 
     const organizationId = params.id
 
-    // Check if user is member of organization
-    const membership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId,
-          userId: session.user.id,
-        },
-      },
-    })
-
-    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    const canManage = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+    if (!canManage) {
+      await logAuditEvent({
+        action: 'org.invitation.create',
+        status: 'denied',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'invitation',
+        reason: 'insufficient_permissions',
+        request: req,
+      })
       return NextResponse.json(
         { error: 'Insufficient permissions' },
         { status: 403 }
@@ -117,17 +119,49 @@ export async function POST(
       invitation.organization.name,
       invitationLink
     )
+    const messageId =
+      typeof emailResult === 'object' &&
+      emailResult !== null &&
+      'messageId' in emailResult
+        ? String((emailResult as { messageId?: unknown }).messageId ?? '')
+        : null
 
     console.log('[Invite API] Invitation email sent', {
       to: normalizedEmail,
       organizationId,
       invitationId: invitation.id,
-      messageId: (emailResult as any)?.messageId,
+      messageId,
+    })
+
+    await logAuditEvent({
+      action: 'org.invitation.create',
+      status: 'success',
+      actorUserId: session.user.id,
+      organizationId,
+      targetType: 'invitation',
+      targetId: invitation.id,
+      metadata: {
+        invitedEmail: normalizedEmail,
+        role,
+        expiresAt: invitation.expiresAt.toISOString(),
+      },
+      request: req,
     })
 
     return NextResponse.json({ invitation }, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Invite API] Failed to send invitation:', error)
+    const organizationId = params?.id
+    const message = error instanceof Error ? error.message : 'unknown_error'
+    await logAuditEvent({
+      action: 'org.invitation.create',
+      status: 'failure',
+      actorUserId: null,
+      organizationId,
+      targetType: 'invitation',
+      reason: message,
+      request: req,
+    })
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Invalid input', details: error.errors },
@@ -136,7 +170,7 @@ export async function POST(
     }
 
     return NextResponse.json(
-      { error: 'Failed to send invitation', message: error.message },
+      { error: 'Failed to send invitation', message },
       { status: 500 }
     )
   }

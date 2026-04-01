@@ -12,8 +12,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PERMISSIONS } from '@/lib/permissions'
+import { logAuditEvent } from '@/lib/audit'
 import { z } from 'zod'
 
 const updateRoleSchema = z.object({
@@ -35,7 +37,25 @@ export async function PUT(
     const organizationId = resolvedParams.id
     const memberId = resolvedParams.memberId
 
-    // Check if requester is owner
+    const canManage = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+    if (!canManage) {
+      await logAuditEvent({
+        action: 'org.member.role.update',
+        status: 'denied',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'organization_member',
+        targetId: memberId,
+        reason: 'insufficient_permissions',
+        request: req,
+      })
+      return NextResponse.json(
+        { error: 'Insufficient permissions to change member roles' },
+        { status: 403 }
+      )
+    }
+
+    // Load requester membership for owner-only safeguards
     const requesterMembership = await prisma.organizationMember.findUnique({
       where: {
         organizationId_userId: {
@@ -45,9 +65,9 @@ export async function PUT(
       },
     })
 
-    if (!requesterMembership || requesterMembership.role !== 'owner') {
+    if (!requesterMembership) {
       return NextResponse.json(
-        { error: 'Only the owner can change member roles' },
+        { error: 'Insufficient permissions to change member roles' },
         { status: 403 }
       )
     }
@@ -70,8 +90,35 @@ export async function PUT(
       )
     }
 
+    if ((role === 'owner' || member.role === 'owner') && requesterMembership.role !== 'owner') {
+      await logAuditEvent({
+        action: 'org.member.role.update',
+        status: 'denied',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'organization_member',
+        targetId: member.id,
+        reason: 'owner_role_change_forbidden',
+        request: req,
+      })
+      return NextResponse.json(
+        { error: 'Only the owner can assign or change owner role' },
+        { status: 403 }
+      )
+    }
+
     // Prevent changing owner role (owner can't demote themselves)
     if (member.role === 'owner' && member.userId === session.user.id) {
+      await logAuditEvent({
+        action: 'org.member.role.update',
+        status: 'denied',
+        actorUserId: session.user.id,
+        organizationId,
+        targetType: 'organization_member',
+        targetId: member.id,
+        reason: 'self_owner_demote_blocked',
+        request: req,
+      })
       return NextResponse.json(
         { error: 'You cannot change your own owner role' },
         { status: 400 }
@@ -122,8 +169,36 @@ export async function PUT(
       },
     })
 
+    await logAuditEvent({
+      action: 'org.member.role.update',
+      status: 'success',
+      actorUserId: session.user.id,
+      organizationId,
+      targetType: 'organization_member',
+      targetId: member.id,
+      metadata: {
+        previousRole: member.role,
+        previousRoleId: member.roleId,
+        nextRole: updated.role,
+        nextRoleId: updated.roleId,
+      },
+      request: req,
+    })
+
     return NextResponse.json({ member: updated })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const resolvedParams = await Promise.resolve(params)
+    const message = error instanceof Error ? error.message : 'unknown_error'
+    await logAuditEvent({
+      action: 'org.member.role.update',
+      status: 'failure',
+      actorUserId: null,
+      organizationId: resolvedParams.id,
+      targetType: 'organization_member',
+      targetId: resolvedParams.memberId,
+      reason: message,
+      request: req,
+    })
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Invalid input', details: error.errors },
@@ -132,7 +207,7 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { error: 'Failed to update role', message: error.message },
+      { error: 'Failed to update role', message },
       { status: 500 }
     )
   }
