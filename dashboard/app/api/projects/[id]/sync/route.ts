@@ -6,34 +6,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { requireProjectDataAccess } from '@/lib/project-access'
 import { listPresence, subscribeProjectSync } from '@/lib/projects/live-sync'
 
 type Params = Promise<{ id: string }> | { id: string }
 
 async function getAuthorisedProjectId(params: Params): Promise<{ projectId: string } | NextResponse> {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const userId = (session.user as { id?: string }).id
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { id: projectId } = await Promise.resolve(params)
-  const project = await prisma.project.findFirst({
-    where: {
-      id: projectId,
-      OR: [
-        { userId },
-        { organization: { members: { some: { userId } } } },
-      ],
-    },
-    select: { id: true },
-  })
-
-  if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return { projectId: project.id }
+  const access = await requireProjectDataAccess(projectId, false)
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+  return { projectId: access.project.id }
 }
 
 function toSseData(data: unknown): string {
@@ -41,7 +23,7 @@ function toSseData(data: unknown): string {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Params }
 ) {
   try {
@@ -49,47 +31,66 @@ export async function GET(
     if (auth instanceof NextResponse) return auth
 
     const { projectId } = auth
+    let messageId = 0
     let heartbeat: ReturnType<typeof setInterval> | null = null
     let unsubscribe: (() => void) | null = null
+    let closed = false
+
+    const cleanup = () => {
+      if (closed) return
+      closed = true
+      if (unsubscribe) {
+        unsubscribe()
+        unsubscribe = null
+      }
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = null
+      }
+    }
+
+    request.signal.addEventListener('abort', cleanup)
 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         const encoder = new TextEncoder()
+        const send = (payload: unknown) => {
+          messageId += 1
+          controller.enqueue(encoder.encode(`id: ${messageId}\n`))
+          controller.enqueue(encoder.encode(toSseData(payload)))
+        }
 
         controller.enqueue(encoder.encode(': connected\n\n'))
-        controller.enqueue(encoder.encode(toSseData({
+        controller.enqueue(encoder.encode('retry: 5000\n\n'))
+        send({
           type: 'presence',
           projectId,
           payload: listPresence(projectId),
           at: Date.now(),
-        })))
+        })
 
         unsubscribe = subscribeProjectSync(projectId, (event) => {
-          controller.enqueue(encoder.encode(toSseData(event)))
+          if (closed) return
+          send(event)
         })
 
         heartbeat = setInterval(() => {
+          if (closed) return
           controller.enqueue(encoder.encode(': heartbeat\n\n'))
         }, 20_000)
 
       },
       cancel() {
-        if (unsubscribe) {
-          unsubscribe()
-          unsubscribe = null
-        }
-        if (heartbeat) {
-          clearInterval(heartbeat)
-          heartbeat = null
-        }
+        cleanup()
       },
     })
 
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache, no-transform',
+        'Cache-Control': 'no-cache, no-store, no-transform',
         Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     })
   } catch (err) {

@@ -1,0 +1,178 @@
+name: Validate Enterprise Evidence Pack
+
+# Trigger on semantically versioned release tags (e.g., v1.0.0, v1.0.0-enterprise.1)
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-evidence-pack:
+    name: Validate Release Evidence Pack
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Extract release tag
+        id: tag
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "Evidence pack validation for release: $TAG_NAME"
+
+      - name: Validate evidence pack directory structure
+        run: |
+          RELEASE_TAG="${{ steps.tag.outputs.tag }}"
+          EVIDENCE_ROOT="docs/enterprise/evidence/$RELEASE_TAG"
+          
+          echo "Validating evidence pack at: $EVIDENCE_ROOT"
+          
+          # Check evidence root exists
+          if [[ ! -d "$EVIDENCE_ROOT" ]]; then
+            echo "❌ FAILED: Evidence pack directory does not exist: $EVIDENCE_ROOT"
+            echo "Run: scripts/ops/generate-enterprise-evidence-pack.sh $RELEASE_TAG"
+            exit 1
+          fi
+          echo "✓ Evidence pack directory exists"
+
+      - name: Validate required folders
+        run: |
+          RELEASE_TAG="${{ steps.tag.outputs.tag }}"
+          EVIDENCE_ROOT="docs/enterprise/evidence/$RELEASE_TAG"
+          
+          REQUIRED_DIRS=(
+            "$EVIDENCE_ROOT/security"
+            "$EVIDENCE_ROOT/iam"
+            "$EVIDENCE_ROOT/ops"
+            "$EVIDENCE_ROOT/release"
+            "$EVIDENCE_ROOT/ops/incidents"
+          )
+          
+          for DIR in "${REQUIRED_DIRS[@]}"; do
+            if [[ ! -d "$DIR" ]]; then
+              echo "❌ FAILED: Required directory missing: $DIR"
+              exit 1
+            fi
+            echo "✓ Directory exists: $DIR"
+          done
+
+      - name: Validate required files
+        run: |
+          RELEASE_TAG="${{ steps.tag.outputs.tag }}"
+          EVIDENCE_ROOT="docs/enterprise/evidence/$RELEASE_TAG"
+          
+          REQUIRED_FILES=(
+            "$EVIDENCE_ROOT/README.md"
+            "$EVIDENCE_ROOT/release/release-metadata.json"
+            "$EVIDENCE_ROOT/release/gate-status-template.md"
+            "$EVIDENCE_ROOT/security/security-artifacts-checklist.md"
+            "$EVIDENCE_ROOT/iam/iam-artifacts-checklist.md"
+            "$EVIDENCE_ROOT/ops/incidents/incident-template.md"
+          )
+          
+          for FILE in "${REQUIRED_FILES[@]}"; do
+            if [[ ! -f "$FILE" ]]; then
+              echo "❌ FAILED: Required file missing: $FILE"
+              exit 1
+            fi
+            echo "✓ File exists: $FILE"
+          done
+
+      - name: Validate gate status template structure
+        run: |
+          RELEASE_TAG="${{ steps.tag.outputs.tag }}"
+          GATE_STATUS="docs/enterprise/evidence/$RELEASE_TAG/release/gate-status-template.md"
+          
+          echo "Validating gate status template..."
+          
+          # Check all 8 gates are present
+          GATES=("Gate A" "Gate B" "Gate C" "Gate D" "Gate E" "Gate F" "Gate G" "Gate H")
+          MISSING_GATES=0
+          
+          for GATE in "${GATES[@]}"; do
+            if ! grep -q "$GATE" "$GATE_STATUS"; then
+              echo "❌ FAILED: Gate not found in template: $GATE"
+              MISSING_GATES=$((MISSING_GATES + 1))
+            else
+              echo "✓ Gate found: $GATE"
+            fi
+          done
+          
+          if [[ $MISSING_GATES -gt 0 ]]; then
+            exit 1
+          fi
+          
+          # Check for required reviewer sign-off section (but don't require signatures yet)
+          if ! grep -q "Reviewer Sign-off" "$GATE_STATUS"; then
+            echo "❌ FAILED: 'Reviewer Sign-off' section missing from gate status template"
+            exit 1
+          fi
+          echo "✓ Reviewer sign-off section present"
+
+      - name: Validate release metadata
+        run: |
+          RELEASE_TAG="${{ steps.tag.outputs.tag }}"
+          METADATA_FILE="docs/enterprise/evidence/$RELEASE_TAG/release/release-metadata.json"
+          
+          echo "Validating release metadata..."
+          
+          jq . "$METADATA_FILE" > /dev/null 2>&1 || {
+            echo "❌ FAILED: release-metadata.json is not valid JSON"
+            exit 1
+          }
+          echo "✓ release-metadata.json is valid JSON"
+          
+          # Check required fields
+          REQUIRED_FIELDS=("releaseTag" "generatedAtUtc" "branch" "commitSha")
+          for FIELD in "${REQUIRED_FIELDS[@]}"; do
+            if ! jq -e ".$FIELD" "$METADATA_FILE" > /dev/null 2>&1; then
+              echo "❌ FAILED: Missing field in release metadata: $FIELD"
+              exit 1
+            fi
+            VALUE=$(jq -r ".$FIELD" "$METADATA_FILE")
+            echo "✓ Field present: $FIELD = $VALUE"
+          done
+
+      - name: Generate validation report
+        if: always()
+        run: |
+          RELEASE_TAG="${{ steps.tag.outputs.tag }}"
+          EVIDENCE_ROOT="docs/enterprise/evidence/$RELEASE_TAG"
+          
+          echo "## Evidence Pack Validation Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Release Tag:** \`$RELEASE_TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Validation Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ Evidence pack directory structure validated" >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ All required folders present" >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ All required files present" >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ Gate status template valid" >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ Release metadata valid" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Next Steps" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "1. Review release gate evidence structure at: \`$EVIDENCE_ROOT/\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "2. Populate gate-status-template.md with gate outcomes" >> "$GITHUB_STEP_SUMMARY"
+          echo "3. Attach supporting evidence files to each gate folder" >> "$GITHUB_STEP_SUMMARY"
+          echo "4. Collect reviewer sign-offs" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on validation errors
+        if: failure()
+        run: |
+          echo "❌ Evidence pack validation failed!"
+          echo ""
+          echo "To fix, run:"
+          echo "  scripts/ops/generate-enterprise-evidence-pack.sh ${{ steps.tag.outputs.tag }}"
+          echo "  git add docs/enterprise/evidence/${{ steps.tag.outputs.tag }}/"
+          echo "  git commit --amend --no-edit"
+          echo "  git push origin ${{ github.ref_name }} --force"
+          exit 1
