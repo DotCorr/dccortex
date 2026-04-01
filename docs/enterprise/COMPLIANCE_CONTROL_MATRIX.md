@@ -8,10 +8,10 @@ Note: this is a practical engineering matrix aligned to NIST-style domains. It i
 
 | Domain | Control Objective | Implementation Requirement | Evidence | Owner | Status |
 |---|---|---|---|---|---|
-| Access Control | Least privilege access | Role model enforced in API and UI; deny by default | Role tests, API integration tests | IAM Lead | Planned |
-| Access Control | Central identity | OIDC/SAML integration for enterprise IdP | SSO login test logs, config docs | IAM Lead | Planned |
+| Access Control | Least privilege access | Role model enforced in API and UI; deny by default | Role tests, API integration tests | IAM Lead | Implemented |
+| Access Control | Central identity | OIDC/SAML integration for enterprise IdP | SSO login test logs, config docs | IAM Lead | Implemented |
 | Access Control | Session security | Session timeout, secure cookies, token validation | Security test output | App Lead | Planned |
-| Audit and Accountability | Action traceability | Log admin and security events with actor/action/target/time | Audit log samples | Platform Lead | Planned |
+| Audit and Accountability | Action traceability | Log admin and security events with actor/action/target/time | Audit log samples | Platform Lead | Implemented |
 | Audit and Accountability | Log integrity | Protect audit log from tampering; retention policy | Storage policy, retention config | Ops Lead | Planned |
 | Configuration Management | Controlled changes | Versioned infra and app configs; PR approval rules | Git history, approvals | Release Manager | Planned |
 | Configuration Management | Environment separation | Distinct dev/stage/prod configs and secrets | Env docs, secrets inventory | Ops Lead | Planned |
@@ -22,7 +22,7 @@ Note: this is a practical engineering matrix aligned to NIST-style domains. It i
 | System and Comm Protection | Data protection in transit | TLS 1.2+ only, managed cert rotation | TLS scan report | Security Lead | Planned |
 | System and Comm Protection | Boundary defense | Port restrictions, ingress allowlist where required | Firewall rules snapshot | Ops Lead | Planned |
 | System Integrity | Supply chain trust | Signed images, SBOM, dependency scanning | Signature verification, SBOM files | Security Lead | Planned |
-| Contingency Planning | Recovery capability | Backup schedule and tested restore drill | Restore drill report | Ops Lead | Planned |
+| Contingency Planning | Recovery capability | Backup schedule and tested restore drill | Restore drill report | Ops Lead | Implemented |
 | Contingency Planning | RPO/RTO commitments | Defined targets and measured drill results | RPO/RTO evidence | Ops Lead | Planned |
 
 Suggested internal IDs (recommended for tracking):
