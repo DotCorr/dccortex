@@ -12,24 +12,36 @@ const nextConfig = {
     NEXT_PUBLIC_PLATFORM_API_URL: process.env.NEXT_PUBLIC_PLATFORM_API_URL || 'https://api.dccortex.com',
   },
   async headers() {
+    const securityHeaders = [
+      { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+    ]
     const noCache = [
       { key: 'Cache-Control', value: 'no-store, no-cache, max-age=0, must-revalidate' },
       { key: 'Pragma', value: 'no-cache' },
     ]
     return [
-      { source: '/', headers: noCache },
-      { source: '/login', headers: noCache },
-      { source: '/organizations/:path*', headers: noCache },
-      { source: '/dashboard/:path*', headers: noCache },
-      { source: '/apps/:path*', headers: noCache },
-      { source: '/projects/:path*', headers: noCache },
+      {
+        source: '/:path*',
+        headers: securityHeaders,
+      },
+      { source: '/', headers: [...noCache, ...securityHeaders] },
+      { source: '/login', headers: [...noCache, ...securityHeaders] },
+      { source: '/organizations/:path*', headers: [...noCache, ...securityHeaders] },
+      { source: '/dashboard/:path*', headers: [...noCache, ...securityHeaders] },
+      { source: '/apps/:path*', headers: [...noCache, ...securityHeaders] },
+      { source: '/projects/:path*', headers: [...noCache, ...securityHeaders] },
       {
         source: '/api/auth/:path*',
-        headers: noCache,
+        headers: [...noCache, ...securityHeaders],
       },
       {
         source: '/api/projects/:path*',
         headers: [
+          ...securityHeaders,
           { key: 'Access-Control-Allow-Origin', value: 'https://dccortex.com' },
           { key: 'Access-Control-Allow-Credentials', value: 'true' },
           { key: 'Access-Control-Allow-Methods', value: 'GET,POST,PUT,PATCH,DELETE,OPTIONS' },
@@ -39,6 +51,7 @@ const nextConfig = {
       {
         source: '/api/:path*',
         headers: [
+          ...securityHeaders,
           { key: 'Access-Control-Allow-Origin', value: 'https://dccortex.com' },
           { key: 'Access-Control-Allow-Credentials', value: 'true' },
           { key: 'Access-Control-Allow-Methods', value: 'GET,POST,PUT,PATCH,DELETE,OPTIONS' },
