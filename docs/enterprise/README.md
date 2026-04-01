@@ -30,10 +30,17 @@ Purpose: single entry point for enterprise self-host release planning, complianc
 4. Validate offline operation using the Air-Gapped Install Guide.
 5. Ship Kubernetes enterprise mode using the Helm Migration Plan.
 6. Generate evidence pack folders with `scripts/ops/generate-enterprise-evidence-pack.sh <release-tag>`.
+7. Review [CI Gate Evidence Validation](CI_GATE_EVIDENCE_VALIDATION.md) workflow for release tagging process.
 
 ## CI Enforcement
 
-Workflows:
+Automated Evidence Validation:
+- [`.github/workflows/validate-evidence-pack.yml`](.github/workflows/validate-evidence-pack.yml) — Validates evidence pack structure on release tag creation (REQUIRED)
+  - Documentation: [CI Gate Evidence Validation](CI_GATE_EVIDENCE_VALIDATION.md)
+  - Trigger: Any tag matching `v[0-9]+.[0-9]+.[0-9]+*` (e.g., `v1.0.0`)
+  - Validates: Evidence pack directory, required folders, required files, gate templates, metadata JSON
+
+Other Workflows:
 - `.github/workflows/ci.yml`
 - `.github/workflows/security-supply-chain.yml`
 - `.github/workflows/release-gates.yml`
