@@ -289,6 +289,27 @@ model Notification {
   @@map("notifications")
 }
 
+model AuditLog {
+  id             String   @id @default(uuid())
+  action         String
+  status         String   @default("success") // success, denied, failure
+  actorUserId    String?  @map("actor_user_id")
+  organizationId String?  @map("organization_id")
+  projectId      String?  @map("project_id")
+  targetType     String?  @map("target_type")
+  targetId       String?  @map("target_id")
+  reason         String?
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
 model Note {
   id         String   @id @default(uuid())
   title      String
