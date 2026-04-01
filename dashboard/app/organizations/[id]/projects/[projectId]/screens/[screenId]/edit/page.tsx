@@ -324,7 +324,22 @@ type CollaboratorPresence = {
   selectionId?: string | null
   cursorX?: number | null
   cursorY?: number | null
+  viewState?: CollaboratorViewState | null
   clientId?: string
+}
+
+type CollaboratorViewState = {
+  previewSize?: PreviewViewport
+  canvasZoom?: number
+  canvasExpanded?: boolean
+  previewTheme?: 'light' | 'dark'
+  deviceFrameEnabled?: boolean
+  mobileAutoClosePalette?: boolean
+  canvasBgColor?: string
+  showCanvasMesh?: boolean
+  frameConfigByCategory?: Partial<Record<FrameCategory, Partial<FrameConfig>>>
+  panelWidths?: Partial<{ tree: number; palette: number; panel: number }>
+  clientSentAt?: number
 }
 
 type PresenceMode = 'off' | 'slow' | 'panel'
@@ -427,6 +442,7 @@ export default function ScreenEditPage() {
   const [collaboratorsDialogOpen, setCollaboratorsDialogOpen] = useState(false)
   const [presenceMode, setPresenceMode] = useState<PresenceMode>('slow')
   const [mobileAutoClosePalette, setMobileAutoClosePalette] = useState(false)
+  const [panelWidthsVersion, setPanelWidthsVersion] = useState(0)
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -857,17 +873,50 @@ export default function ScreenEditPage() {
     [visibleCollaborators, screenId]
   )
   const presenceSendingEnabled = presenceMode === 'slow' || (presenceMode === 'panel' && collaboratorsDialogOpen)
-  const updateCursorPresence = useCallback((x: number | null, y: number | null) => {
+  const readPanelWidths = useCallback((): Partial<{ tree: number; palette: number; panel: number }> | undefined => {
+    if (typeof window === 'undefined') return undefined
+    try {
+      const raw = window.localStorage.getItem(panelWidthsStorageKey)
+      if (!raw) return undefined
+      const parsed = JSON.parse(raw) as Partial<{ tree: number; palette: number; panel: number }>
+      return {
+        tree: typeof parsed.tree === 'number' ? parsed.tree : undefined,
+        palette: typeof parsed.palette === 'number' ? parsed.palette : undefined,
+        panel: typeof parsed.panel === 'number' ? parsed.panel : undefined,
+      }
+    } catch {
+      return undefined
+    }
+  }, [panelWidthsStorageKey])
+  const buildPresenceViewState = useCallback((): CollaboratorViewState => ({
+    previewSize,
+    canvasZoom,
+    canvasExpanded,
+    previewTheme,
+    deviceFrameEnabled,
+    mobileAutoClosePalette,
+    canvasBgColor,
+    showCanvasMesh,
+    frameConfigByCategory,
+    panelWidths: readPanelWidths(),
+    clientSentAt: Date.now(),
+  }), [previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory, readPanelWidths])
+  const postPresence = useCallback((overrides?: Partial<{ cursorX: number | null; cursorY: number | null; selectionId: string | null }>) => {
     if (!presenceSendingEnabled) return
-    cursorRef.current = { x, y }
     axios.post(`/api/projects/${projectId}/presence`, {
       clientId: clientIdRef.current,
       screenId,
-      selectionId: selectionIdRef.current,
-      cursorX: x,
-      cursorY: y,
+      selectionId: overrides?.selectionId ?? selectionIdRef.current,
+      cursorX: overrides?.cursorX ?? cursorRef.current.x,
+      cursorY: overrides?.cursorY ?? cursorRef.current.y,
+      viewState: buildPresenceViewState(),
     }).catch(() => {})
-  }, [projectId, screenId, presenceSendingEnabled])
+  }, [presenceSendingEnabled, projectId, screenId, buildPresenceViewState])
+  const updateCursorPresence = useCallback((x: number | null, y: number | null) => {
+    if (!presenceSendingEnabled) return
+    cursorRef.current = { x, y }
+    postPresence({ cursorX: x, cursorY: y })
+  }, [presenceSendingEnabled, postPresence])
   const handleCanvasPointerMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const host = canvasViewportRef.current
     if (!host) return
@@ -956,6 +1005,7 @@ export default function ScreenEditPage() {
           selectionId: selectionIdRef.current,
           cursorX: cursorRef.current.x,
           cursorY: cursorRef.current.y,
+          viewState: buildPresenceViewState(),
         })
         if (stopped) return
         const next = Array.isArray(res.data?.presence) ? res.data.presence : []
@@ -975,22 +1025,57 @@ export default function ScreenEditPage() {
       if (heartbeat) clearInterval(heartbeat)
       axios.delete(`/api/projects/${projectId}/presence`, { data: { clientId } }).catch(() => {})
     }
-  }, [projectId, screenId, presenceSendingEnabled, presenceMode])
+  }, [projectId, screenId, presenceSendingEnabled, presenceMode, buildPresenceViewState])
 
   useEffect(() => {
-    if (!projectId || !screenId) return
     if (!presenceSendingEnabled) return
     const t = setTimeout(() => {
-      axios.post(`/api/projects/${projectId}/presence`, {
-        clientId: clientIdRef.current,
-        screenId,
-        selectionId: selectionIdRef.current,
-        cursorX: cursorRef.current.x,
-        cursorY: cursorRef.current.y,
-      }).catch(() => {})
+      postPresence()
     }, 120)
     return () => clearTimeout(t)
-  }, [projectId, screenId, activeSelectedId, presenceSendingEnabled])
+  }, [activeSelectedId, presenceSendingEnabled, postPresence])
+
+  useEffect(() => {
+    if (!presenceSendingEnabled) return
+    const t = window.setTimeout(() => {
+      postPresence()
+    }, 100)
+    return () => window.clearTimeout(t)
+  }, [presenceSendingEnabled, postPresence, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory, panelWidthsVersion])
+
+  const lastAppliedRemoteViewAtRef = useRef(0)
+  useEffect(() => {
+    const candidates = visibleCollaborators
+      .filter((p) => p.screenId === screenId && p.viewState && typeof p.viewState === 'object')
+      .map((p) => p.viewState as CollaboratorViewState)
+      .filter((s) => typeof s.clientSentAt === 'number' && Number.isFinite(s.clientSentAt))
+
+    if (!candidates.length) return
+    const latest = candidates.sort((a, b) => (b.clientSentAt ?? 0) - (a.clientSentAt ?? 0))[0]
+    const sentAt = latest.clientSentAt ?? 0
+    if (sentAt <= lastAppliedRemoteViewAtRef.current) return
+    lastAppliedRemoteViewAtRef.current = sentAt
+
+    if (latest.previewSize === 'mobile' || latest.previewSize === 'tablet' || latest.previewSize === 'desktop' || latest.previewSize === 'freeform') {
+      setPreviewSize(latest.previewSize)
+    }
+    if (typeof latest.canvasZoom === 'number' && Number.isFinite(latest.canvasZoom)) {
+      setCanvasZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, latest.canvasZoom)))
+    }
+    if (typeof latest.canvasExpanded === 'boolean') setCanvasExpanded(latest.canvasExpanded)
+    if (latest.previewTheme === 'light' || latest.previewTheme === 'dark') setPreviewTheme(latest.previewTheme)
+    if (typeof latest.deviceFrameEnabled === 'boolean') setDeviceFrameEnabled(latest.deviceFrameEnabled)
+    if (typeof latest.mobileAutoClosePalette === 'boolean') setMobileAutoClosePalette(latest.mobileAutoClosePalette)
+    if (typeof latest.canvasBgColor === 'string' && latest.canvasBgColor.trim()) setCanvasBgColor(latest.canvasBgColor)
+    if (typeof latest.showCanvasMesh === 'boolean') setShowCanvasMesh(latest.showCanvasMesh)
+    if (latest.frameConfigByCategory) {
+      setFrameConfigByCategory({
+        mobile: normalizeFrameConfig('mobile', latest.frameConfigByCategory.mobile),
+        tablet: normalizeFrameConfig('tablet', latest.frameConfigByCategory.tablet),
+        desktop: normalizeFrameConfig('desktop', latest.frameConfigByCategory.desktop),
+      })
+    }
+  }, [visibleCollaborators, screenId, ZOOM_MAX, ZOOM_MIN])
 
   useEffect(() => {
     for (const painted of paintedSelectionsRef.current) {
@@ -1206,6 +1291,7 @@ export default function ScreenEditPage() {
       setCanvasStageSize({ width, height })
       const fit = Math.min(width / fitLogicalSize.width, height / fitLogicalSize.height, 1)
       setCanvasFitScale(Number.isFinite(fit) && fit > 0 ? fit : 1)
+      setPanelWidthsVersion((v) => v + 1)
     }
   }, [fitLogicalSize.width, fitLogicalSize.height])
 

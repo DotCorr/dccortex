@@ -23,6 +23,7 @@ type PresenceEntry = {
   selectionId: string | null
   cursorX: number | null
   cursorY: number | null
+  viewState: Record<string, unknown> | null
   clientId: string
   updatedAt: number
 }
@@ -92,6 +93,7 @@ export function upsertPresence(params: {
   selectionId: string | null
   cursorX: number | null
   cursorY: number | null
+  viewState: Record<string, unknown> | null
   clientId: string
 }): PresenceEntry[] {
   const map = getProjectPresenceMap(params.projectId)
@@ -109,6 +111,7 @@ export function upsertPresence(params: {
     selectionId: params.selectionId,
     cursorX: params.cursorX,
     cursorY: params.cursorY,
+    viewState: params.viewState,
     clientId: params.clientId,
     updatedAt: Date.now(),
   })
