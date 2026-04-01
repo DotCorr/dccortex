@@ -17,7 +17,7 @@ import {
   Building2, Landmark, Factory, Stethoscope, Truck, GraduationCap,
   MousePointerClick, Sparkles, Database, Workflow, Check, Menu, X,
   LayoutGrid, Table2, BarChart3, FormInput, PanelLeftClose, Eye,
-  GitBranch, Lock, Server, Plug, RefreshCw, Clock
+  GitBranch, Lock, Server, Plug, RefreshCw, Clock, FileCheck2
 } from 'lucide-react'
 
 /* ───────────── fade-in-on-scroll ───────────── */
@@ -63,10 +63,10 @@ function WysiwygExplainer() {
   }, [])
 
   const items = [
-    { title: 'What You See', desc: 'A drag-and-drop canvas with real components' },
-    { title: 'Is What You Get', desc: 'Exactly what your users see in production' },
-    { title: 'No Surprises', desc: 'No rendering differences, no browser quirks' },
-    { title: 'No Code Needed', desc: 'Design the entire interface visually' }
+    { title: 'Enterprise-Ready', desc: 'Self-hosted platform with operational controls' },
+    { title: 'Compliance-First', desc: 'Audit logs, incident response, and recovery drills' },
+    { title: 'Control Aligned', desc: 'NIST 800-53 mapped control coverage' },
+    { title: 'Certification Path', desc: 'Built to support SOC2 and FedRAMP readiness workstreams' }
   ]
 
   return (
@@ -333,15 +333,15 @@ export default function Home() {
   }, [])
 
   const ctaHref = session ? '/dashboard' : '/login'
-  const ctaLabel = session ? 'Go to Dashboard' : 'Get Started'
+  const ctaLabel = session ? 'Go to Dashboard' : 'Start Enterprise Trial'
 
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+    <div className="landing-monochrome min-h-screen bg-background text-foreground overflow-x-hidden">
       <div
         aria-label="Alpha release badge"
         className="fixed top-3 right-3 z-[70] pointer-events-none"
       >
-        <div className="bg-amber-500 text-black text-[10px] sm:text-xs font-extrabold tracking-wider px-3 py-1.5 border border-amber-700/40 shadow-lg uppercase rounded-sm overflow-hidden">
+        <div className="bg-foreground text-background text-[10px] sm:text-xs font-extrabold tracking-wider px-3 py-1.5 border border-border shadow-lg uppercase overflow-hidden">
           Alpha
         </div>
       </div>
@@ -362,7 +362,8 @@ export default function Home() {
           <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             <a href="#how-it-works" className="hover:text-foreground transition-colors">How It Works</a>
-            <a href="#solutions" className="hover:text-foreground transition-colors">Solutions</a>
+            <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
+            <a href="#trust" className="hover:text-foreground transition-colors">Trust</a>
             <a href="#enterprise" className="hover:text-foreground transition-colors">Enterprise</a>
           </div>
 
@@ -386,7 +387,8 @@ export default function Home() {
           <div className="md:hidden bg-background border-b border-border px-6 pb-4 space-y-3">
             <a href="#features" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Features</a>
             <a href="#how-it-works" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>How It Works</a>
-            <a href="#solutions" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Solutions</a>
+            <a href="#pricing" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
+            <a href="#trust" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Trust</a>
             <a href="#enterprise" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Enterprise</a>
             <div className="flex gap-3 pt-2">
               {!session && <Link href="/login" className="text-sm font-medium text-foreground">Log in</Link>}
@@ -412,16 +414,14 @@ export default function Home() {
             </Reveal>
             <Reveal delay={100}>
               <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight text-foreground leading-[1.08] mb-6">
-                Build production apps<br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600">
-                  5x faster without code
-                </span>
+                Enterprise software<br />
+                with trust built in
               </h1>
             </Reveal>
             <Reveal delay={200}>
               <p className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-10">
-                Drag-and-drop screens in seconds. Connect any database or API instantly. Deploy to production with one click.
-                No frontend developers required. No DevOps. No waiting. DCCortex is what happens when WYSIWYG meets the cloud.
+                DCCortex combines visual app delivery with enterprise-grade controls: OIDC SSO, RBAC, immutable audit logs,
+                backup and recovery drills, and incident response workflows. Built for self-hosted teams that need speed and governance.
               </p>
             </Reveal>
             <Reveal delay={300}>
@@ -437,7 +437,7 @@ export default function Home() {
                   href="#how-it-works"
                   className="px-8 py-3.5 text-base font-semibold border border-border text-foreground hover:bg-muted transition-colors flex items-center gap-2"
                 >
-                  See how it works
+                  View trust model
                   <ChevronRight className="w-4 h-4" />
                 </a>
               </div>
@@ -462,9 +462,9 @@ export default function Home() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: 'WYSIWYG Editor', href: '#features', icon: MousePointerClick },
-                { label: 'Connect Data Fast', href: '#how-it-works', icon: Database },
-                { label: 'Real Use Cases', href: '#solutions', icon: Building2 },
-                { label: 'Enterprise Ready', href: '#enterprise', icon: Lock },
+                { label: 'Security and Trust', href: '#trust', icon: Shield },
+                { label: 'Self-Hosted Pricing', href: '#pricing', icon: Database },
+                { label: 'Enterprise Controls', href: '#enterprise', icon: Lock },
               ].map(({ label, href, icon: Icon }) => (
                 <a
                   key={label}
@@ -481,20 +481,20 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── SOCIAL PROOF & STATS ── */}
+      {/* ── TRUST SUMMARY ── */}
       <section className="py-16 md:py-20 border-b border-border">
         <div className="max-w-7xl mx-auto px-6">
           <Reveal>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
               {[
-                { stat: '70%', label: 'Faster delivery than custom code' },
-                { stat: '40%', label: 'Lower total cost of ownership' },
-                { stat: '5x', label: 'More apps per developer per year' },
-                { stat: '0', label: 'DevOps or infrastructure work' },
+                { stat: 'SOC2-Ready', label: 'Self-attested controls aligned to SOC2 trust criteria' },
+                { stat: 'FedRAMP-Ready Path', label: 'Documentation structure prepared for ATO workstreams' },
+                { stat: 'NIST Aligned', label: 'Mapped to NIST SP 800-53 style control domains' },
+                { stat: 'Enterprise Controls', label: 'OIDC, RBAC, audit logs, backup and incident runbooks' },
               ].map(({ stat, label }, i) => (
                 <Reveal key={stat} delay={i * 60}>
                   <div className="text-center">
-                    <div className="text-3xl md:text-4xl font-black text-primary mb-2">{stat}</div>
+                    <div className="text-2xl md:text-3xl font-black text-foreground mb-2">{stat}</div>
                     <p className="text-sm text-muted-foreground">{label}</p>
                   </div>
                 </Reveal>
@@ -503,7 +503,7 @@ export default function Home() {
           </Reveal>
           <Reveal>
             <p className="text-center text-xs font-medium text-muted-foreground uppercase tracking-widest mb-8">
-              Trusted by product teams at companies like
+              Built for teams shipping in regulated and high-control environments
             </p>
           </Reveal>
           <Reveal delay={100}>
@@ -531,7 +531,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <Reveal>
             <div className="text-center mb-16">
-              <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-3">The WYSIWYG Advantage</p>
+              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">The WYSIWYG Advantage</p>
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
                 See exactly what your users will see
               </h2>
@@ -539,7 +539,7 @@ export default function Home() {
                 Real-time, true WYSIWYG editing means what you design is what gets deployed.
                 No guessing. No surprises. Zero gap between design and production.
               </p>
-              <div className="inline-block p-4 bg-primary/5 border border-primary/20 rounded max-w-2xl text-left">
+              <div className="inline-block p-4 bg-muted border border-border max-w-2xl text-left">
                 <p className="text-sm text-muted-foreground mb-2">
                   <span className="font-semibold text-foreground">WYSIWYG</span> = "What You See Is What You Get"
                 </p>
@@ -599,6 +599,110 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── PRICING ── */}
+      <section id="pricing" className="py-24 md:py-32 bg-muted/50 border-y border-border">
+        <div className="max-w-7xl mx-auto px-6">
+          <Reveal>
+            <div className="text-center mb-16">
+              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Pricing</p>
+              <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+                Self-hosted option includes enterprise security controls
+              </h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                Launch with a single platform plan, then scale by deployment size and support tier. Security and compliance foundations are included,
+                with formal certification workstreams completed as your program matures.
+              </p>
+            </div>
+          </Reveal>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              {
+                title: 'Starter Self-Host',
+                desc: 'Core builder, API access, and deployment tooling for internal platform teams.',
+                items: ['Self-hosted deployment', 'Core role model', 'Operational runbooks'],
+              },
+              {
+                title: 'Enterprise',
+                desc: 'Recommended plan for governance-heavy teams running production workloads.',
+                items: ['OIDC SSO + RBAC', 'Immutable audit logs', 'Backup and restore drill automation'],
+              },
+              {
+                title: 'Enterprise Plus',
+                desc: 'Support-led path for organizations preparing third-party certification programs.',
+                items: ['Incident response evidence workflow', 'Compliance matrix and policy set', 'Certification readiness advisory'],
+              },
+            ].map(({ title, desc, items }, i) => (
+              <Reveal key={title} delay={i * 80}>
+                <div className="p-6 bg-card border border-border h-full">
+                  <h3 className="text-base font-semibold text-foreground mb-2">{title}</h3>
+                  <p className="text-sm text-muted-foreground mb-4">{desc}</p>
+                  <ul className="space-y-2">
+                    {items.map((item) => (
+                      <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <Check className="w-4 h-4 text-foreground flex-shrink-0 mt-0.5" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── TRUST PAGE SECTION ── */}
+      <section id="trust" className="py-24 md:py-32">
+        <div className="max-w-7xl mx-auto px-6">
+          <Reveal>
+            <div className="text-center mb-16">
+              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Security and Trust</p>
+              <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+                Claims you can make today, with a clear path to certification
+              </h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                DCCortex is not claiming formal certification yet. It is positioned as SOC2-ready and FedRAMP-ready path with controls,
+                documentation, and evidence automation designed to support staged certification after launch.
+              </p>
+            </div>
+          </Reveal>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {[
+              {
+                icon: FileCheck2,
+                title: 'SOC2-Adjacent / SOC2-Ready Positioning',
+                desc: 'Self-attested controls aligned to SOC2 trust service criteria, appropriate for early-stage enterprise SaaS trust messaging.',
+              },
+              {
+                icon: Landmark,
+                title: 'FedRAMP-Ready Path',
+                desc: 'Documentation and operational artifacts are structured to support future ATO-focused implementation programs.',
+              },
+              {
+                icon: Shield,
+                title: 'Enterprise-Grade Security Controls',
+                desc: 'OIDC SSO, RBAC, immutable audit logging, backup and restore workflows, incident response runbooks, and evidence pack automation.',
+              },
+              {
+                icon: Lock,
+                title: 'NIST-Aligned Coverage',
+                desc: 'Controls are mapped to NIST SP 800-53 style domains in the enterprise compliance matrix for repeatable governance.',
+              },
+            ].map(({ icon: Icon, title, desc }, i) => (
+              <Reveal key={title} delay={i * 80}>
+                <div className="p-6 bg-card border border-border h-full">
+                  <Icon className="w-6 h-6 text-foreground mb-4" />
+                  <h3 className="text-base font-semibold text-foreground mb-2">{title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── WHAT YOU CAN BUILD ── */}
       <section className="py-24 md:py-32 bg-muted/50">
         <div className="max-w-7xl mx-auto px-6">
@@ -619,43 +723,37 @@ export default function Home() {
               {
                 title: 'Internal Tools & Dashboards',
                 desc: 'Staff management, expense reports, KPI dashboards, approval workflows — everything your business runs on.',
-                gradient: 'from-blue-700 to-blue-500',
               },
               {
                 title: 'Customer Portals',
                 desc: 'Branded, secure self-service portals for clients, suppliers, partners. Full RBAC, audit logs, and data isolation.',
-                gradient: 'from-cyan-700 to-cyan-500',
               },
               {
                 title: 'Admin Panels',
                 desc: 'User management, content moderation, system settings — ship admin features faster than building them in code once.',
-                gradient: 'from-emerald-700 to-emerald-500',
               },
               {
                 title: 'Forms & Data Collection',
                 desc: 'Multi-step forms, conditional logic, validation, file uploads. Data flows secure into your own database.',
-                gradient: 'from-purple-700 to-purple-500',
               },
               {
                 title: 'Operational Apps',
                 desc: 'Inventory tracking, warehouse management, field service dispatch — connected to your ERPs and systems in minutes.',
-                gradient: 'from-amber-700 to-amber-500',
               },
               {
                 title: 'Automations & Workflows',
                 desc: 'Trigger actions on data change. Connect to Slack, Zapier, APIs. Replace your legacy integration layer.',
-                gradient: 'from-rose-700 to-rose-500',
               },
-            ].map(({ title, desc, gradient }, i) => (
+            ].map(({ title, desc }, i) => (
               <Reveal key={title} delay={i * 80}>
                 <div className="group relative overflow-hidden bg-card border border-border hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 h-full">
-                  <div className={`h-2 bg-gradient-to-r ${gradient}`} />
+                  <div className="h-2 bg-foreground" />
                   <div className="p-6">
                     <h3 className="text-base font-semibold text-foreground mb-2">{title}</h3>
                     <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
                     <div className="mt-4 flex items-center gap-2 text-xs text-primary font-medium">
                       <ChevronRight className="w-3.5 h-3.5" />
-                      No code required
+                      Enterprise deployment supported
                     </div>
                   </div>
                 </div>
@@ -670,12 +768,12 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <Reveal>
             <div className="text-center mb-16">
-              <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-3">The Process</p>
+              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">The Process</p>
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
                 Three steps to production
               </h2>
               <p className="text-muted-foreground max-w-xl mx-auto">
-                No boilerplate. No configuration. No waiting for developers. Literally minutes from idea to live app.
+                Build, govern, and deploy with repeatable controls from day one.
               </p>
             </div>
           </Reveal>
@@ -685,19 +783,19 @@ export default function Home() {
               {
                 step: '1',
                 title: 'Connect Your Data',
-                desc: 'Point to PostgreSQL, MySQL, REST APIs, Google Sheets, or any data source. Instant read/write access. No migrations needed.',
+                desc: 'Point to PostgreSQL, MySQL, REST APIs, Google Sheets, or any data source. Create controlled data access with role enforcement.',
                 icon: Database,
               },
               {
                 step: '2',
                 title: 'Design In WYSIWYG',
-                desc: 'Drag components onto screens. Bind them to your data. Design exactly what users will see. What you build is what gets deployed.',
+                desc: 'Drag components onto screens and bind data visually. Build production interfaces with deterministic behavior and auditability.',
                 icon: LayoutGrid,
               },
               {
                 step: '3',
                 title: 'Publish & Scale',
-                desc: 'Click publish. Your app is live immediately, securely connected to your data. No CI/CD. No infrastructure thinking required.',
+                desc: 'Publish to self-hosted environments with versioned release evidence, backup validation, and operational sign-off paths.',
                 icon: Zap,
               },
             ].map(({ step, title, desc, icon: Icon }, i) => (
@@ -744,7 +842,7 @@ export default function Home() {
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <Reveal>
               <div>
-                <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-3">Automations</p>
+                <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Automations</p>
                 <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
                   Make work flow with automations
                 </h2>
@@ -787,7 +885,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <Reveal>
             <div className="text-center mb-16">
-              <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-3">Solutions</p>
+              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Solutions</p>
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
                 From startups to governments
               </h2>
@@ -847,12 +945,12 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <Reveal>
             <div className="text-center mb-16">
-              <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-3">Infrastructure</p>
+              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Infrastructure</p>
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
                 Scale with confidence
               </h2>
               <p className="text-muted-foreground max-w-xl mx-auto">
-                Open-source, self-hostable, and enterprise-grade from day one.
+                Open-source, self-hostable, and governance-ready from day one.
               </p>
             </div>
           </Reveal>
@@ -901,7 +999,7 @@ export default function Home() {
             <Reveal>
               <div className="grid md:grid-cols-2 gap-12 items-center">
                 <div>
-                  <div className="inline-flex items-center gap-2 px-3 py-1 mb-4 text-xs font-medium text-primary bg-primary/10 border border-primary/20">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 mb-4 text-xs font-medium text-foreground bg-muted border border-border">
                     <Sparkles className="w-3 h-3" />
                     AI Assist
                   </div>
@@ -936,7 +1034,7 @@ export default function Home() {
                     <div className="px-3 py-2 bg-muted border border-border text-xs text-muted-foreground">
                       <span className="typing-animation">&ldquo;Create a user management table with edit and delete actions&rdquo;</span>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 px-1">
+                    <div className="flex items-center gap-2 text-xs text-foreground px-1">
                       <Check className="w-3.5 h-3.5" />
                       <span>Generated: Data Table + Form Modal + 3 actions</span>
                     </div>
@@ -950,10 +1048,10 @@ export default function Home() {
                         <div key={r} className="grid grid-cols-4 text-[9px] text-muted-foreground border-b border-border/50 last:border-b-0">
                           <div className="px-2 py-1.5"><div className="w-12 h-2 bg-muted-foreground/20" /></div>
                           <div className="px-2 py-1.5"><div className="w-16 h-2 bg-secondary" /></div>
-                          <div className="px-2 py-1.5"><div className="w-8 h-2 bg-cyan-100" /></div>
+                          <div className="px-2 py-1.5"><div className="w-8 h-2 bg-muted" /></div>
                           <div className="px-2 py-1.5 flex gap-1">
-                            <div className="w-6 h-2 bg-blue-200" />
-                            <div className="w-6 h-2 bg-red-200" />
+                            <div className="w-6 h-2 bg-muted" />
+                            <div className="w-6 h-2 bg-muted" />
                           </div>
                         </div>
                       ))}
@@ -971,7 +1069,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <Reveal>
             <div className="text-center mb-16">
-              <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-3">The Reality Today</p>
+              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">The Reality Today</p>
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
                 You can't keep up with your own business
               </h2>
@@ -1017,12 +1115,12 @@ export default function Home() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground mb-1">{label}</h3>
-                      <p className="text-xs text-red-600 dark:text-red-400 font-medium">❌ {problem}</p>
+                      <p className="text-xs text-foreground font-medium">{problem}</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
-                    <div className="text-primary mt-0.5">✓</div>
-                    <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">{solution}</p>
+                    <div className="text-foreground mt-0.5">+</div>
+                    <p className="text-sm text-foreground font-medium">{solution}</p>
                   </div>
                 </div>
               </Reveal>
@@ -1036,14 +1134,14 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-6 text-center">
           <Reveal>
             <h2 className="text-3xl md:text-5xl font-bold mb-6 leading-tight">
-              Stop waiting for your development roadmap.<br />
-              <span className="text-primary">Build it yourself today.</span>
+              Launch with controls customers can trust.<br />
+              Build now, certify in stages.
             </h2>
           </Reveal>
           <Reveal delay={100}>
             <p className="text-muted-foreground text-lg mb-10 max-w-xl mx-auto">
-              Your internal tools. Your business logic. Your timeline. No developers required.
-              Join teams across enterprises, governments, and industries shipping production apps in hours.
+              Start with a strong control baseline and transparent documentation today.
+              Use funded growth phases to complete third-party certification programs without rebuilding your platform.
             </p>
           </Reveal>
           <Reveal delay={200}>
@@ -1072,7 +1170,7 @@ export default function Home() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer className="py-16 bg-gray-950 text-muted-foreground">
+      <footer className="py-16 bg-black text-muted-foreground">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-10 mb-12">
             <div>
@@ -1089,7 +1187,8 @@ export default function Home() {
               <ul className="space-y-2 text-sm">
                 <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
                 <li><a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a></li>
-                <li><a href="#solutions" className="hover:text-white transition-colors">Solutions</a></li>
+                <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
+                <li><a href="#trust" className="hover:text-white transition-colors">Trust</a></li>
                 <li><a href="#enterprise" className="hover:text-white transition-colors">Enterprise</a></li>
               </ul>
             </div>
@@ -1097,7 +1196,7 @@ export default function Home() {
               <h4 className="text-xs font-semibold text-white uppercase tracking-wider mb-4">Resources</h4>
               <ul className="space-y-2 text-sm">
                 <li><a href="https://github.com/dotcorr/dccortex" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a></li>
-                <li><Link href="/login" className="hover:text-white transition-colors">Documentation</Link></li>
+                <li><a href="https://github.com/DotCorr/dccortex/tree/feature/oidc-sso-slice/docs/enterprise" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Enterprise Documentation</a></li>
                 <li><Link href="/login" className="hover:text-white transition-colors">Community</Link></li>
               </ul>
             </div>
