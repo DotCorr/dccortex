@@ -526,6 +526,71 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── THE REALITY TODAY ── */}
+      <section className="py-20 md:py-24 border-b border-border bg-card">
+        <div className="max-w-7xl mx-auto px-6">
+          <Reveal>
+            <div className="max-w-4xl mx-auto text-center mb-14">
+              <p className="text-xs font-semibold text-foreground uppercase tracking-[0.2em] mb-4">The Reality Today</p>
+              <h2 className="text-3xl md:text-5xl font-black text-foreground leading-tight mb-5">
+                You can&apos;t keep up with your own business
+              </h2>
+              <p className="text-base md:text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed">
+                The gap between what business needs and what developers can deliver keeps growing.
+                DCCortex closes that gap with a production-ready visual platform.
+              </p>
+            </div>
+          </Reveal>
+
+          <div className="grid md:grid-cols-2 gap-4 md:gap-5">
+            {[
+              {
+                icon: Clock,
+                label: 'The Wait',
+                problem: '6-month backlog for internal tools',
+                solution: 'Build them yourself in hours',
+              },
+              {
+                icon: Code2,
+                label: 'Developer Shortage',
+                problem: 'Hiring frontend developers keeps getting harder',
+                solution: 'Empower business teams with WYSIWYG',
+              },
+              {
+                icon: Server,
+                label: 'Infrastructure Overhead',
+                problem: 'DevOps, CI/CD, containerization, deployment',
+                solution: 'Publish instantly, we handle scale',
+              },
+              {
+                icon: Lock,
+                label: 'Data Silos',
+                problem: 'Building with wrong data sources takes weeks',
+                solution: 'Connect any data source in minutes',
+              },
+            ].map(({ icon: Icon, label, problem, solution }, i) => (
+              <Reveal key={label} delay={i * 70}>
+                <div className="border border-border bg-background p-6 md:p-7 h-full">
+                  <div className="flex items-start justify-between gap-4 mb-5">
+                    <div>
+                      <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">{label}</p>
+                      <p className="text-sm md:text-base font-semibold text-foreground leading-snug">{problem}</p>
+                    </div>
+                    <div className="w-10 h-10 border border-border flex items-center justify-center flex-shrink-0">
+                      <Icon className="w-5 h-5 text-foreground" />
+                    </div>
+                  </div>
+                  <div className="pt-4 border-t border-border flex items-start gap-3">
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center border border-border text-[11px] font-bold leading-none px-1">+</span>
+                    <p className="text-sm md:text-base font-medium text-foreground leading-snug">{solution}</p>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── FEATURES ── */}
       <section id="features" className="py-24 md:py-32">
         <div className="max-w-7xl mx-auto px-6">
@@ -1068,71 +1133,6 @@ export default function Home() {
                 </div>
               </div>
             </Reveal>
-          </div>
-        </div>
-      </section>
-
-      {/* ── THE PROBLEM WE SOLVE ── */}
-      <section className="py-24 md:py-32">
-        <div className="max-w-7xl mx-auto px-6">
-          <Reveal>
-            <div className="text-center mb-16">
-              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">The Reality Today</p>
-              <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-                You can't keep up with your own business
-              </h2>
-              <p className="text-muted-foreground max-w-xl mx-auto">
-                The gap between what business needs and what developers can deliver keeps growing.
-                DCCortex closes that gap.
-              </p>
-            </div>
-          </Reveal>
-
-          <div className="grid sm:grid-cols-2 gap-8 mb-12">
-            {[
-              {
-                icon: Clock,
-                label: 'The Wait',
-                problem: '6-month backlog for internal tools',
-                solution: 'Build them yourself in hours',
-              },
-              {
-                icon: Code2,
-                label: 'Developer Shortage',
-                problem: 'Hiring frontend developers keeps getting harder',
-                solution: 'Empower business teams with WYSIWYG',
-              },
-              {
-                icon: Server,
-                label: 'Infrastructure Overhead',
-                problem: 'DevOps, CI/CD, containerization, deployment',
-                solution: 'Publish instantly, we handle scale',
-              },
-              {
-                icon: Lock,
-                label: 'Data Silos',
-                problem: 'Building with wrong data sources takes weeks',
-                solution: 'Connect any data source in minutes',
-              },
-            ].map(({ icon: Icon, label, problem, solution }, i) => (
-              <Reveal key={label} delay={i * 80}>
-                <div className="p-6 border border-border bg-card">
-                  <div className="flex items-start gap-4 mb-4">
-                    <div className="w-10 h-10 bg-muted flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground mb-1">{label}</h3>
-                      <p className="text-xs text-foreground font-medium">{problem}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="text-foreground mt-0.5">+</div>
-                    <p className="text-sm text-foreground font-medium">{solution}</p>
-                  </div>
-                </div>
-              </Reveal>
-            ))}
           </div>
         </div>
       </section>
