@@ -7,6 +7,10 @@ DCCortex is built for:
 - Organizations that need self-hosting control.
 - Enterprise environments that require compliance-oriented release gates.
 
+Delivery model:
+- Community version remains free for builders and self-serve teams.
+- Enterprise plans are for long-term support, prioritized feature requests, and direct developer support.
+
 ## What This Repository Contains
 
 - `dashboard/`: Next.js dashboard and visual builder.
@@ -30,6 +34,8 @@ Use Compose-based deployment for customer-managed Linux VM environments.
 ### 3. Enterprise Hosting (compliance-focused)
 
 Use the enterprise release pack and Kubernetes/Helm pathway for strict operational and compliance requirements.
+
+This repository stays enterprise-first in release standards and compliance posture, while keeping community access free.
 
 Start here:
 - `docs/enterprise/README.md`

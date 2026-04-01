@@ -2,6 +2,8 @@
 
 **Goal:** Every code change is validated against compliance requirements before commit. Build production-ready, not scrambling at release time.
 
+**Edition model:** DCCortex remains enterprise-first in standards and release discipline, while the community version stays free. Enterprise subscriptions fund long-term support, prioritized feature requests, and direct developer support.
+
 ---
 
 ## 1. Compliance Responsibility Map
