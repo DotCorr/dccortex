@@ -12,7 +12,7 @@ Note: this is a practical engineering matrix aligned to NIST-style domains. It i
 | Access Control | Central identity | OIDC/SAML integration for enterprise IdP | SSO login test logs, config docs | IAM Lead | Implemented |
 | Access Control | Session security | Session timeout, secure cookies, token validation | Security test output | App Lead | Planned |
 | Audit and Accountability | Action traceability | Log admin and security events with actor/action/target/time | Audit log samples | Platform Lead | Implemented |
-| Audit and Accountability | Log integrity | Protect audit log from tampering; retention policy | Storage policy, retention config | Ops Lead | Planned |
+| Audit and Accountability | Log integrity | Protect audit log from tampering; retention policy | Storage policy, retention config | Ops Lead | Implemented |
 | Configuration Management | Controlled changes | Versioned infra and app configs; PR approval rules | Git history, approvals | Release Manager | Planned |
 | Configuration Management | Environment separation | Distinct dev/stage/prod configs and secrets | Env docs, secrets inventory | Ops Lead | Planned |
 | Identification and Auth | Strong auth | SSO support and MFA compatibility | SSO test run | IAM Lead | Planned |
