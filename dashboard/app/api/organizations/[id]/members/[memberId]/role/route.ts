@@ -12,8 +12,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PERMISSIONS } from '@/lib/permissions'
 import { z } from 'zod'
 
 const updateRoleSchema = z.object({
@@ -35,7 +36,15 @@ export async function PUT(
     const organizationId = resolvedParams.id
     const memberId = resolvedParams.memberId
 
-    // Check if requester is owner
+    const canManage = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+    if (!canManage) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions to change member roles' },
+        { status: 403 }
+      )
+    }
+
+    // Load requester membership for owner-only safeguards
     const requesterMembership = await prisma.organizationMember.findUnique({
       where: {
         organizationId_userId: {
@@ -45,9 +54,9 @@ export async function PUT(
       },
     })
 
-    if (!requesterMembership || requesterMembership.role !== 'owner') {
+    if (!requesterMembership) {
       return NextResponse.json(
-        { error: 'Only the owner can change member roles' },
+        { error: 'Insufficient permissions to change member roles' },
         { status: 403 }
       )
     }
@@ -67,6 +76,13 @@ export async function PUT(
       return NextResponse.json(
         { error: 'Member not found' },
         { status: 404 }
+      )
+    }
+
+    if ((role === 'owner' || member.role === 'owner') && requesterMembership.role !== 'owner') {
+      return NextResponse.json(
+        { error: 'Only the owner can assign or change owner role' },
+        { status: 403 }
       )
     }
 

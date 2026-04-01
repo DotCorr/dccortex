@@ -11,8 +11,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PERMISSIONS } from '@/lib/permissions'
 import { sendInvitationEmail } from '@/lib/email'
 import { z } from 'zod'
 import { randomBytes } from 'crypto'
@@ -48,17 +49,8 @@ export async function POST(
 
     const organizationId = params.id
 
-    // Check if user is member of organization
-    const membership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId,
-          userId: session.user.id,
-        },
-      },
-    })
-
-    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    const canManage = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+    if (!canManage) {
       return NextResponse.json(
         { error: 'Insufficient permissions' },
         { status: 403 }

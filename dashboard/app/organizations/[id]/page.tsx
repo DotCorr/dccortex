@@ -413,8 +413,12 @@ export default function OrganizationDetailPage() {
 
   // Check if current user is owner/admin
   const currentUserMember = organization?.members?.find((m: any) => m.user?.id === session?.user?.id)
+  const currentUserPermissions = Array.isArray(currentUserMember?.roleRef?.permissions)
+    ? currentUserMember.roleRef.permissions
+    : []
   const isOwner = currentUserMember?.role === 'owner'
   const isAdmin = currentUserMember?.role === 'admin' || isOwner
+  const canManageMembers = isOwner || isAdmin || currentUserPermissions.includes('org.manage')
 
   if (isLoading) {
     return (
@@ -843,7 +847,7 @@ export default function OrganizationDetailPage() {
                 {organization?.members?.length || 0} team member{organization?.members?.length !== 1 ? 's' : ''}
               </p>
             </div>
-            {(isOwner || isAdmin) && (
+            {canManageMembers && (
               <button 
                 onClick={() => {
                   setInviteError(null)
@@ -866,7 +870,7 @@ export default function OrganizationDetailPage() {
               <p className="text-gray-500 dark:text-gray-400 mb-6 font-light max-w-md mx-auto text-sm">
                 Invite team members to collaborate on projects and share resources.
               </p>
-              {(isOwner || isAdmin) && (
+              {canManageMembers && (
                 <button 
                   onClick={() => {
                     setInviteError(null)
@@ -899,7 +903,7 @@ export default function OrganizationDetailPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {isOwner && member.role !== 'owner' ? (
+                      {canManageMembers && member.role !== 'owner' ? (
                         <Select
                           value={member.role}
                           onValueChange={(value) => {
@@ -923,7 +927,7 @@ export default function OrganizationDetailPage() {
                           {member.role}
                         </span>
                       )}
-                      {(isOwner || isAdmin) && member.role !== 'owner' && member.user?.id !== session?.user?.id && (
+                      {canManageMembers && member.role !== 'owner' && member.user?.id !== session?.user?.id && (
                         <button
                           onClick={() => {
                             if (confirm(`Remove ${member.user?.name || member.user?.email} from this organization?`)) {
@@ -966,7 +970,7 @@ export default function OrganizationDetailPage() {
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-medium">{invitation.role}</span>
-                        {(isOwner || isAdmin) && (
+                        {canManageMembers && (
                           <>
                             <button
                               onClick={(e) => {

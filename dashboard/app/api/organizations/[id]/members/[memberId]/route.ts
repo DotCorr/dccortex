@@ -11,8 +11,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, hasPermission } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PERMISSIONS } from '@/lib/permissions'
 
 export async function DELETE(
   req: NextRequest,
@@ -29,7 +30,15 @@ export async function DELETE(
     const organizationId = resolvedParams.id
     const memberId = resolvedParams.memberId
 
-    // Check if requester is owner or admin
+    const canManage = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+    if (!canManage) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions' },
+        { status: 403 }
+      )
+    }
+
+    // Check if requester exists as a member for owner-specific guardrails
     const requesterMembership = await prisma.organizationMember.findUnique({
       where: {
         organizationId_userId: {
@@ -39,7 +48,7 @@ export async function DELETE(
       },
     })
 
-    if (!requesterMembership || !['owner', 'admin'].includes(requesterMembership.role)) {
+    if (!requesterMembership) {
       return NextResponse.json(
         { error: 'Insufficient permissions' },
         { status: 403 }
