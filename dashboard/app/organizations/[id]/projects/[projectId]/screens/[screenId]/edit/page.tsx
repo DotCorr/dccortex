@@ -455,6 +455,7 @@ export default function ScreenEditPage() {
   const globalStateUndoRef = useRef<StateDefinition[][]>([])
   const globalStateRedoRef = useRef<StateDefinition[][]>([])
   const editingReusableRootRef = useRef<Node | null>(null)
+  const previewSettingsHydratedRef = useRef(false)
   /** True while a layout save is scheduled or in flight; prevents poll from overwriting local root. */
   const pendingLayoutSaveRef = useRef(false)
   const clientIdRef = useRef(`client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
@@ -536,7 +537,10 @@ export default function ScreenEditPage() {
     if (typeof window === 'undefined') return
     try {
       const raw = window.localStorage.getItem(previewSettingsKey)
-      if (!raw) return
+      if (!raw) {
+        previewSettingsHydratedRef.current = true
+        return
+      }
       const parsed = JSON.parse(raw) as {
         previewMode?: boolean
         previewSize?: PreviewViewport
@@ -570,10 +574,12 @@ export default function ScreenEditPage() {
         })
       }
     } catch {}
+    previewSettingsHydratedRef.current = true
   }, [previewSettingsKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (!previewSettingsHydratedRef.current) return
     try {
       window.localStorage.setItem(previewSettingsKey, JSON.stringify({
         previewMode,
