@@ -164,7 +164,13 @@ function findContainingReusableId(root: Node, nodeId: string): string | null {
 /** __propContract of the nearest ancestor that defines component props (so descendants can bind to {{prop.key}}). */
 function findContainingPropContract(root: Node, nodeId: string): { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[] | null {
   const path = getPathToNode(root, nodeId)
-  if (!path || path.length < 2) return null
+  if (!path) return null
+  const self = path[path.length - 1]
+  const selfContract = (self.props as { __propContract?: unknown[] })?.__propContract
+  if (Array.isArray(selfContract) && selfContract.length > 0) {
+    return selfContract as { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[]
+  }
+  if (path.length < 2) return null
   const ancestors = path.slice(0, -1)
   const withContract = [...ancestors].reverse().find((n) => {
     const contract = (n.props as { __propContract?: unknown[] })?.__propContract
@@ -314,6 +320,25 @@ function upsertByName(local: StateDefinition[], global: StateDefinition[]): Stat
     else merged.push(s)
   }
   return merged
+}
+
+function collectReusablePropsSchema(root: Node): { key: string; type: 'string' | 'number' | 'boolean'; defaultValue?: string; required?: boolean }[] {
+  const byKey = new Map<string, { key: string; type: 'string' | 'number' | 'boolean'; defaultValue?: string; required?: boolean }>()
+  const walk = (node: Node) => {
+    const contract = (node.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date'; required?: boolean }> | undefined) ?? []
+    for (const entry of contract) {
+      const key = String(entry.key ?? '').trim()
+      if (!key || byKey.has(key)) continue
+      const type: 'string' | 'number' | 'boolean' = entry.type === 'number' || entry.type === 'boolean' ? entry.type : 'string'
+      const value = (node.props as Record<string, unknown>)[key]
+      const defaultValue = value != null ? String(value) : undefined
+      const isEmpty = defaultValue === undefined || defaultValue === ''
+      byKey.set(key, { key, type, defaultValue, required: entry.required ?? isEmpty })
+    }
+    for (const child of node.children ?? []) walk(child)
+  }
+  walk(root)
+  return Array.from(byKey.values())
 }
 
 const defaultLayout: Node = {
@@ -1216,6 +1241,29 @@ export default function ScreenEditPage() {
   const activeRoot = editingReusableRoot ?? root
   const activeSelectedId = editingReusableId ? reusableSelectedId : selectedId
   selectionIdRef.current = activeSelectedId
+  const activeReusablePropsCtx = useMemo(() => {
+    if (!editingReusableId || !editingReusableRoot) return undefined
+    const ctx: Record<string, unknown> = {}
+    const schema = collectReusablePropsSchema(editingReusableRoot)
+    for (const entry of schema) {
+      if (!entry.key) continue
+      const rootValue = (editingReusableRoot.props as Record<string, unknown>)[entry.key]
+      if (rootValue !== undefined) {
+        ctx[entry.key] = rootValue
+        continue
+      }
+      if (entry.defaultValue === undefined) continue
+      if (entry.type === 'number') {
+        const parsed = Number(entry.defaultValue)
+        ctx[entry.key] = Number.isFinite(parsed) ? parsed : entry.defaultValue
+      } else if (entry.type === 'boolean') {
+        ctx[entry.key] = entry.defaultValue === 'true'
+      } else {
+        ctx[entry.key] = entry.defaultValue
+      }
+    }
+    return ctx
+  }, [editingReusableId, editingReusableRoot])
   const uniquePresence = useMemo(
     () => Array.from(new Map((presence || []).map((p) => [p.clientId ?? p.userId, p])).values()),
     [presence]
@@ -1494,14 +1542,8 @@ export default function ScreenEditPage() {
     }
     setEditingReusableRoot(nextRoot)
     editingReusableRootRef.current = nextRoot
-    // Recompute propsSchema from __propContract so instance "Pass props" stays in sync with edits
-    const contract = (nextRoot.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-    const propsSchema = contract.map((entry) => {
-      const value = (nextRoot.props as Record<string, unknown>)[entry.key]
-      const defaultValue = value != null ? String(value) : undefined
-      const isEmpty = defaultValue === undefined || defaultValue === ''
-      return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-    })
+    // Recompute propsSchema from all __propContract entries in the reusable tree.
+    const propsSchema = collectReusablePropsSchema(nextRoot)
     const nextReusables = globalReusables.map((r) =>
       r.id === editingReusableId ? { ...r, root: deepCloneNode(nextRoot), propsSchema, updatedAt: new Date().toISOString() } : r
     )
@@ -1790,13 +1832,7 @@ export default function ScreenEditPage() {
       setEditingReusableRoot(previous)
       editingReusableRootRef.current = previous
       // Sync to globals
-      const contract = (previous.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-      const propsSchema = contract.map((entry) => {
-        const value = (previous.props as Record<string, unknown>)[entry.key]
-        const defaultValue = value != null ? String(value) : undefined
-        const isEmpty = defaultValue === undefined || defaultValue === ''
-        return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-      })
+      const propsSchema = collectReusablePropsSchema(previous)
       const nextReusables = globalReusables.map((r) =>
         r.id === editingReusableId ? { ...r, root: deepCloneNode(previous), propsSchema, updatedAt: new Date().toISOString() } : r
       )
@@ -1821,13 +1857,7 @@ export default function ScreenEditPage() {
       setUndoRedoVersion((v) => v + 1)
       setEditingReusableRoot(next)
       editingReusableRootRef.current = next
-      const contract = (next.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-      const propsSchema = contract.map((entry) => {
-        const value = (next.props as Record<string, unknown>)[entry.key]
-        const defaultValue = value != null ? String(value) : undefined
-        const isEmpty = defaultValue === undefined || defaultValue === ''
-        return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-      })
+      const propsSchema = collectReusablePropsSchema(next)
       const nextReusables = globalReusables.map((r) =>
         r.id === editingReusableId ? { ...r, root: deepCloneNode(next), propsSchema, updatedAt: new Date().toISOString() } : r
       )
@@ -1921,13 +1951,7 @@ export default function ScreenEditPage() {
             type: source?.type ?? 'string',
           } satisfies StateDefinition
         })
-      const contract = (picked.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-      const propsSchema = contract.map((entry) => {
-        const value = picked.props[entry.key]
-        const defaultValue = value != null ? String(value) : undefined
-        const isEmpty = defaultValue === undefined || defaultValue === ''
-        return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-      })
+      const propsSchema = collectReusablePropsSchema(picked)
       const nextReusable: ReusableDefinition = {
         id: `reusable-${Date.now()}`,
         name: `${picked.type}-${Date.now().toString().slice(-4)}`,
@@ -1959,13 +1983,7 @@ export default function ScreenEditPage() {
         // IMPORTANT: update the parent reusable root within nextReusables (which already includes
         // the new sub-reusable). Do NOT call persistEditingReusableRoot here — it has a stale
         // globalReusables closure and would overwrite nextReusables, losing the sub-reusable.
-        const parentContract = (nextRoot.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-        const parentPropsSchema = parentContract.map((entry) => {
-          const value = (nextRoot.props as Record<string, unknown>)[entry.key]
-          const defaultValue = value != null ? String(value) : undefined
-          const isEmpty = defaultValue === undefined || defaultValue === ''
-          return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-        })
+        const parentPropsSchema = collectReusablePropsSchema(nextRoot)
         const finalReusables = nextReusables.map((r) =>
           r.id === editingReusableId
             ? { ...r, root: deepCloneNode(nextRoot), propsSchema: parentPropsSchema, updatedAt: new Date().toISOString() }
@@ -2449,7 +2467,7 @@ export default function ScreenEditPage() {
   )
 
   const resolveBindingFn = useCallback(
-    (raw: string) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, navProp: previewNavProps }),
+    (raw: string, propsCtx?: Record<string, unknown>) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, navProp: previewNavProps, props: propsCtx }),
     [runtimeState, runtimeData, runScript, previewNavProps]
   )
 
@@ -3254,6 +3272,7 @@ export default function ScreenEditPage() {
                       onMove={handleMoveNode}
                       onRunEvent={handleRunEvent}
                       reusables={globalReusables}
+                      reusablePropsCtx={activeReusablePropsCtx}
                     />
                   )
                   const themeVars = effectiveTheme
@@ -3672,7 +3691,7 @@ export default function ScreenEditPage() {
                   onSelect={() => {}}
                   onUpdate={() => {}}
                   previewMode={true}
-                  resolveBinding={(raw) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, navProp: modalNavProps })}
+                  resolveBinding={(raw, propsCtx) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, navProp: modalNavProps, props: propsCtx })}
                   theme={modalTheme}
                   previewTheme={previewTheme}
                   onRunEvent={handleRunEvent}

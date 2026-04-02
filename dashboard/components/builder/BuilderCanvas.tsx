@@ -17,7 +17,7 @@ import { BuilderChart } from './BuilderCharts'
 import type { AnimationSequenceConfig } from './AnimationSequenceBuilder'
 import { clearBuilderDragPayload, getBuilderDragPayload, setBuilderDragPayload } from './drag-payload'
 
-export type ResolveBindingFn = (raw: string) => string
+export type ResolveBindingFn = (raw: string, propsCtx?: Record<string, unknown>) => string
 
 /** Error boundary that catches render errors in canvas nodes and shows a fallback instead of crashing the entire editor. */
 class NodeErrorBoundary extends React.Component<
@@ -243,12 +243,14 @@ type Props = {
   /** In preview mode, run event (e.g. setState) when user clicks/fires action */
   onRunEvent?: (config: EventActionConfig, eventCtx?: EventRuntimeContext) => void
   reusables?: ReusableDefinition[]
+  /** Optional prop context used when rendering reusable source in edit mode. */
+  reusablePropsCtx?: Record<string, unknown>
 }
 
 /** Resolve {{state.x}} / {{data.x}} so state works for all components. Use for every bindable prop (see registry bindableProps). */
-function resolve(raw: unknown, fn?: ResolveBindingFn): string {
+function resolve(raw: unknown, fn?: ResolveBindingFn, propsCtx?: Record<string, unknown>): string {
   const s = raw === undefined || raw === null ? '' : String(raw)
-  return fn ? fn(s) : s
+  return fn ? fn(s, propsCtx) : s
 }
 
 function parseComparable(v: string): string | number | boolean {
@@ -333,15 +335,9 @@ function ensureBunnyFontLoaded(family: string) {
 
 function resolveWithProps(raw: unknown, fn?: ResolveBindingFn, propsCtx?: Record<string, unknown>): string {
   if (!propsCtx) return resolve(raw, fn)
+  if (fn) return fn(typeof raw === 'string' ? raw : String(raw ?? ''), propsCtx)
   const str = typeof raw === 'string' ? raw : String(raw ?? '')
-  // Shield {{prop.*}} tokens from the state/data resolver so they aren't consumed to '' before we substitute
-  const propTokens: string[] = []
-  const shielded = str.replace(/\{\{\s*prop\.[^}]+\}\}/g, (m) => { propTokens.push(m); return `\u0002PROP${propTokens.length - 1}\u0003` })
-  const base = resolve(shielded, fn)
-  // Restore shielded tokens, then substitute with actual propsCtx values
-  const restored = base.replace(/\u0002PROP(\d+)\u0003/g, (_, i) => propTokens[Number(i)] ?? '')
-  if (!restored.includes('{{prop.')) return restored
-  return restored.replace(/\{\{\s*prop\.([a-zA-Z0-9_.$-]+)\s*\}\}/g, (_, keyPath) => {
+  return str.replace(/\{\{\s*prop\.([a-zA-Z0-9_.$-]+)\s*\}\}/g, (_, keyPath) => {
     const keys = String(keyPath).split('.')
     let cur: unknown = propsCtx
     for (const k of keys) {
@@ -495,16 +491,24 @@ function NodeRenderer({
     (style as Record<string, unknown>).width = '100%'
   }
   // reusableInstance: apply explicit flex/size props the user set via the Layout tab.
-  // If neither width nor flex is set, default to width:100% so the instance fills its parent
-  // (e.g. a reusable header component inside a <header> row-flex should span the full width).
+  // If instance width/height are not set, inherit source reusable root dimensions before fallback.
   if (node.type === 'reusableInstance') {
     const p = resolvedNodeProps as Record<string, unknown>
+    const reusableId = typeof p.reusableId === 'string' ? p.reusableId : ''
+    const reusableRootProps = (reusableId ? reusablesById?.get(reusableId)?.root?.props : undefined) as Record<string, unknown> | undefined
     const explicitFlex = p.flex != null && String(p.flex).trim()
     const explicitWidth = p.width != null && String(p.width).trim()
+    const inheritedWidth = reusableRootProps?.width != null && String(reusableRootProps.width).trim()
     if (explicitFlex) (style as Record<string, unknown>).flex = String(p.flex).trim()
     if (explicitWidth) (style as Record<string, unknown>).width = /^\d+$/.test(String(p.width).trim()) ? `${p.width}px` : String(p.width)
-    if (!explicitFlex && !explicitWidth) (style as Record<string, unknown>).width = '100%'
-    if (p.height != null && String(p.height).trim()) (style as Record<string, unknown>).height = /^\d+$/.test(String(p.height).trim()) ? `${p.height}px` : String(p.height)
+    else if (inheritedWidth) (style as Record<string, unknown>).width = /^\d+$/.test(String(reusableRootProps?.width).trim()) ? `${reusableRootProps?.width}px` : String(reusableRootProps?.width)
+    else if (!explicitFlex) (style as Record<string, unknown>).width = '100%'
+
+    const explicitHeight = p.height != null && String(p.height).trim()
+    const inheritedHeight = reusableRootProps?.height != null && String(reusableRootProps.height).trim()
+    if (explicitHeight) (style as Record<string, unknown>).height = /^\d+$/.test(String(p.height).trim()) ? `${p.height}px` : String(p.height)
+    else if (inheritedHeight) (style as Record<string, unknown>).height = /^\d+$/.test(String(reusableRootProps?.height).trim()) ? `${reusableRootProps?.height}px` : String(reusableRootProps?.height)
+
     if (p.alignSelf != null && String(p.alignSelf).trim()) (style as Record<string, unknown>).alignSelf = String(p.alignSelf)
   }
 
@@ -2033,7 +2037,7 @@ function NodeRenderer({
   )
 }
 
-export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMode, suppressRootChrome = false, resolveBinding: resolveBindingFn, theme, onMove, onRunEvent, reusables = [] }: Props) {
+export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMode, suppressRootChrome = false, resolveBinding: resolveBindingFn, theme, onMove, onRunEvent, reusables = [], reusablePropsCtx }: Props) {
   const reusablesById = new Map(reusables.map((r) => [r.id, r]))
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
   const [showMissingReusableWarning, setShowMissingReusableWarning] = useState(reusables.length > 0)
@@ -2309,6 +2313,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
             suppressRootChrome={suppressRootChrome}
             resolveBinding={resolveBindingFn}
             reusablesById={reusablesById}
+            reusablePropsCtx={reusablePropsCtx}
             draggingNodeId={draggingNodeId}
             onDragStartNode={setDraggingNodeId}
             onDragEndNode={() => setDraggingNodeId(null)}
