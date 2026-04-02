@@ -13,6 +13,27 @@ function resolveEnvPlaceholders(input: string): string {
   return input.replace(/\{\{env\.([A-Za-z0-9_]+)\}\}/g, (_m, key: string) => process.env[key] ?? '')
 }
 
+function sourceNameAliases(name: string): string[] {
+  const trimmed = String(name ?? '').trim()
+  if (!trimmed) return []
+  const snake = trimmed
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
+  const kebab = trimmed
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+  const compact = trimmed.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()
+  return Array.from(new Set([trimmed, snake, kebab, compact].filter(Boolean)))
+}
+
+function setWithAliases(target: Record<string, unknown>, sourceName: string, value: unknown) {
+  for (const alias of sourceNameAliases(sourceName)) {
+    if (!(alias in target)) target[alias] = value
+  }
+}
+
 /**
  * Authenticated runtime-data endpoint for the editor preview panel.
  * Returns all project data sources as a flat map: { [sourceName]: data }
@@ -117,9 +138,9 @@ export async function GET(
           const text = await resp.text()
           let data: unknown
           try { data = JSON.parse(text) } catch { data = text }
-          result[src.name] = data
+          setWithAliases(result, src.name, data)
         } catch (err) {
-          result[src.name] = null
+          setWithAliases(result, src.name, null)
           console.warn(`[Runtime data] Failed to fetch source "${src.name}":`, (err as Error).message)
         }
       })

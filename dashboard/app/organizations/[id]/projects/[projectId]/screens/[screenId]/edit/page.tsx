@@ -443,6 +443,10 @@ type CollaboratorViewState = {
 
 type PresenceMode = 'off' | 'slow' | 'panel'
 
+const REMOTE_REFRESH_DEBOUNCE_MS = 180
+const PRESENCE_POST_THROTTLE_MS = 120
+const REMOTE_VIEW_APPLY_COOLDOWN_MS = 1200
+
 const COLLABORATOR_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#4f46e5']
 
 function colorForPresence(id: string): string {
@@ -661,9 +665,23 @@ export default function ScreenEditPage() {
   const previewSettingsHydratedRef = useRef(false)
   /** True while a layout save is scheduled or in flight; prevents poll from overwriting local root. */
   const pendingLayoutSaveRef = useRef(false)
+  const pendingServerRefreshRef = useRef(false)
+  const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshInFlightRef = useRef(false)
+  const refreshQueuedRef = useRef(false)
   const clientIdRef = useRef(`client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
   const selectionIdRef = useRef<string | null>(null)
   const cursorRef = useRef<{ x: number | null; y: number | null }>({ x: null, y: null })
+  const lastPresencePostAtRef = useRef(0)
+  const pendingPresencePayloadRef = useRef<{
+    selectionId: string | null
+    cursorX: number | null
+    cursorY: number | null
+    viewState: CollaboratorViewState
+  } | null>(null)
+  const presencePostTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const applyingRemoteViewStateRef = useRef(false)
+  const lastLocalViewStateChangeAtRef = useRef(0)
   const paintedSelectionsRef = useRef<Array<{ el: HTMLElement; outline: string; outlineOffset: string; boxShadow: string }>>([])
   const canvasStageRef = useRef<HTMLDivElement | null>(null)
   const canvasViewportRef = useRef<HTMLDivElement | null>(null)
@@ -1348,13 +1366,55 @@ export default function ScreenEditPage() {
     }
   }, [projectId, screenId, editPayloadUrl, queryClient])
 
+  const requestRefreshFromServer = useCallback((delayMs = REMOTE_REFRESH_DEBOUNCE_MS) => {
+    if (refreshDebounceRef.current) {
+      clearTimeout(refreshDebounceRef.current)
+      refreshDebounceRef.current = null
+    }
+
+    const run = async () => {
+      if (refreshInFlightRef.current) {
+        refreshQueuedRef.current = true
+        return
+      }
+      refreshInFlightRef.current = true
+      try {
+        await refreshFromServer()
+      } finally {
+        refreshInFlightRef.current = false
+        if (refreshQueuedRef.current) {
+          refreshQueuedRef.current = false
+          void refreshFromServer()
+        }
+      }
+    }
+
+    if (delayMs <= 0) {
+      void run()
+      return
+    }
+    refreshDebounceRef.current = setTimeout(() => {
+      refreshDebounceRef.current = null
+      void run()
+    }, delayMs)
+  }, [refreshFromServer])
+
+  useEffect(() => {
+    return () => {
+      if (refreshDebounceRef.current) {
+        clearTimeout(refreshDebounceRef.current)
+        refreshDebounceRef.current = null
+      }
+    }
+  }, [])
+
   useEffect(() => {
     const onCortexRefresh = () => {
-      refreshFromServer()
+      requestRefreshFromServer(0)
     }
     window.addEventListener('cortex:refresh', onCortexRefresh)
     return () => window.removeEventListener('cortex:refresh', onCortexRefresh)
-  }, [refreshFromServer])
+  }, [requestRefreshFromServer])
 
   const patchMutation = useMutation({
     mutationFn: async (payload: { layout?: Node | ScreenLayoutPayload; script?: string }) => {
@@ -1371,7 +1431,13 @@ export default function ScreenEditPage() {
       setTimeout(() => setSaveStatus('idle'), 2000)
     },
     onSettled: (_data, _error, variables) => {
-      if (variables?.layout != null) pendingLayoutSaveRef.current = false
+      if (variables?.layout != null) {
+        pendingLayoutSaveRef.current = false
+        if (pendingServerRefreshRef.current) {
+          pendingServerRefreshRef.current = false
+          requestRefreshFromServer(REMOTE_REFRESH_DEBOUNCE_MS)
+        }
+      }
     },
   })
   const saveGlobalsMutation = useMutation({
@@ -1441,17 +1507,58 @@ export default function ScreenEditPage() {
     frameConfigByCategory,
     clientSentAt: Date.now(),
   }), [previewSize, deviceFrameEnabled, frameConfigByCategory])
+
+  useEffect(() => {
+    if (applyingRemoteViewStateRef.current) return
+    lastLocalViewStateChangeAtRef.current = Date.now()
+  }, [previewSize, deviceFrameEnabled, frameConfigByCategory])
+
   const postPresence = useCallback((overrides?: Partial<{ cursorX: number | null; cursorY: number | null; selectionId: string | null }>) => {
     if (!presenceSendingEnabled) return
-    axios.post(`/api/projects/${projectId}/presence`, {
-      clientId: clientIdRef.current,
-      screenId,
+    const payload = {
       selectionId: overrides?.selectionId ?? selectionIdRef.current,
       cursorX: overrides?.cursorX ?? cursorRef.current.x,
       cursorY: overrides?.cursorY ?? cursorRef.current.y,
       viewState: buildPresenceViewState(),
-    }).catch(() => {})
+    }
+
+    const send = (next: typeof payload) => {
+      lastPresencePostAtRef.current = Date.now()
+      axios.post(`/api/projects/${projectId}/presence`, {
+        clientId: clientIdRef.current,
+        screenId,
+        ...next,
+      }).catch(() => {})
+    }
+
+    const elapsed = Date.now() - lastPresencePostAtRef.current
+    if (elapsed >= PRESENCE_POST_THROTTLE_MS) {
+      send(payload)
+      return
+    }
+
+    pendingPresencePayloadRef.current = payload
+    if (presencePostTimeoutRef.current) return
+
+    const waitMs = Math.max(PRESENCE_POST_THROTTLE_MS - elapsed, 0)
+    presencePostTimeoutRef.current = setTimeout(() => {
+      presencePostTimeoutRef.current = null
+      const queued = pendingPresencePayloadRef.current
+      pendingPresencePayloadRef.current = null
+      if (!queued || !presenceSendingEnabled) return
+      send(queued)
+    }, waitMs)
   }, [presenceSendingEnabled, projectId, screenId, buildPresenceViewState])
+
+  useEffect(() => {
+    return () => {
+      if (presencePostTimeoutRef.current) {
+        clearTimeout(presencePostTimeoutRef.current)
+        presencePostTimeoutRef.current = null
+      }
+      pendingPresencePayloadRef.current = null
+    }
+  }, [])
   const updateCursorPresence = useCallback((x: number | null, y: number | null) => {
     if (!presenceSendingEnabled) return
     cursorRef.current = { x, y }
@@ -1517,8 +1624,13 @@ export default function ScreenEditPage() {
         }
 
         const changedCurrentScreen = msg.screenId && msg.screenId === screenId
-        if ((msg.type === 'layout' || msg.type === 'script') && changedCurrentScreen && !pendingLayoutSaveRef.current) {
-          refreshFromServer()
+        if (msg.type === 'layout' || msg.type === 'script') {
+          if (!changedCurrentScreen) return
+          if (pendingLayoutSaveRef.current) {
+            pendingServerRefreshRef.current = true
+            return
+          }
+          requestRefreshFromServer(REMOTE_REFRESH_DEBOUNCE_MS)
         }
       } catch {}
     }
@@ -1527,7 +1639,7 @@ export default function ScreenEditPage() {
     }
 
     return () => es.close()
-  }, [projectId, screenId, projectGlobalsCacheKey, refreshFromServer, previewSettingsLoaded])
+  }, [projectId, screenId, projectGlobalsCacheKey, requestRefreshFromServer, previewSettingsLoaded])
 
   useEffect(() => {
     if (!projectId || !screenId) return
@@ -1591,8 +1703,18 @@ export default function ScreenEditPage() {
     // This avoids stale presence from a previous tab/session overriding restored local settings.
     if (!selfPresence?.userId) return
 
+    // Deterministic leader/follower rule prevents two-way ping-pong when multiple users
+    // actively change viewport settings at the same time.
+    const localClientId = clientIdRef.current
+    const collaboratorClientIds = visibleCollaborators
+      .map((p) => p.clientId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    const allClientIds = Array.from(new Set([localClientId, ...collaboratorClientIds])).sort()
+    const leaderClientId = allClientIds[0]
+    if (!leaderClientId || leaderClientId === localClientId) return
+
     const candidates = visibleCollaborators
-      .filter((p) => p.screenId === screenId && p.viewState && typeof p.viewState === 'object')
+      .filter((p) => p.clientId === leaderClientId && p.screenId === screenId && p.viewState && typeof p.viewState === 'object')
       .map((p) => p.viewState as CollaboratorViewState)
       .filter((s) => typeof s.clientSentAt === 'number' && Number.isFinite(s.clientSentAt))
 
@@ -1600,7 +1722,35 @@ export default function ScreenEditPage() {
     const latest = candidates.sort((a, b) => (b.clientSentAt ?? 0) - (a.clientSentAt ?? 0))[0]
     const sentAt = latest.clientSentAt ?? 0
     if (sentAt <= lastAppliedRemoteViewAtRef.current) return
+    if (Date.now() - lastLocalViewStateChangeAtRef.current < REMOTE_VIEW_APPLY_COOLDOWN_MS) return
+
+    const nextPreviewSize = latest.previewSize === 'mobile' || latest.previewSize === 'tablet' || latest.previewSize === 'desktop' || latest.previewSize === 'freeform'
+      ? latest.previewSize
+      : null
+    const normalizedFrames = latest.frameConfigByCategory
+      ? {
+          mobile: normalizeFrameConfig('mobile', latest.frameConfigByCategory.mobile),
+          tablet: normalizeFrameConfig('tablet', latest.frameConfigByCategory.tablet),
+          desktop: normalizeFrameConfig('desktop', latest.frameConfigByCategory.desktop),
+        }
+      : null
+    const frameConfigChanged = normalizedFrames
+      ? normalizedFrames.mobile.device !== frameConfigByCategory.mobile.device
+        || normalizedFrames.mobile.color !== frameConfigByCategory.mobile.color
+        || normalizedFrames.mobile.landscape !== frameConfigByCategory.mobile.landscape
+        || normalizedFrames.tablet.device !== frameConfigByCategory.tablet.device
+        || normalizedFrames.tablet.color !== frameConfigByCategory.tablet.color
+        || normalizedFrames.tablet.landscape !== frameConfigByCategory.tablet.landscape
+        || normalizedFrames.desktop.device !== frameConfigByCategory.desktop.device
+        || normalizedFrames.desktop.color !== frameConfigByCategory.desktop.color
+        || normalizedFrames.desktop.landscape !== frameConfigByCategory.desktop.landscape
+      : false
+    const previewChanged = nextPreviewSize != null ? nextPreviewSize !== previewSize : false
+    const frameEnabledChanged = typeof latest.deviceFrameEnabled === 'boolean' ? latest.deviceFrameEnabled !== deviceFrameEnabled : false
+    if (!previewChanged && !frameEnabledChanged && !frameConfigChanged) return
+
     lastAppliedRemoteViewAtRef.current = sentAt
+    applyingRemoteViewStateRef.current = true
 
     console.info('[editor:persistence] applying remote collaborator view state', {
       clientId: selfPresence?.clientId,
@@ -1612,18 +1762,17 @@ export default function ScreenEditPage() {
       cacheBeforeApply: readPreviewCacheSnapshot(),
     })
 
-    if (latest.previewSize === 'mobile' || latest.previewSize === 'tablet' || latest.previewSize === 'desktop' || latest.previewSize === 'freeform') {
-      setPreviewSize(latest.previewSize)
+    if (nextPreviewSize != null) {
+      setPreviewSize(nextPreviewSize)
     }
     if (typeof latest.deviceFrameEnabled === 'boolean') setDeviceFrameEnabled(latest.deviceFrameEnabled)
-    if (latest.frameConfigByCategory) {
-      setFrameConfigByCategory({
-        mobile: normalizeFrameConfig('mobile', latest.frameConfigByCategory.mobile),
-        tablet: normalizeFrameConfig('tablet', latest.frameConfigByCategory.tablet),
-        desktop: normalizeFrameConfig('desktop', latest.frameConfigByCategory.desktop),
-      })
+    if (normalizedFrames) {
+      setFrameConfigByCategory(normalizedFrames)
     }
-  }, [visibleCollaborators, selfPresence, screenId, readPreviewCacheSnapshot])
+    window.setTimeout(() => {
+      applyingRemoteViewStateRef.current = false
+    }, 0)
+  }, [visibleCollaborators, selfPresence, screenId, previewSize, deviceFrameEnabled, frameConfigByCategory, readPreviewCacheSnapshot])
 
   useEffect(() => {
     for (const painted of paintedSelectionsRef.current) {
@@ -1696,21 +1845,52 @@ export default function ScreenEditPage() {
     persistGlobals({ globalReusables: nextReusables })
   }, [editingReusableId, globalReusables, persistGlobals])
 
-  const handleSave = useCallback(() => {
-    if (editingReusableId && editingReusableRootRef.current) {
-      persistEditingReusableRoot(editingReusableRootRef.current)
-      return
-    }
-    patchMutation.mutate({ layout: { root, stateDefinitions, dataSources, namedScripts, theme, seoSettings, presentation: screenPresentation, screenPropDefs: screenPropDefsRef.current, customTypes: customTypesRef.current, aiProtected }, script })
-  }, [editingReusableId, root, stateDefinitions, dataSources, namedScripts, theme, seoSettings, script, aiProtected, patchMutation, persistEditingReusableRoot])
-
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rootRef = useRef<Node>(root)
   rootRef.current = root
   editingReusableRootRef.current = editingReusableRoot
 
-  const commitLayoutChange = useCallback((newRoot: Node, trackHistory = true) => {
+  const persistLayoutSnapshot = useCallback((nextScript?: string) => {
     pendingLayoutSaveRef.current = true
+    patchMutation.mutate({
+      layout: {
+        root: rootRef.current,
+        stateDefinitions: stateDefinitionsRef.current,
+        dataSources: dataSourcesRef.current,
+        namedScripts: namedScriptsRef.current,
+        theme: themeRef.current,
+        seoSettings: seoRef.current,
+        presentation: screenPresentationRef.current,
+        screenPropDefs: screenPropDefsRef.current,
+        customTypes: customTypesRef.current,
+        aiProtected: aiProtectedRef.current,
+      },
+      ...(nextScript !== undefined ? { script: nextScript } : {}),
+    })
+  }, [patchMutation])
+
+  const scheduleLayoutPersist = useCallback((delayMs = 1500) => {
+    pendingLayoutSaveRef.current = true
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    if (delayMs <= 0) {
+      persistLayoutSnapshot()
+      return
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null
+      persistLayoutSnapshot()
+    }, delayMs)
+  }, [persistLayoutSnapshot])
+
+  const handleSave = useCallback(() => {
+    if (editingReusableId && editingReusableRootRef.current) {
+      persistEditingReusableRoot(editingReusableRootRef.current)
+      return
+    }
+    persistLayoutSnapshot(script)
+  }, [editingReusableId, script, persistEditingReusableRoot, persistLayoutSnapshot])
+
+  const commitLayoutChange = useCallback((newRoot: Node, trackHistory = true) => {
     if (trackHistory) {
       undoStackRef.current = [...undoStackRef.current.slice(-99), rootRef.current]
       redoStackRef.current = []
@@ -1720,12 +1900,8 @@ export default function ScreenEditPage() {
       setRoot(newRoot)
       rootRef.current = newRoot
     })
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-    saveTimeoutRef.current = setTimeout(() => {
-      patchMutation.mutate({ layout: { root: rootRef.current, stateDefinitions: stateDefinitionsRef.current, dataSources: dataSourcesRef.current, namedScripts: namedScriptsRef.current, theme: themeRef.current, seoSettings: seoRef.current, presentation: screenPresentationRef.current, screenPropDefs: screenPropDefsRef.current, customTypes: customTypesRef.current, aiProtected: aiProtectedRef.current } })
-      saveTimeoutRef.current = null
-    }, 1500)
-  }, [patchMutation])
+    scheduleLayoutPersist(1500)
+  }, [scheduleLayoutPersist])
 
   const handleLayoutChange = useCallback((newRoot: Node) => {
     commitLayoutChange(newRoot, true)
@@ -1865,39 +2041,31 @@ export default function ScreenEditPage() {
     setTheme((t) => {
       const next = { ...t, ...updates }
       themeRef.current = next
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-      saveTimeoutRef.current = setTimeout(() => {
-        patchMutation.mutate({ layout: { root: rootRef.current, stateDefinitions, dataSources, namedScripts, theme: themeRef.current, seoSettings: seoRef.current, presentation: screenPresentationRef.current, screenPropDefs: screenPropDefsRef.current, customTypes: customTypesRef.current } })
-        saveTimeoutRef.current = null
-      }, 1500)
+      scheduleLayoutPersist(1500)
       return next
     })
-  }, [patchMutation, stateDefinitions, dataSources, namedScripts])
+  }, [scheduleLayoutPersist])
 
   const handleSeoChange = useCallback((updates: Partial<SeoSettings>) => {
     setSeoSettings((s) => {
       const next = { ...s, ...updates }
       seoRef.current = next
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-      saveTimeoutRef.current = setTimeout(() => {
-        patchMutation.mutate({ layout: { root: rootRef.current, stateDefinitions, dataSources, namedScripts, theme: themeRef.current, seoSettings: seoRef.current, presentation: screenPresentationRef.current, screenPropDefs: screenPropDefsRef.current, customTypes: customTypesRef.current } })
-        saveTimeoutRef.current = null
-      }, 1500)
+      scheduleLayoutPersist(1500)
       return next
     })
-  }, [patchMutation, stateDefinitions, dataSources, namedScripts])
+  }, [scheduleLayoutPersist])
 
   const handlePresentationChange = useCallback((p: 'page' | 'modal') => {
     setScreenPresentation(p)
     screenPresentationRef.current = p
-    patchMutation.mutate({ layout: { root: rootRef.current, stateDefinitions, dataSources, namedScripts, theme, seoSettings, presentation: p, screenPropDefs: screenPropDefsRef.current, customTypes: customTypesRef.current } })
-  }, [patchMutation, stateDefinitions, dataSources, namedScripts, theme, seoSettings])
+    persistLayoutSnapshot()
+  }, [persistLayoutSnapshot])
 
   const handleScreenPropDefsChange = useCallback((defs: { name: string; type: string; defaultValue?: string }[]) => {
     setScreenPropDefs(defs)
     screenPropDefsRef.current = defs
-    patchMutation.mutate({ layout: { root: rootRef.current, stateDefinitions, dataSources, namedScripts, theme, seoSettings, presentation: screenPresentationRef.current, screenPropDefs: defs, customTypes: customTypesRef.current } })
-  }, [patchMutation, stateDefinitions, dataSources, namedScripts, theme, seoSettings])
+    persistLayoutSnapshot()
+  }, [persistLayoutSnapshot])
 
   const handleCustomTypesChange = useCallback((types: CustomTypeDef[]) => {
     // Validate: strip empty names, deduplicate, ensure field names are non-empty
@@ -2148,13 +2316,9 @@ export default function ScreenEditPage() {
           return next
         })
         setSelectedId(instanceNode.id)
-        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
         undoStackRef.current = [...undoStackRef.current.slice(-99), currentRoot]
         redoStackRef.current = []
-        saveTimeoutRef.current = setTimeout(() => {
-          patchMutation.mutate({ layout: { root: rootRef.current, stateDefinitions, dataSources, namedScripts, theme: themeRef.current, seoSettings: seoRef.current, presentation: screenPresentationRef.current, screenPropDefs: screenPropDefsRef.current, customTypes: customTypesRef.current } })
-          saveTimeoutRef.current = null
-        }, 1500)
+        scheduleLayoutPersist(1500)
       }
     },
     [
@@ -2162,12 +2326,8 @@ export default function ScreenEditPage() {
       editingReusableRoot,
       globalReusables,
       globalStateDefinitions,
-      stateDefinitions,
       persistGlobals,
-      patchMutation,
-      dataSources,
-      namedScripts,
-      theme,
+      scheduleLayoutPersist,
     ]
   )
 

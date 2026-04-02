@@ -207,7 +207,7 @@ function RestApiTab({ projectId }: { projectId: string }) {
             <div className="sticky top-0 z-20 bg-[var(--background)]/95 backdrop-blur border-b border-[var(--border)] -mx-3 sm:-mx-6 px-3 sm:px-6 py-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
               <h2 className="font-semibold text-[var(--foreground)]">{selectedSource.name}</h2>
               <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-xs text-gray-400 italic self-center w-full sm:w-auto">{saveMsg ?? `Use {{data.${selectedSource.name}.field}} to access data`}</span>
+                <span className="text-xs text-gray-400 italic self-center w-full sm:w-auto">{saveMsg ?? `Use {{data.${selectedSource.name}}} for full payload or {{data.${selectedSource.name}.current.temperature_2m}} for nested fields.`}</span>
                 <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-black dark:bg-white text-white dark:text-black rounded hover:opacity-80 disabled:opacity-50">
                   {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
@@ -394,7 +394,7 @@ function RestApiTab({ projectId }: { projectId: string }) {
                     </span>
                   ))}
                 </div>
-                <p className="text-[10px] text-[var(--muted-foreground)]">In builder: <code>{'{{data.' + selectedSource.name + '.fieldName}}'}</code></p>
+                <p className="text-[10px] text-[var(--muted-foreground)]">In builder: <code>{'{{data.' + selectedSource.name + '}}'}</code> (full), <code>{'{{data.' + selectedSource.name + '.current.temperature_2m}}'}</code> (nested), repeater arrays like <code>{'{{data.' + selectedSource.name + '.hourly.time}}'}</code>.</p>
               </div>
             )}
           </div>
@@ -408,7 +408,7 @@ function RestApiTab({ projectId }: { projectId: string }) {
           <div className="space-y-3 pt-2">
             <Input placeholder="Source name (e.g. users, products)" value={newSourceName} onChange={e => setNewSourceName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && newSourceName.trim() && createMutation.mutate(newSourceName.trim())} autoFocus />
-            <p className="text-xs text-[var(--muted-foreground)]">You'll be able to reference data via <code>{'{{data.' + (newSourceName.trim() || 'name') + '.field}}'}</code></p>
+            <p className="text-xs text-[var(--muted-foreground)]">You can reference <code>{'{{data.' + (newSourceName.trim() || 'name') + '}}'}</code> and nested paths like <code>{'{{data.' + (newSourceName.trim() || 'name') + '.some.path}}'}</code>.</p>
             <Button onClick={() => newSourceName.trim() && createMutation.mutate(newSourceName.trim())} disabled={!newSourceName.trim()}>
               Create
             </Button>

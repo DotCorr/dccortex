@@ -706,6 +706,13 @@ function NodeRenderer({
       Object.entries(propBindings).map(([k, v]) => [k, resolveWithProps(v, resolveBindingFn, reusablePropsCtx)])
     )
     const namespacedRoot = cloneForReusableInstance(reusable.root, `ri-${node.id}`)
+    const handleReusableInternalSelect = (selectedNodeId: string | null) => {
+      if (!previewMode) {
+        onSelect(node.id)
+        return
+      }
+      onSelect(selectedNodeId)
+    }
     return (
       <div
         id={domId}
@@ -714,13 +721,13 @@ function NodeRenderer({
         onDragStart={canDragNode ? handleDragStart : undefined}
         onDragEnd={canDragNode ? handleDragEnd : undefined}
         onClick={previewMode ? (e: React.MouseEvent) => runConfiguredEvent('onClick', e) : (e: React.MouseEvent) => { e.stopPropagation(); onSelect(node.id) }}
-        className={previewMode ? 'rounded' : `border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-transparent'} rounded`}
+        className={previewMode ? 'rounded' : `rounded outline outline-2 ${isSelected ? 'outline-[var(--primary)]' : 'outline-transparent'}`}
         style={style}
       >
         <NodeRenderer
           node={namespacedRoot}
           selectedId={selectedId}
-          onSelect={onSelect}
+          onSelect={handleReusableInternalSelect}
           onUpdate={() => {}}
           onAddChild={onAddChild}
           onMove={onMove}
