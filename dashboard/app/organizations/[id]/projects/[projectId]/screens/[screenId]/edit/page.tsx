@@ -1714,7 +1714,9 @@ export default function ScreenEditPage() {
     if (sentAt <= lastAppliedRemoteViewAtRef.current) return
     if (Date.now() - lastLocalViewStateChangeAtRef.current < REMOTE_VIEW_APPLY_COOLDOWN_MS) return
 
-    const hasPreviewSize = latest.previewSize === 'mobile' || latest.previewSize === 'tablet' || latest.previewSize === 'desktop' || latest.previewSize === 'freeform'
+    const nextPreviewSize = latest.previewSize === 'mobile' || latest.previewSize === 'tablet' || latest.previewSize === 'desktop' || latest.previewSize === 'freeform'
+      ? latest.previewSize
+      : null
     const normalizedFrames = latest.frameConfigByCategory
       ? {
           mobile: normalizeFrameConfig('mobile', latest.frameConfigByCategory.mobile),
@@ -1733,7 +1735,7 @@ export default function ScreenEditPage() {
         || normalizedFrames.desktop.color !== frameConfigByCategory.desktop.color
         || normalizedFrames.desktop.landscape !== frameConfigByCategory.desktop.landscape
       : false
-    const previewChanged = hasPreviewSize ? latest.previewSize !== previewSize : false
+    const previewChanged = nextPreviewSize != null ? nextPreviewSize !== previewSize : false
     const frameEnabledChanged = typeof latest.deviceFrameEnabled === 'boolean' ? latest.deviceFrameEnabled !== deviceFrameEnabled : false
     if (!previewChanged && !frameEnabledChanged && !frameConfigChanged) return
 
@@ -1750,8 +1752,8 @@ export default function ScreenEditPage() {
       cacheBeforeApply: readPreviewCacheSnapshot(),
     })
 
-    if (hasPreviewSize) {
-      setPreviewSize(latest.previewSize)
+    if (nextPreviewSize != null) {
+      setPreviewSize(nextPreviewSize)
     }
     if (typeof latest.deviceFrameEnabled === 'boolean') setDeviceFrameEnabled(latest.deviceFrameEnabled)
     if (normalizedFrames) {
