@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Zap } from 'lucide-react'
 import type { Node } from './registry'
 import { getComponentDef, STYLE_PROP_KEYS } from './registry'
@@ -498,9 +498,35 @@ export function PropertyPanel({
   const [expressionModal, setExpressionModal] = useState<{ ev: string; stepIdx: number; field: 'value' | 'conditionLeft' | 'conditionRight' } | null>(null)
   const [assetPickerFor, setAssetPickerFor] = useState<{ ev: string; stepIdx: number } | { propKey: string; filterType?: 'image' | 'audio' | 'video' | 'all' } | null>(null)
   const [propExpressionKey, setPropExpressionKey] = useState<string | null>(null)
+  const [projectApiSourceNames, setProjectApiSourceNames] = useState<string[]>([])
   const bodyScrollRef = useRef<HTMLDivElement | null>(null)
 
   const props = node?.props ?? {}
+
+  useEffect(() => {
+    let canceled = false
+    if (!projectId) {
+      setProjectApiSourceNames([])
+      return
+    }
+    fetch(`/api/projects/${projectId}/api-sources`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (canceled) return
+        const names = Array.isArray(payload?.sources)
+          ? payload.sources
+            .map((src: any) => String(src?.name ?? '').trim())
+            .filter((name: string) => name.length > 0)
+          : []
+        setProjectApiSourceNames(Array.from(new Set(names)))
+      })
+      .catch(() => {
+        if (!canceled) setProjectApiSourceNames([])
+      })
+    return () => {
+      canceled = true
+    }
+  }, [projectId])
 
   useEffect(() => {
     if (!tabStorageKey || typeof window === 'undefined') return
@@ -563,6 +589,11 @@ export function PropertyPanel({
   )
 
   const def = node ? getComponentDef(node.type) : null
+  const bindingDataSourceNames = useMemo(() => Array.from(new Set([
+    ...dataSources.map((d) => d.name.trim()).filter(Boolean),
+    ...projectApiSourceNames,
+  ])), [dataSources, projectApiSourceNames])
+  const bindingDataSources = useMemo<DataSourceDef[]>(() => bindingDataSourceNames.map((name) => ({ id: `binding-${name}`, name })), [bindingDataSourceNames])
   const propKeys = def ? Object.keys(def.defaultProps) : Object.keys(props)
   const uniqueKeys = Array.from(new Set([...propKeys, ...Object.keys(props), ...STYLE_PROP_KEYS, ...LAYOUT_KEYS, 'visibleWhen']))
   const isLayout = node ? ['container', 'section', 'stackV', 'stackH', 'header', 'main', 'footer', 'nav', 'aside', 'article'].includes(node.type) : false
@@ -627,7 +658,7 @@ export function PropertyPanel({
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
-                {dataSources.filter((d) => d.name.trim()).map((d) => <option key={d.id} value={`data:${d.name}`}>Data: {d.name}</option>)}
+                {bindingDataSourceNames.map((name) => <option key={name} value={`data:`}>Data: {name}</option>)}
                 {Object.keys(namedScripts).filter(Boolean).map((name) => <option key={name} value={`script:${name}`}>Script: {name}</option>)}
                 {projectAssets?.length ? projectAssets.map((a) => <option key={a.id} value={`asset:${a.url}`}>📎 {a.name}</option>) : null}
                 <option value="expr">Expression</option>
@@ -658,7 +689,7 @@ export function PropertyPanel({
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
-                {dataSources.filter((d) => d.name.trim()).map((d) => <option key={d.id} value={`data:${d.name}`}>Data: {d.name}</option>)}
+                {bindingDataSourceNames.map((name) => <option key={name} value={`data:`}>Data: {name}</option>)}
                 {Object.keys(namedScripts).filter(Boolean).map((name) => <option key={name} value={`script:${name}`}>Script: {name}</option>)}
                 {projectAssets?.length ? projectAssets.map((a) => <option key={a.id} value={`asset:${a.url}`}>📎 {a.name}</option>) : null}
                 <option value="expr">Expression</option>
@@ -711,7 +742,7 @@ export function PropertyPanel({
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
-                {dataSources.filter((d) => d.name.trim()).map((d) => <option key={d.id} value={`data:${d.name}`}>Data: {d.name}</option>)}
+                {bindingDataSourceNames.map((name) => <option key={name} value={`data:`}>Data: {name}</option>)}
                 {Object.keys(namedScripts).filter(Boolean).map((name) => <option key={name} value={`script:${name}`}>Script: {name}</option>)}
                 {projectAssets?.length ? projectAssets.map((a) => <option key={a.id} value={`asset:${a.url}`}>📎 {a.name}</option>) : null}
                 <option value="expr">Expression</option>
@@ -740,7 +771,7 @@ export function PropertyPanel({
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
-                {dataSources.filter((d) => d.name.trim()).map((d) => <option key={d.id} value={`data:${d.name}`}>Data: {d.name}</option>)}
+                {bindingDataSourceNames.map((name) => <option key={name} value={`data:`}>Data: {name}</option>)}
                 {Object.keys(namedScripts).filter(Boolean).map((name) => <option key={name} value={`script:${name}`}>Script: {name}</option>)}
                 {projectAssets?.length ? projectAssets.map((a) => <option key={a.id} value={`asset:${a.url}`}>📎 {a.name}</option>) : null}
                 <option value="expr">Expression</option>
@@ -867,7 +898,7 @@ export function PropertyPanel({
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
-                {dataSources.filter((d) => d.name.trim()).map((d) => <option key={d.id} value={`data:${d.name}`}>Data: {d.name}</option>)}
+                {bindingDataSourceNames.map((name) => <option key={name} value={`data:`}>Data: {name}</option>)}
                 {Object.keys(namedScripts).filter(Boolean).map((name) => <option key={name} value={`script:${name}`}>Script: {name}</option>)}
                 {projectAssets?.length ? projectAssets.map((a) => <option key={a.id} value={`asset:${a.url}`}>📎 {a.name}</option>) : null}
                 <option value="expr">Expression</option>
@@ -920,7 +951,7 @@ export function PropertyPanel({
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
-                {dataSources.filter((d) => d.name.trim()).map((d) => <option key={d.id} value={`data:${d.name}`}>Data: {d.name}</option>)}
+                {bindingDataSourceNames.map((name) => <option key={name} value={`data:`}>Data: {name}</option>)}
                 {Object.keys(namedScripts).filter(Boolean).map((name) => <option key={name} value={`script:${name}`}>Script: {name}</option>)}
                 {projectAssets?.length ? projectAssets.map((a) => <option key={a.id} value={`asset:${a.url}`}>📎 {a.name}</option>) : null}
                 <option value="expr">Expression</option>
@@ -1006,7 +1037,7 @@ export function PropertyPanel({
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
-                {dataSources.filter((d) => d.name.trim()).map((d) => <option key={d.id} value={`data:${d.name}`}>Data: {d.name}</option>)}
+                {bindingDataSourceNames.map((name) => <option key={name} value={`data:`}>Data: {name}</option>)}
                 {Object.keys(namedScripts).filter(Boolean).map((name) => <option key={name} value={`script:${name}`}>Script: {name}</option>)}
                 {projectAssets?.length ? projectAssets.map((a) => <option key={a.id} value={`asset:${a.url}`}>📎 {a.name}</option>) : null}
                 <option value="expr">Expression</option>
@@ -1459,7 +1490,7 @@ export function PropertyPanel({
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
-                {dataSources.filter((d) => d.name.trim()).map((d) => <option key={d.id} value={`data:${d.name}`}>Data: {d.name}</option>)}
+                {bindingDataSourceNames.map((name) => <option key={name} value={`data:`}>Data: {name}</option>)}
                 {Object.keys(namedScripts).filter(Boolean).map((name) => <option key={name} value={`script:${name}`}>Script: {name}</option>)}
                 {projectAssets?.length ? projectAssets.map((a) => <option key={a.id} value={`asset:${a.url}`}>📎 {a.name}</option>) : null}
                 <option value="expr">Expression</option>
@@ -2690,7 +2721,7 @@ export function PropertyPanel({
                       setExpressionModal(null)
                     }}
                     stateDefinitions={availableStateDefinitions}
-                    dataSources={dataSources}
+                    dataSources={bindingDataSources}
                     namedScripts={namedScripts}
                     propNames={parentPropSchema.map((p) => p.key).filter((k) => k.trim())}
                   />
@@ -2927,7 +2958,7 @@ export function PropertyPanel({
               setPropExpressionKey(null)
             }}
             stateDefinitions={availableStateDefinitions}
-            dataSources={dataSources}
+            dataSources={bindingDataSources}
             namedScripts={namedScripts}
             propNames={parentPropSchema.map((p) => p.key).filter((k) => k.trim())}
           />

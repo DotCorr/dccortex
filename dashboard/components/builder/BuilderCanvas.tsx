@@ -721,7 +721,7 @@ function NodeRenderer({
         onDragStart={canDragNode ? handleDragStart : undefined}
         onDragEnd={canDragNode ? handleDragEnd : undefined}
         onClick={previewMode ? (e: React.MouseEvent) => runConfiguredEvent('onClick', e) : (e: React.MouseEvent) => { e.stopPropagation(); onSelect(node.id) }}
-        className={previewMode ? 'rounded' : `border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-transparent'} rounded`}
+        className={previewMode ? 'rounded' : `rounded outline outline-2 ${isSelected ? 'outline-[var(--primary)]' : 'outline-transparent'}`}
         style={style}
       >
         <NodeRenderer
