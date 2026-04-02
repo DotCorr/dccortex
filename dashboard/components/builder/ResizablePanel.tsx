@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const DEFAULT_STORAGE_KEY = 'builder-panel-widths'
 const DEFAULTS = { tree: 240, palette: 220, panel: 420 }
@@ -48,15 +48,21 @@ export function ResizablePanelLayout({ leftTree, leftPalette, center, rightPanel
   const [isMobile, setIsMobile] = useState(false)
   const [mobileSheet, setMobileSheet] = useState<'tree' | 'palette' | 'props' | null>(null)
   const [dragging, setDragging] = useState<'tree' | 'palette' | 'panel' | null>(null)
+  const hasMountedRef = useRef(false)
 
   useEffect(() => {
     setWidths(loadWidths(storageKey))
   }, [storageKey])
 
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      return
+    }
+    if (dragging) return
     saveWidths(storageKey, widths)
     onWidthsChange?.()
-  }, [storageKey, widths, onWidthsChange])
+  }, [dragging, storageKey, widths, onWidthsChange])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

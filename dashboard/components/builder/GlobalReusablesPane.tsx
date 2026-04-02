@@ -68,10 +68,15 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
   const initial = useMemo(loadPaneState, [])
   const [collapsed, setCollapsed] = useState(initial.collapsed)
   const [height, setHeight] = useState(initial.height)
+  const heightRef = useRef(initial.height)
   const [draggingResize, setDraggingResize] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const dropZoneRef = useRef<HTMLDivElement>(null)
   const dropHandledRef = useRef(false)
+
+  useEffect(() => {
+    heightRef.current = height
+  }, [height])
 
   useEffect(() => {
     const onDragEnd = () => {
@@ -154,9 +159,11 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
       if (collapsed) return
       const next = Math.max(120, Math.min(460, height - e.movementY))
       setHeight(next)
-      persistPaneState({ collapsed, height: next })
     }
-    const onUp = () => setDraggingResize(false)
+    const onUp = () => {
+      setDraggingResize(false)
+      persistPaneState({ collapsed, height: heightRef.current })
+    }
 
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -166,7 +173,7 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
       document.body.style.userSelect = previousUserSelect
       document.body.style.webkitUserSelect = previousWebkitUserSelect
     }
-  }, [collapsed, draggingResize, height])
+  }, [collapsed, draggingResize])
 
   const isTreeNodeDrag = useCallback((e: React.DragEvent) => {
     const payload = getBuilderDragPayload()
