@@ -102,6 +102,81 @@ type EditorNotice = {
   message: string
 }
 
+type OrgResourceCatalog = {
+  permissions: {
+    canManageOrgResources: boolean
+    canViewDataResources: boolean
+  }
+  rules: {
+    memberDataSharingEnabled: boolean
+  }
+  projects: Array<{ id: string; name: string; slug: string; owner?: { userId?: string | null; name?: string | null; email?: string | null } | null }>
+  summary: {
+    projectCount: number
+    orgReusableCount: number
+    reusableReferenceCount: number
+    assetCount: number
+    apiSourceCount: number
+    datasourceCount: number
+    tableCount: number
+  }
+  reusables: {
+    organization: Array<{
+      id: string
+      name: string
+      root?: unknown
+      propsSchema?: unknown
+      createdAt?: string
+      updatedAt?: string
+      sourceProjectId?: string
+      sourceProjectName?: string | null
+      sourceOwnerUserId?: string
+      sourceOwnerName?: string | null
+      sourceOwnerEmail?: string | null
+      promotedByUserId?: string
+    }>
+    usage: Array<{
+      reusableId: string
+      reusableName: string | null
+      totalInstances: number
+      usage: Array<{
+        projectId: string
+        projectName: string
+        screenId: string
+        screenName: string
+        screenSlug: string
+        instanceCount: number
+      }>
+    }>
+  }
+  assets: Array<{ id: string; name: string; mimetype: string; size: number; url: string; projectId: string; projectOwnerName?: string | null; projectOwnerEmail?: string | null; project?: { name?: string } | null }>
+  apiSources: Array<{
+    id: string
+    name: string
+    method: string
+    url: string
+    authType: string
+    headers?: unknown
+    body?: string | null
+    authValue?: string | null
+    authHeader?: string | null
+    schema?: unknown
+    projectId: string
+    projectOwnerName?: string | null
+    projectOwnerEmail?: string | null
+    project?: { name?: string } | null
+  }>
+  databases: Array<{
+    datasourceId: string
+    projectId: string
+    projectName: string
+    projectOwnerName?: string | null
+    projectOwnerEmail?: string | null
+    tableCount: number
+    tables: Array<{ id: string; name: string; columnCount: number; rowCount: number }>
+  }>
+}
+
 function parseComparable(v: string): string | number | boolean {
   const s = String(v ?? '').trim()
   if (s === 'true') return true
@@ -164,7 +239,13 @@ function findContainingReusableId(root: Node, nodeId: string): string | null {
 /** __propContract of the nearest ancestor that defines component props (so descendants can bind to {{prop.key}}). */
 function findContainingPropContract(root: Node, nodeId: string): { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[] | null {
   const path = getPathToNode(root, nodeId)
-  if (!path || path.length < 2) return null
+  if (!path) return null
+  const self = path[path.length - 1]
+  const selfContract = (self.props as { __propContract?: unknown[] })?.__propContract
+  if (Array.isArray(selfContract) && selfContract.length > 0) {
+    return selfContract as { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[]
+  }
+  if (path.length < 2) return null
   const ancestors = path.slice(0, -1)
   const withContract = [...ancestors].reverse().find((n) => {
     const contract = (n.props as { __propContract?: unknown[] })?.__propContract
@@ -314,6 +395,25 @@ function upsertByName(local: StateDefinition[], global: StateDefinition[]): Stat
     else merged.push(s)
   }
   return merged
+}
+
+function collectReusablePropsSchema(root: Node): { key: string; type: 'string' | 'number' | 'boolean'; defaultValue?: string; required?: boolean }[] {
+  const byKey = new Map<string, { key: string; type: 'string' | 'number' | 'boolean'; defaultValue?: string; required?: boolean }>()
+  const walk = (node: Node) => {
+    const contract = (node.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date'; required?: boolean }> | undefined) ?? []
+    for (const entry of contract) {
+      const key = String(entry.key ?? '').trim()
+      if (!key || byKey.has(key)) continue
+      const type: 'string' | 'number' | 'boolean' = entry.type === 'number' || entry.type === 'boolean' ? entry.type : 'string'
+      const value = (node.props as Record<string, unknown>)[key]
+      const defaultValue = value != null ? String(value) : undefined
+      const isEmpty = defaultValue === undefined || defaultValue === ''
+      byKey.set(key, { key, type, defaultValue, required: entry.required ?? isEmpty })
+    }
+    for (const child of node.children ?? []) walk(child)
+  }
+  walk(root)
+  return Array.from(byKey.values())
 }
 
 const defaultLayout: Node = {
@@ -599,6 +699,15 @@ export default function ScreenEditPage() {
   const [canvasStageSize, setCanvasStageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
   const [editorNotices, setEditorNotices] = useState<EditorNotice[]>([])
   const noticeTimeoutsRef = useRef<Record<string, number>>({})
+  const [orgResourceBrowserOpen, setOrgResourceBrowserOpen] = useState(false)
+  const [orgResourceCatalog, setOrgResourceCatalog] = useState<OrgResourceCatalog | null>(null)
+  const [orgResourceCatalogLoading, setOrgResourceCatalogLoading] = useState(false)
+  const [orgResourceCatalogError, setOrgResourceCatalogError] = useState<string | null>(null)
+  const [orgResourceSearch, setOrgResourceSearch] = useState('')
+  const [orgResourceProjectFilter, setOrgResourceProjectFilter] = useState('')
+  const [orgRuleSaving, setOrgRuleSaving] = useState(false)
+  const [importingOrgReusableIds, setImportingOrgReusableIds] = useState<string[]>([])
+  const [importingApiSourceIds, setImportingApiSourceIds] = useState<string[]>([])
 
   const dismissEditorNotice = useCallback((noticeId: string) => {
     const timeoutId = noticeTimeoutsRef.current[noticeId]
@@ -628,6 +737,67 @@ export default function ScreenEditPage() {
       noticeTimeoutsRef.current = {}
     }
   }, [])
+
+  const fetchOrgResourceCatalog = useCallback(async (query = orgResourceSearch, projectFilter = orgResourceProjectFilter) => {
+    if (!orgId) {
+      setOrgResourceCatalogError('Missing organization context.')
+      return
+    }
+
+    setOrgResourceCatalogLoading(true)
+    setOrgResourceCatalogError(null)
+    try {
+      const params = new URLSearchParams()
+      const normalizedQuery = query.trim()
+      const normalizedProject = projectFilter.trim()
+      if (normalizedQuery) params.set('q', normalizedQuery)
+      if (normalizedProject) params.set('projectId', normalizedProject)
+      const suffix = params.toString() ? `?${params.toString()}` : ''
+      const response = await axios.get(`/api/organizations/${orgId}/resource-catalog${suffix}`)
+      setOrgResourceCatalog(response.data as OrgResourceCatalog)
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to load organization resource catalog'
+      setOrgResourceCatalogError(msg)
+    } finally {
+      setOrgResourceCatalogLoading(false)
+    }
+  }, [orgId, orgResourceProjectFilter, orgResourceSearch])
+
+  const updateOrgMemberDataSharingRule = useCallback(async (enabled: boolean) => {
+    if (!orgId) return
+    setOrgRuleSaving(true)
+    try {
+      await axios.patch(`/api/organizations/${orgId}/resource-catalog`, {
+        memberDataSharingEnabled: enabled,
+      })
+      pushEditorNotice('success', enabled ? 'Members can now reuse shared data resources.' : 'Member data sharing is now admin-only.')
+      await fetchOrgResourceCatalog(orgResourceSearch, orgResourceProjectFilter)
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to update sharing rule'
+      pushEditorNotice('error', msg)
+    } finally {
+      setOrgRuleSaving(false)
+    }
+  }, [fetchOrgResourceCatalog, orgId, orgResourceProjectFilter, orgResourceSearch, pushEditorNotice])
+
+  const importApiSourceFromOrg = useCallback(async (sourceId: string, sourceName: string) => {
+    if (!orgId) return
+    if (importingApiSourceIds.includes(sourceId)) return
+    setImportingApiSourceIds((prev) => (prev.includes(sourceId) ? prev : [...prev, sourceId]))
+
+    try {
+      await axios.post(`/api/projects/${projectId}/api-sources/import-from-org`, {
+        organizationId: orgId,
+        sourceId,
+      })
+      pushEditorNotice('success', `Linked API "${sourceName}" into this project.`)
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to link API source'
+      pushEditorNotice('error', msg)
+    } finally {
+      setImportingApiSourceIds((prev) => prev.filter((id) => id !== sourceId))
+    }
+  }, [orgId, projectId, pushEditorNotice, importingApiSourceIds])
 
   const readPreviewCacheSnapshot = useCallback(() => {
     if (typeof window === 'undefined') return null
@@ -1216,6 +1386,29 @@ export default function ScreenEditPage() {
   const activeRoot = editingReusableRoot ?? root
   const activeSelectedId = editingReusableId ? reusableSelectedId : selectedId
   selectionIdRef.current = activeSelectedId
+  const activeReusablePropsCtx = useMemo(() => {
+    if (!editingReusableId || !editingReusableRoot) return undefined
+    const ctx: Record<string, unknown> = {}
+    const schema = collectReusablePropsSchema(editingReusableRoot)
+    for (const entry of schema) {
+      if (!entry.key) continue
+      const rootValue = (editingReusableRoot.props as Record<string, unknown>)[entry.key]
+      if (rootValue !== undefined) {
+        ctx[entry.key] = rootValue
+        continue
+      }
+      if (entry.defaultValue === undefined) continue
+      if (entry.type === 'number') {
+        const parsed = Number(entry.defaultValue)
+        ctx[entry.key] = Number.isFinite(parsed) ? parsed : entry.defaultValue
+      } else if (entry.type === 'boolean') {
+        ctx[entry.key] = entry.defaultValue === 'true'
+      } else {
+        ctx[entry.key] = entry.defaultValue
+      }
+    }
+    return ctx
+  }, [editingReusableId, editingReusableRoot])
   const uniquePresence = useMemo(
     () => Array.from(new Map((presence || []).map((p) => [p.clientId ?? p.userId, p])).values()),
     [presence]
@@ -1494,14 +1687,8 @@ export default function ScreenEditPage() {
     }
     setEditingReusableRoot(nextRoot)
     editingReusableRootRef.current = nextRoot
-    // Recompute propsSchema from __propContract so instance "Pass props" stays in sync with edits
-    const contract = (nextRoot.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-    const propsSchema = contract.map((entry) => {
-      const value = (nextRoot.props as Record<string, unknown>)[entry.key]
-      const defaultValue = value != null ? String(value) : undefined
-      const isEmpty = defaultValue === undefined || defaultValue === ''
-      return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-    })
+    // Recompute propsSchema from all __propContract entries in the reusable tree.
+    const propsSchema = collectReusablePropsSchema(nextRoot)
     const nextReusables = globalReusables.map((r) =>
       r.id === editingReusableId ? { ...r, root: deepCloneNode(nextRoot), propsSchema, updatedAt: new Date().toISOString() } : r
     )
@@ -1790,13 +1977,7 @@ export default function ScreenEditPage() {
       setEditingReusableRoot(previous)
       editingReusableRootRef.current = previous
       // Sync to globals
-      const contract = (previous.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-      const propsSchema = contract.map((entry) => {
-        const value = (previous.props as Record<string, unknown>)[entry.key]
-        const defaultValue = value != null ? String(value) : undefined
-        const isEmpty = defaultValue === undefined || defaultValue === ''
-        return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-      })
+      const propsSchema = collectReusablePropsSchema(previous)
       const nextReusables = globalReusables.map((r) =>
         r.id === editingReusableId ? { ...r, root: deepCloneNode(previous), propsSchema, updatedAt: new Date().toISOString() } : r
       )
@@ -1821,13 +2002,7 @@ export default function ScreenEditPage() {
       setUndoRedoVersion((v) => v + 1)
       setEditingReusableRoot(next)
       editingReusableRootRef.current = next
-      const contract = (next.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-      const propsSchema = contract.map((entry) => {
-        const value = (next.props as Record<string, unknown>)[entry.key]
-        const defaultValue = value != null ? String(value) : undefined
-        const isEmpty = defaultValue === undefined || defaultValue === ''
-        return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-      })
+      const propsSchema = collectReusablePropsSchema(next)
       const nextReusables = globalReusables.map((r) =>
         r.id === editingReusableId ? { ...r, root: deepCloneNode(next), propsSchema, updatedAt: new Date().toISOString() } : r
       )
@@ -1921,13 +2096,7 @@ export default function ScreenEditPage() {
             type: source?.type ?? 'string',
           } satisfies StateDefinition
         })
-      const contract = (picked.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-      const propsSchema = contract.map((entry) => {
-        const value = picked.props[entry.key]
-        const defaultValue = value != null ? String(value) : undefined
-        const isEmpty = defaultValue === undefined || defaultValue === ''
-        return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-      })
+      const propsSchema = collectReusablePropsSchema(picked)
       const nextReusable: ReusableDefinition = {
         id: `reusable-${Date.now()}`,
         name: `${picked.type}-${Date.now().toString().slice(-4)}`,
@@ -1959,13 +2128,7 @@ export default function ScreenEditPage() {
         // IMPORTANT: update the parent reusable root within nextReusables (which already includes
         // the new sub-reusable). Do NOT call persistEditingReusableRoot here — it has a stale
         // globalReusables closure and would overwrite nextReusables, losing the sub-reusable.
-        const parentContract = (nextRoot.props?.__propContract as Array<{ key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }> | undefined) ?? []
-        const parentPropsSchema = parentContract.map((entry) => {
-          const value = (nextRoot.props as Record<string, unknown>)[entry.key]
-          const defaultValue = value != null ? String(value) : undefined
-          const isEmpty = defaultValue === undefined || defaultValue === ''
-          return { key: entry.key, type: entry.type, defaultValue, required: entry.required ?? isEmpty }
-        })
+        const parentPropsSchema = collectReusablePropsSchema(nextRoot)
         const finalReusables = nextReusables.map((r) =>
           r.id === editingReusableId
             ? { ...r, root: deepCloneNode(nextRoot), propsSchema: parentPropsSchema, updatedAt: new Date().toISOString() }
@@ -2055,6 +2218,50 @@ export default function ScreenEditPage() {
     },
     [globalReusables, doInsertReusable]
   )
+
+  const importOrgReusableIntoProject = useCallback(async (
+    orgReusable: OrgResourceCatalog['reusables']['organization'][number],
+    insertNow: boolean
+  ) => {
+    if (!orgReusable || !orgReusable.id || !orgReusable.name || !orgReusable.root || typeof orgReusable.root !== 'object') {
+      pushEditorNotice('error', 'Reusable payload is invalid and cannot be imported.')
+      return
+    }
+
+    if (importingOrgReusableIds.includes(orgReusable.id)) return
+    setImportingOrgReusableIds((prev) => (prev.includes(orgReusable.id) ? prev : [...prev, orgReusable.id]))
+
+    try {
+      const existing = globalReusables.find((r) => r.id === orgReusable.id)
+      if (!existing) {
+        const importedReusable: ReusableDefinition = {
+          id: orgReusable.id,
+          name: orgReusable.name,
+          root: deepCloneNode(orgReusable.root as Node),
+          propsSchema: Array.isArray(orgReusable.propsSchema)
+            ? (orgReusable.propsSchema as ReusableDefinition['propsSchema'])
+            : undefined,
+          createdAt: orgReusable.createdAt,
+          updatedAt: orgReusable.updatedAt,
+        }
+        const nextReusables = [...globalReusables, importedReusable]
+        setGlobalReusables(nextReusables)
+        persistGlobals({ globalReusables: nextReusables })
+      }
+
+      if (insertNow) {
+        handleInsertReusable(orgReusable.id)
+      }
+      pushEditorNotice('success', insertNow
+        ? `Imported and inserted reusable "${orgReusable.name}".`
+        : `Imported reusable "${orgReusable.name}" into this project.`)
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to import reusable'
+      pushEditorNotice('error', msg)
+    } finally {
+      setImportingOrgReusableIds((prev) => prev.filter((id) => id !== orgReusable.id))
+    }
+  }, [globalReusables, handleInsertReusable, persistGlobals, pushEditorNotice, importingOrgReusableIds])
 
   const startEditingReusable = useCallback((reusableId: string, preferredSelectedId?: string | null) => {
     const target = globalReusables.find((r) => r.id === reusableId)
@@ -2449,7 +2656,7 @@ export default function ScreenEditPage() {
   )
 
   const resolveBindingFn = useCallback(
-    (raw: string) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, navProp: previewNavProps }),
+    (raw: string, propsCtx?: Record<string, unknown>) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, navProp: previewNavProps, props: propsCtx }),
     [runtimeState, runtimeData, runScript, previewNavProps]
   )
 
@@ -3254,6 +3461,7 @@ export default function ScreenEditPage() {
                       onMove={handleMoveNode}
                       onRunEvent={handleRunEvent}
                       reusables={globalReusables}
+                      reusablePropsCtx={activeReusablePropsCtx}
                     />
                   )
                   const themeVars = effectiveTheme
@@ -3423,6 +3631,10 @@ export default function ScreenEditPage() {
                 onDeleteReusable={handleDeleteReusable}
                 activeReusableId={editingReusableId}
                 onInsertReusable={handleInsertReusable}
+                onBrowseOrgResources={() => {
+                  setOrgResourceBrowserOpen(true)
+                  void fetchOrgResourceCatalog()
+                }}
                 promotingReusableIds={promotingReusableIds}
                 onPromoteReusable={async (reusable) => {
                   if (!orgId) {
@@ -3430,17 +3642,15 @@ export default function ScreenEditPage() {
                     return
                   }
 
-                  let started = false
-                  setPromotingReusableIds((prev) => {
-                    if (prev.includes(reusable.id)) return prev
-                    started = true
-                    return [...prev, reusable.id]
-                  })
-                  if (!started) return
+                  if (promotingReusableIds.includes(reusable.id)) return
+                  setPromotingReusableIds((prev) => (prev.includes(reusable.id) ? prev : [...prev, reusable.id]))
 
                   const progressNoticeId = pushEditorNotice('info', `Promoting "${reusable.name}" to organization...`, 0)
                   try {
-                    await axios.post(`/api/organizations/${orgId}/reusables`, { reusable })
+                    await axios.post(`/api/organizations/${orgId}/reusables`, {
+                      reusable,
+                      sourceProjectId: projectId,
+                    })
                     dismissEditorNotice(progressNoticeId)
                     pushEditorNotice('success', `Promoted "${reusable.name}" to organization reusables.`)
                   } catch (err: any) {
@@ -3506,6 +3716,213 @@ export default function ScreenEditPage() {
           }
         />
       </div>
+
+      {orgResourceBrowserOpen && (
+        <div className="fixed inset-0 z-[145] flex items-center justify-center bg-black/55" onClick={(e) => { if (e.target === e.currentTarget) setOrgResourceBrowserOpen(false) }}>
+          <div className="w-[1100px] max-w-[calc(100vw-1.5rem)] max-h-[86vh] overflow-hidden rounded-lg border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#0d1117] shadow-2xl flex flex-col">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Organization resource browser</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Browse org reusables, usage maps, assets, API sources, and databases across projects.</div>
+              </div>
+              <button type="button" onClick={() => setOrgResourceBrowserOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-[#30363d] grid grid-cols-1 md:grid-cols-[1fr_240px_auto] gap-2">
+              <input
+                value={orgResourceSearch}
+                onChange={(e) => setOrgResourceSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void fetchOrgResourceCatalog(orgResourceSearch, orgResourceProjectFilter) }}
+                placeholder="Search reusable names, screens, assets, APIs, tables..."
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#161b22] text-black dark:text-white"
+              />
+              <select
+                value={orgResourceProjectFilter}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setOrgResourceProjectFilter(next)
+                  void fetchOrgResourceCatalog(orgResourceSearch, next)
+                }}
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#161b22] text-black dark:text-white"
+              >
+                <option value="">All projects</option>
+                {(orgResourceCatalog?.projects ?? []).map((project) => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void fetchOrgResourceCatalog(orgResourceSearch, orgResourceProjectFilter)}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]"
+              >
+                Refresh
+              </button>
+            </div>
+
+            {orgResourceCatalog?.permissions?.canManageOrgResources && (
+              <div className="px-4 py-2 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Member data sharing rule</div>
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">When disabled, only admins can browse and import shared data resources (APIs, databases, and assets).</div>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(orgResourceCatalog.rules?.memberDataSharingEnabled)}
+                    disabled={orgRuleSaving}
+                    onChange={(e) => void updateOrgMemberDataSharingRule(e.target.checked)}
+                  />
+                  Members can reuse data
+                </label>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              {orgResourceCatalogLoading && <div className="text-sm text-gray-500 dark:text-gray-300">Loading organization resources...</div>}
+              {orgResourceCatalogError && <div className="text-sm text-rose-600 dark:text-rose-300">{orgResourceCatalogError}</div>}
+
+              {orgResourceCatalog && !orgResourceCatalogLoading && !orgResourceCatalogError && (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Projects</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.projectCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Org reusables</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.orgReusableCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Reusable refs</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.reusableReferenceCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Assets</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.assetCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">API sources</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.apiSourceCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Databases</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.datasourceCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Tables</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.tableCount}</div></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                      <h3 className="text-sm font-semibold mb-2">Organization reusables</h3>
+                      <div className="space-y-1.5 max-h-56 overflow-auto pr-1">
+                        {orgResourceCatalog.reusables.organization.length === 0 && <div className="text-xs text-gray-500">No reusables found.</div>}
+                          {orgResourceCatalog.reusables.organization.map((item) => {
+                            const importing = importingOrgReusableIds.includes(item.id)
+                            return (
+                              <div key={item.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5 text-xs">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{item.name}</div>
+                                    <div className="text-[11px] text-gray-500 truncate">
+                                      From {item.sourceProjectName ?? 'Unknown project'}
+                                      {item.sourceOwnerName ? ` • Owner: ${item.sourceOwnerName}` : ''}
+                                    </div>
+                                  </div>
+                                  <span className="text-gray-500 truncate">{item.id}</span>
+                                </div>
+                                <div className="mt-1 flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    disabled={importing}
+                                    onClick={() => void importOrgReusableIntoProject(item, false)}
+                                    className={`text-[11px] px-2 py-0.5 border border-gray-300 dark:border-[#30363d] rounded ${importing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                                  >
+                                    {importing ? 'Importing...' : 'Add to this project'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={importing}
+                                    onClick={() => void importOrgReusableIntoProject(item, true)}
+                                    className={`text-[11px] px-2 py-0.5 border border-gray-300 dark:border-[#30363d] rounded ${importing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                                  >
+                                    Insert now
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                      </div>
+                    </section>
+
+                    <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                      <h3 className="text-sm font-semibold mb-2">Reusable usage map</h3>
+                      <div className="space-y-2 max-h-56 overflow-auto pr-1">
+                        {orgResourceCatalog.reusables.usage.length === 0 && <div className="text-xs text-gray-500">No reusable references found in project screens.</div>}
+                        {orgResourceCatalog.reusables.usage.map((entry) => (
+                          <div key={entry.reusableId} className="rounded border border-gray-200 dark:border-[#30363d] p-2">
+                            <div className="text-xs font-medium text-gray-800 dark:text-gray-100">{entry.reusableName ?? entry.reusableId}</div>
+                            <div className="text-[11px] text-gray-500 mb-1">{entry.totalInstances} instances</div>
+                            <div className="space-y-1">
+                              {entry.usage.slice(0, 4).map((u) => (
+                                <div key={`${entry.reusableId}-${u.screenId}`} className="text-[11px] text-gray-600 dark:text-gray-300 truncate">
+                                  {u.projectName} / {u.screenName} ({u.instanceCount})
+                                </div>
+                              ))}
+                              {entry.usage.length > 4 && <div className="text-[11px] text-gray-400">+{entry.usage.length - 4} more usages</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                      <h3 className="text-sm font-semibold mb-2">Project assets</h3>
+                      {!orgResourceCatalog.permissions.canViewDataResources && (
+                        <div className="text-xs text-amber-600 dark:text-amber-300 mb-2">Data sharing is currently admin-only in this organization.</div>
+                      )}
+                      <div className="space-y-1.5 max-h-56 overflow-auto pr-1">
+                        {orgResourceCatalog.assets.length === 0 && <div className="text-xs text-gray-500">No assets found.</div>}
+                        {orgResourceCatalog.assets.map((asset) => (
+                          <div key={asset.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5 text-xs">
+                            <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{asset.name}</div>
+                            <div className="text-gray-500 truncate">{asset.project?.name ?? 'Unknown'} • Owner: {asset.projectOwnerName ?? 'Unknown'} • {asset.mimetype} • {(asset.size / 1024).toFixed(1)} KB</div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                      <h3 className="text-sm font-semibold mb-2">API sources and databases</h3>
+                      <div className="space-y-2 max-h-56 overflow-auto pr-1">
+                        <div>
+                          <div className="text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">API sources</div>
+                          <div className="space-y-1">
+                            {orgResourceCatalog.apiSources.length === 0 && <div className="text-xs text-gray-500">No API sources found.</div>}
+                            {orgResourceCatalog.apiSources.slice(0, 12).map((source) => {
+                              const importing = importingApiSourceIds.includes(source.id)
+                              return (
+                                <div key={source.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5">
+                                  <div className="text-[11px] text-gray-700 dark:text-gray-200 truncate">[{source.method}] {source.name}</div>
+                                  <div className="text-[11px] text-gray-500 truncate">From {source.project?.name ?? 'Unknown'} • Owner: {source.projectOwnerName ?? 'Unknown'}</div>
+                                  <div className="mt-1 flex justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={importing || !orgResourceCatalog.permissions.canViewDataResources}
+                                      onClick={() => void importApiSourceFromOrg(source.id, source.name)}
+                                      className={`text-[11px] px-2 py-0.5 border border-gray-300 dark:border-[#30363d] rounded ${importing || !orgResourceCatalog.permissions.canViewDataResources ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                                    >
+                                      {importing ? 'Linking...' : 'Link API to this project'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">Databases</div>
+                          <div className="space-y-1">
+                            {orgResourceCatalog.databases.length === 0 && <div className="text-xs text-gray-500">No internal databases found.</div>}
+                            {orgResourceCatalog.databases.slice(0, 8).map((db) => (
+                              <div key={db.datasourceId} className="text-[11px] text-gray-600 dark:text-gray-300 truncate">
+                                {db.projectName} • Owner: {db.projectOwnerName ?? 'Unknown'}: {db.tableCount} tables
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {editorNotices.length > 0 && (
         <div className="fixed top-4 right-4 z-[140] flex w-[340px] max-w-[calc(100vw-1.5rem)] flex-col gap-2">
@@ -3672,7 +4089,7 @@ export default function ScreenEditPage() {
                   onSelect={() => {}}
                   onUpdate={() => {}}
                   previewMode={true}
-                  resolveBinding={(raw) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, navProp: modalNavProps })}
+                  resolveBinding={(raw, propsCtx) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, navProp: modalNavProps, props: propsCtx })}
                   theme={modalTheme}
                   previewTheme={previewTheme}
                   onRunEvent={handleRunEvent}

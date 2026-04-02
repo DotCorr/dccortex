@@ -443,6 +443,26 @@ const COMPONENT_TABS: { id: PanelTab; label: string }[] = [
 // Keep a flat list for any code that still needs it
 const TABS = [...APP_TABS, ...COMPONENT_TABS]
 
+function collectReusablePropsSchemaFromNode(node: Node | null | undefined): ReusablePropSchema[] {
+  if (!node) return []
+  const byKey = new Map<string, ReusablePropSchema>()
+  const walk = (n: Node) => {
+    const contract = (n.props?.__propContract as Array<{ key: string; type: string; required?: boolean }> | undefined) ?? []
+    for (const entry of contract) {
+      const key = String(entry.key ?? '').trim()
+      if (!key || byKey.has(key)) continue
+      const type: 'string' | 'number' | 'boolean' = entry.type === 'number' || entry.type === 'boolean' ? entry.type : 'string'
+      const rawDefault = (n.props as Record<string, unknown>)[key]
+      const defaultValue = rawDefault != null ? String(rawDefault) : undefined
+      const isEmpty = defaultValue === undefined || defaultValue === ''
+      byKey.set(key, { key, type, defaultValue, required: entry.required ?? isEmpty })
+    }
+    for (const child of n.children ?? []) walk(child)
+  }
+  walk(node)
+  return Array.from(byKey.values())
+}
+
 export function PropertyPanel({
   node,
   onUpdate,
@@ -548,7 +568,10 @@ export function PropertyPanel({
   const selectedReusable = node?.type === 'reusableInstance' && node?.props?.reusableId
     ? globalReusables.find((r) => r.id === node.props.reusableId)
     : null
-  const reusablePropsSchema = selectedReusable?.propsSchema ?? []
+  const reusablePropsSchemaFromContract = collectReusablePropsSchemaFromNode(selectedReusable?.root)
+  const reusablePropsSchema = (selectedReusable?.propsSchema?.length ?? 0) > 0
+    ? (selectedReusable?.propsSchema ?? [])
+    : reusablePropsSchemaFromContract
   // Keys declared in __propContract are managed in the "Component props" editor — exclude from the generic content fields to avoid duplication
   const contractKeys = new Set(((node?.props?.__propContract as Array<{ key: string }> | undefined) ?? []).map((e) => e.key))
   const contentKeys = reusablePropsSchema.length > 0
@@ -2661,6 +2684,7 @@ export function PropertyPanel({
                     stateDefinitions={availableStateDefinitions}
                     dataSources={dataSources}
                     namedScripts={namedScripts}
+                    propNames={parentPropSchema.map((p) => p.key).filter((k) => k.trim())}
                   />
                 )
               })()}
@@ -2897,6 +2921,7 @@ export function PropertyPanel({
             stateDefinitions={availableStateDefinitions}
             dataSources={dataSources}
             namedScripts={namedScripts}
+            propNames={parentPropSchema.map((p) => p.key).filter((k) => k.trim())}
           />
         )}
         <IconPickerModal

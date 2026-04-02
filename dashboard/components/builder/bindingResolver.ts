@@ -181,8 +181,28 @@ function parseLiteral(s: string): unknown {
 /** Find the index of needle at paren/bracket depth 0, searching left-to-right from `from` */
 function topLevelIdx(s: string, needle: string, from = 0): number {
   let depth = 0
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
   for (let i = from; i <= s.length - needle.length; i++) {
     const c = s[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (c === '\\') {
+      escaped = true
+      continue
+    }
+    if (!inDouble && c === "'") {
+      inSingle = !inSingle
+      continue
+    }
+    if (!inSingle && c === '"') {
+      inDouble = !inDouble
+      continue
+    }
+    if (inSingle || inDouble) continue
     if (c === '(' || c === '[') { depth++; continue }
     if (c === ')' || c === ']') { depth--; continue }
     if (depth === 0 && s.startsWith(needle, i)) return i
@@ -345,6 +365,9 @@ function evalExpr(s: string, values: Map<string, unknown>): unknown {
  */
 export function resolveExpression(raw: string, ctx: ResolveContext): string {
   if (typeof raw !== 'string') return String(raw ?? '')
+  // Users sometimes wrap bindings in quotes inside expressions (e.g. '!\'{{prop.icon}}\' ? ...').
+  // Normalize quoted tokens back to raw {{...}} so ternary/logic evaluation still works.
+  raw = raw.replace(/(['"])\s*\{\{\s*([^}]+?)\s*\}\}\s*\1/g, '{{$2}}')
   // sanitize any chained string-method invocations to guard against undefined
   const methodPattern = /([^\s]+?)\.(toLowerCase|toUpperCase|trim|split|replace|slice|substring|includes|startsWith|endsWith|charAt|concat|repeat|padStart|padEnd)\(([^)]*)\)/g
   raw = raw.replace(methodPattern, (m, g, method, args) => {

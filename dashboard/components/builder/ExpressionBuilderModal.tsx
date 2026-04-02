@@ -22,6 +22,7 @@ type Props = {
   stateDefinitions: StateDefinition[]
   dataSources: DataSourceDef[]
   namedScripts?: Record<string, string>
+  propNames?: string[]
   initialValue?: string
 }
 
@@ -31,6 +32,7 @@ type ValueSource =
   | { kind: 'state'; name: string; field?: string }
   | { kind: 'data'; name: string; field?: string }
   | { kind: 'script'; name: string }
+  | { kind: 'prop'; name: string; field?: string }
   | { kind: 'literal'; value: string }
   | { kind: 'prev' }
 
@@ -60,6 +62,7 @@ function srcExpr(v: ValueSource, prev: string): string {
     case 'state': return v.field ? `{{state.${v.name}.${v.field}}}` : `{{state.${v.name}}}`
     case 'data': return v.field ? `{{data.${v.name}.${v.field}}}` : `{{data.${v.name}}}`
     case 'script': return `{{script.${v.name}}}`
+    case 'prop': return v.field ? `{{prop.${v.name}.${v.field}}}` : `{{prop.${v.name}}}`
     case 'literal': {
       const n = Number(v.value)
       if (v.value === 'true' || v.value === 'false' || (!isNaN(n) && v.value !== '')) return v.value
@@ -160,8 +163,28 @@ function buildExpression(blocks: FlowBlock[]): string {
 /** Find the first occurrence of `needle` at paren-depth 0, searching from `from`. */
 function topIdx(s: string, needle: string, from = 0): number {
   let depth = 0
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
   for (let i = from; i <= s.length - needle.length; i++) {
     const c = s[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (c === '\\') {
+      escaped = true
+      continue
+    }
+    if (!inDouble && c === "'") {
+      inSingle = !inSingle
+      continue
+    }
+    if (!inSingle && c === '"') {
+      inDouble = !inDouble
+      continue
+    }
+    if (inSingle || inDouble) continue
     if (c === '(' || c === '[') depth++
     else if (c === ')' || c === ']') depth--
     else if (depth === 0 && s.startsWith(needle, i)) return i
@@ -177,6 +200,8 @@ function parseSrc(s: string): ValueSource {
   if (dm) return dm[2] ? { kind: 'data', name: dm[1], field: dm[2] } : { kind: 'data', name: dm[1] }
   const sc = s.match(/^\{\{script\.(\w+)\}\}$/)
   if (sc) return { kind: 'script', name: sc[1] }
+  const pc = s.match(/^\{\{prop\.(\w+)(?:\.(\w+))?\}\}$/)
+  if (pc) return pc[2] ? { kind: 'prop', name: pc[1], field: pc[2] } : { kind: 'prop', name: pc[1] }
   const qm = s.match(/^['"](.*)['"\s]*$/)
   if (qm) return { kind: 'literal', value: qm[1] }
   return { kind: 'literal', value: s }
@@ -426,12 +451,13 @@ const MATH_OP_HELP: Record<MathOp, string> = {
 
 // ─── ValuePicker ──────────────────────────────────────────────────────────────
 
-function ValuePicker({ value, onChange, stateNames, dataNames, scriptNames, allowPrev = false }: {
+function ValuePicker({ value, onChange, stateNames, dataNames, scriptNames, propNames, allowPrev = false }: {
   value: ValueSource
   onChange: (v: ValueSource) => void
   stateNames: string[]
   dataNames: string[]
   scriptNames: string[]
+  propNames: string[]
   allowPrev?: boolean
 }) {
   const cls = 'px-2 py-1 text-xs rounded border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-gray-700 dark:text-gray-300'
@@ -444,6 +470,7 @@ function ValuePicker({ value, onChange, stateNames, dataNames, scriptNames, allo
           if (k === 'state')   onChange({ kind: 'state', name: stateNames[0] ?? '' })
           else if (k === 'data')   onChange({ kind: 'data', name: dataNames[0] ?? '' })
           else if (k === 'script') onChange({ kind: 'script', name: scriptNames[0] ?? '' })
+          else if (k === 'prop') onChange({ kind: 'prop', name: propNames[0] ?? '' })
           else if (k === 'literal') onChange({ kind: 'literal', value: '' })
           else onChange({ kind: 'prev' })
         }}
@@ -453,6 +480,7 @@ function ValuePicker({ value, onChange, stateNames, dataNames, scriptNames, allo
         {stateNames.length > 0 && <option value="state">State</option>}
         {dataNames.length > 0  && <option value="data">Data</option>}
         {scriptNames.length > 0 && <option value="script">Script</option>}
+        {propNames.length > 0 && <option value="prop">Prop</option>}
         <option value="literal">Value</option>
       </select>
 
@@ -477,6 +505,17 @@ function ValuePicker({ value, onChange, stateNames, dataNames, scriptNames, allo
           {scriptNames.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
       )}
+      {value.kind === 'prop' && (
+        <>
+          <select value={value.name} onChange={(e) => onChange({ ...value, name: e.target.value })} className={cls}>
+            {propNames.length === 0 && <option value="">no props yet</option>}
+            {propNames.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <input type="text" value={value.field ?? ''} placeholder="field"
+            onChange={(e) => onChange({ ...value, field: e.target.value } as ValueSource)}
+            className={cls + ' w-20'} />
+        </>
+      )}
       {value.kind === 'literal' && (
         <input
           type="text"
@@ -495,11 +534,12 @@ function ValuePicker({ value, onChange, stateNames, dataNames, scriptNames, allo
 
 // ─── BlockCard ────────────────────────────────────────────────────────────────
 
-function BlockCard({ block, stateNames, dataNames, scriptNames, onChange, onDelete, canDelete }: {
+function BlockCard({ block, stateNames, dataNames, scriptNames, propNames, onChange, onDelete, canDelete }: {
   block: FlowBlock
   stateNames: string[]
   dataNames: string[]
   scriptNames: string[]
+  propNames: string[]
   onChange: (b: FlowBlock) => void
   onDelete: () => void
   canDelete: boolean
@@ -508,7 +548,7 @@ function BlockCard({ block, stateNames, dataNames, scriptNames, onChange, onDele
   const cls = 'px-2 py-1 text-xs rounded border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-gray-700 dark:text-gray-300'
 
   const vp = (v: ValueSource, cb: (s: ValueSource) => void, ap = false) => (
-    <ValuePicker value={v} onChange={cb} stateNames={stateNames} dataNames={dataNames} scriptNames={scriptNames} allowPrev={ap} />
+    <ValuePicker value={v} onChange={cb} stateNames={stateNames} dataNames={dataNames} scriptNames={scriptNames} propNames={propNames} allowPrev={ap} />
   )
 
   return (
@@ -693,7 +733,7 @@ function makeDefaultSrc(sn: string[], dn: string[]): ValueSource {
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
 export function ExpressionBuilderModal({
-  open, onClose, onInsert, stateDefinitions, dataSources, namedScripts = {}, initialValue = '',
+  open, onClose, onInsert, stateDefinitions, dataSources, namedScripts = {}, propNames = [], initialValue = '',
 }: Props) {
   const stateNames = stateDefinitions.filter((s) => s.name.trim()).map((s) => s.name)
   const dataNames = dataSources.filter((d) => d.name.trim()).map((d) => d.name)
@@ -815,7 +855,7 @@ export function ExpressionBuilderModal({
                 placeholder={"{{state.count}} > 0 ? 'Shown' : 'Hidden'"}
                 className="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
-              {(stateNames.length > 0 || dataNames.length > 0) && (
+              {(stateNames.length > 0 || dataNames.length > 0 || propNames.length > 0) && (
                 <div className="flex flex-wrap gap-1 mt-1">
                   {stateNames.map((n) => (
                     <button key={n} type="button"
@@ -829,6 +869,13 @@ export function ExpressionBuilderModal({
                       onClick={() => setRawExpr((p) => p + `{{data.${n}.field}}`)}
                       className="px-2 py-0.5 text-[10px] font-mono rounded border border-gray-200 dark:border-[#30363d] hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-600 dark:text-gray-400">
                       data.{n}
+                    </button>
+                  ))}
+                  {propNames.map((n) => (
+                    <button key={n} type="button"
+                      onClick={() => setRawExpr((p) => p + `{{prop.${n}}}`)}
+                      className="px-2 py-0.5 text-[10px] font-mono rounded border border-gray-200 dark:border-[#30363d] hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-600 dark:text-gray-400">
+                      prop.{n}
                     </button>
                   ))}
                 </div>
@@ -851,6 +898,7 @@ export function ExpressionBuilderModal({
                     stateNames={stateNames}
                     dataNames={dataNames}
                     scriptNames={scriptNames}
+                    propNames={propNames}
                     onChange={(b) => setBlocks((prev) => prev.map((x) => x.id === block.id ? b : x))}
                     onDelete={() => setBlocks((prev) => prev.filter((x) => x.id !== block.id))}
                     canDelete={blocks.length > 1}
