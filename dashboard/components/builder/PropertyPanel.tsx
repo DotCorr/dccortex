@@ -490,6 +490,15 @@ export function PropertyPanel({
   tabStorageKey,
   scrollStorageKey,
 }: Props) {
+  const expandSourceAliases = useCallback((name: string): string[] => {
+    const trimmed = String(name ?? '').trim()
+    if (!trimmed) return []
+    const snake = trimmed.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase()
+    const kebab = trimmed.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+    const compact = trimmed.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()
+    return Array.from(new Set([trimmed, snake, kebab, compact].filter(Boolean)))
+  }, [])
+
   const [activeTab, setActiveTab] = useState<PanelTab>('layout')
   const [bindingFor, setBindingFor] = useState<string | null>(null)
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
@@ -611,11 +620,14 @@ export function PropertyPanel({
   )
 
   const def = node ? getComponentDef(node.type) : null
-  const bindingDataSourceNames = useMemo(() => Array.from(new Set([
-    ...dataSources.map((d) => d.name.trim()).filter(Boolean),
-    ...projectApiSourceNames,
-    ...projectTableNames,
-  ])), [dataSources, projectApiSourceNames, projectTableNames])
+  const bindingDataSourceNames = useMemo(() => {
+    const base = [
+      ...dataSources.map((d) => d.name.trim()).filter(Boolean),
+      ...projectApiSourceNames,
+      ...projectTableNames,
+    ]
+    return Array.from(new Set(base.flatMap((name) => expandSourceAliases(name))))
+  }, [dataSources, projectApiSourceNames, projectTableNames, expandSourceAliases])
   const bindingDataSources = useMemo<DataSourceDef[]>(() => bindingDataSourceNames.map((name) => ({ id: `binding-${name}`, name })), [bindingDataSourceNames])
   const propKeys = def ? Object.keys(def.defaultProps) : Object.keys(props)
   const uniqueKeys = Array.from(new Set([...propKeys, ...Object.keys(props), ...STYLE_PROP_KEYS, ...LAYOUT_KEYS, 'visibleWhen']))
@@ -2934,7 +2946,7 @@ export function PropertyPanel({
           const sourcesWithParams = dataSources.filter(d => (d as any).urlParamDefs?.length)
           return (
           <div className="space-y-3">
-            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from sources you define in the platform. Reference in bindings as <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.field&#125;&#125;</code>.</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.some.path&#125;&#125;</code> for nested fields, and repeater with array paths only.</p>
 
             {onDataSourcesChange && dataSources.length > 0 && (
               <div className="space-y-3">
