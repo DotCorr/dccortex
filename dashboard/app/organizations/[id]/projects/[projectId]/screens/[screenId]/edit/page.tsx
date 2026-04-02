@@ -102,6 +102,44 @@ type EditorNotice = {
   message: string
 }
 
+type OrgResourceCatalog = {
+  projects: Array<{ id: string; name: string; slug: string }>
+  summary: {
+    projectCount: number
+    orgReusableCount: number
+    reusableReferenceCount: number
+    assetCount: number
+    apiSourceCount: number
+    datasourceCount: number
+    tableCount: number
+  }
+  reusables: {
+    organization: Array<{ id: string; name: string; createdAt?: string; updatedAt?: string }>
+    usage: Array<{
+      reusableId: string
+      reusableName: string | null
+      totalInstances: number
+      usage: Array<{
+        projectId: string
+        projectName: string
+        screenId: string
+        screenName: string
+        screenSlug: string
+        instanceCount: number
+      }>
+    }>
+  }
+  assets: Array<{ id: string; name: string; mimetype: string; size: number; url: string; projectId: string; project?: { name?: string } | null }>
+  apiSources: Array<{ id: string; name: string; method: string; url: string; authType: string; projectId: string; project?: { name?: string } | null }>
+  databases: Array<{
+    datasourceId: string
+    projectId: string
+    projectName: string
+    tableCount: number
+    tables: Array<{ id: string; name: string; columnCount: number; rowCount: number }>
+  }>
+}
+
 function parseComparable(v: string): string | number | boolean {
   const s = String(v ?? '').trim()
   if (s === 'true') return true
@@ -624,6 +662,12 @@ export default function ScreenEditPage() {
   const [canvasStageSize, setCanvasStageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
   const [editorNotices, setEditorNotices] = useState<EditorNotice[]>([])
   const noticeTimeoutsRef = useRef<Record<string, number>>({})
+  const [orgResourceBrowserOpen, setOrgResourceBrowserOpen] = useState(false)
+  const [orgResourceCatalog, setOrgResourceCatalog] = useState<OrgResourceCatalog | null>(null)
+  const [orgResourceCatalogLoading, setOrgResourceCatalogLoading] = useState(false)
+  const [orgResourceCatalogError, setOrgResourceCatalogError] = useState<string | null>(null)
+  const [orgResourceSearch, setOrgResourceSearch] = useState('')
+  const [orgResourceProjectFilter, setOrgResourceProjectFilter] = useState('')
 
   const dismissEditorNotice = useCallback((noticeId: string) => {
     const timeoutId = noticeTimeoutsRef.current[noticeId]
@@ -653,6 +697,31 @@ export default function ScreenEditPage() {
       noticeTimeoutsRef.current = {}
     }
   }, [])
+
+  const fetchOrgResourceCatalog = useCallback(async (query = orgResourceSearch, projectFilter = orgResourceProjectFilter) => {
+    if (!orgId) {
+      setOrgResourceCatalogError('Missing organization context.')
+      return
+    }
+
+    setOrgResourceCatalogLoading(true)
+    setOrgResourceCatalogError(null)
+    try {
+      const params = new URLSearchParams()
+      const normalizedQuery = query.trim()
+      const normalizedProject = projectFilter.trim()
+      if (normalizedQuery) params.set('q', normalizedQuery)
+      if (normalizedProject) params.set('projectId', normalizedProject)
+      const suffix = params.toString() ? `?${params.toString()}` : ''
+      const response = await axios.get(`/api/organizations/${orgId}/resource-catalog${suffix}`)
+      setOrgResourceCatalog(response.data as OrgResourceCatalog)
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to load organization resource catalog'
+      setOrgResourceCatalogError(msg)
+    } finally {
+      setOrgResourceCatalogLoading(false)
+    }
+  }, [orgId, orgResourceProjectFilter, orgResourceSearch])
 
   const readPreviewCacheSnapshot = useCallback(() => {
     if (typeof window === 'undefined') return null
@@ -3442,6 +3511,10 @@ export default function ScreenEditPage() {
                 onDeleteReusable={handleDeleteReusable}
                 activeReusableId={editingReusableId}
                 onInsertReusable={handleInsertReusable}
+                onBrowseOrgResources={() => {
+                  setOrgResourceBrowserOpen(true)
+                  void fetchOrgResourceCatalog()
+                }}
                 promotingReusableIds={promotingReusableIds}
                 onPromoteReusable={async (reusable) => {
                   if (!orgId) {
@@ -3525,6 +3598,149 @@ export default function ScreenEditPage() {
           }
         />
       </div>
+
+      {orgResourceBrowserOpen && (
+        <div className="fixed inset-0 z-[145] flex items-center justify-center bg-black/55" onClick={(e) => { if (e.target === e.currentTarget) setOrgResourceBrowserOpen(false) }}>
+          <div className="w-[1100px] max-w-[calc(100vw-1.5rem)] max-h-[86vh] overflow-hidden rounded-lg border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#0d1117] shadow-2xl flex flex-col">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Organization resource browser</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Browse org reusables, usage maps, assets, API sources, and databases across projects.</div>
+              </div>
+              <button type="button" onClick={() => setOrgResourceBrowserOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-[#30363d] grid grid-cols-1 md:grid-cols-[1fr_240px_auto] gap-2">
+              <input
+                value={orgResourceSearch}
+                onChange={(e) => setOrgResourceSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void fetchOrgResourceCatalog(orgResourceSearch, orgResourceProjectFilter) }}
+                placeholder="Search reusable names, screens, assets, APIs, tables..."
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#161b22] text-black dark:text-white"
+              />
+              <select
+                value={orgResourceProjectFilter}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setOrgResourceProjectFilter(next)
+                  void fetchOrgResourceCatalog(orgResourceSearch, next)
+                }}
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#161b22] text-black dark:text-white"
+              >
+                <option value="">All projects</option>
+                {(orgResourceCatalog?.projects ?? []).map((project) => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void fetchOrgResourceCatalog(orgResourceSearch, orgResourceProjectFilter)}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              {orgResourceCatalogLoading && <div className="text-sm text-gray-500 dark:text-gray-300">Loading organization resources...</div>}
+              {orgResourceCatalogError && <div className="text-sm text-rose-600 dark:text-rose-300">{orgResourceCatalogError}</div>}
+
+              {orgResourceCatalog && !orgResourceCatalogLoading && !orgResourceCatalogError && (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Projects</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.projectCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Org reusables</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.orgReusableCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Reusable refs</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.reusableReferenceCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Assets</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.assetCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">API sources</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.apiSourceCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Databases</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.datasourceCount}</div></div>
+                    <div className="rounded border border-gray-200 dark:border-[#30363d] p-2"><div className="text-[11px] text-gray-500">Tables</div><div className="text-sm font-semibold">{orgResourceCatalog.summary.tableCount}</div></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                      <h3 className="text-sm font-semibold mb-2">Organization reusables</h3>
+                      <div className="space-y-1.5 max-h-56 overflow-auto pr-1">
+                        {orgResourceCatalog.reusables.organization.length === 0 && <div className="text-xs text-gray-500">No reusables found.</div>}
+                        {orgResourceCatalog.reusables.organization.map((item) => (
+                          <div key={item.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5 text-xs flex items-center justify-between gap-2">
+                            <span className="font-medium text-gray-800 dark:text-gray-100 truncate">{item.name}</span>
+                            <span className="text-gray-500 truncate">{item.id}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                      <h3 className="text-sm font-semibold mb-2">Reusable usage map</h3>
+                      <div className="space-y-2 max-h-56 overflow-auto pr-1">
+                        {orgResourceCatalog.reusables.usage.length === 0 && <div className="text-xs text-gray-500">No reusable references found in project screens.</div>}
+                        {orgResourceCatalog.reusables.usage.map((entry) => (
+                          <div key={entry.reusableId} className="rounded border border-gray-200 dark:border-[#30363d] p-2">
+                            <div className="text-xs font-medium text-gray-800 dark:text-gray-100">{entry.reusableName ?? entry.reusableId}</div>
+                            <div className="text-[11px] text-gray-500 mb-1">{entry.totalInstances} instances</div>
+                            <div className="space-y-1">
+                              {entry.usage.slice(0, 4).map((u) => (
+                                <div key={`${entry.reusableId}-${u.screenId}`} className="text-[11px] text-gray-600 dark:text-gray-300 truncate">
+                                  {u.projectName} / {u.screenName} ({u.instanceCount})
+                                </div>
+                              ))}
+                              {entry.usage.length > 4 && <div className="text-[11px] text-gray-400">+{entry.usage.length - 4} more usages</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                      <h3 className="text-sm font-semibold mb-2">Project assets</h3>
+                      <div className="space-y-1.5 max-h-56 overflow-auto pr-1">
+                        {orgResourceCatalog.assets.length === 0 && <div className="text-xs text-gray-500">No assets found.</div>}
+                        {orgResourceCatalog.assets.map((asset) => (
+                          <div key={asset.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5 text-xs">
+                            <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{asset.name}</div>
+                            <div className="text-gray-500 truncate">{asset.project?.name ?? 'Unknown'} • {asset.mimetype} • {(asset.size / 1024).toFixed(1)} KB</div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                      <h3 className="text-sm font-semibold mb-2">API sources and databases</h3>
+                      <div className="space-y-2 max-h-56 overflow-auto pr-1">
+                        <div>
+                          <div className="text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">API sources</div>
+                          <div className="space-y-1">
+                            {orgResourceCatalog.apiSources.length === 0 && <div className="text-xs text-gray-500">No API sources found.</div>}
+                            {orgResourceCatalog.apiSources.slice(0, 8).map((source) => (
+                              <div key={source.id} className="text-[11px] text-gray-600 dark:text-gray-300 truncate">
+                                [{source.method}] {source.name} ({source.project?.name ?? 'Unknown'})
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">Databases</div>
+                          <div className="space-y-1">
+                            {orgResourceCatalog.databases.length === 0 && <div className="text-xs text-gray-500">No internal databases found.</div>}
+                            {orgResourceCatalog.databases.slice(0, 8).map((db) => (
+                              <div key={db.datasourceId} className="text-[11px] text-gray-600 dark:text-gray-300 truncate">
+                                {db.projectName}: {db.tableCount} tables
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {editorNotices.length > 0 && (
         <div className="fixed top-4 right-4 z-[140] flex w-[340px] max-w-[calc(100vw-1.5rem)] flex-col gap-2">

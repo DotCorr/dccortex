@@ -46,9 +46,10 @@ type Props = {
   onRenameReusable?: (id: string, newName: string) => void
   activeReusableId?: string | null
   promotingReusableIds?: string[]
+  onBrowseOrgResources?: () => void
 }
 
-export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onInsertReusable, onEditReusable, onDeleteReusable, onPromoteReusable, onRenameReusable, activeReusableId = null, promotingReusableIds = [] }: Props) {
+export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onInsertReusable, onEditReusable, onDeleteReusable, onPromoteReusable, onRenameReusable, activeReusableId = null, promotingReusableIds = [], onBrowseOrgResources }: Props) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -239,7 +240,18 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
           </button>
           <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Global Reusables</div>
         </div>
-        <div className="text-xs text-gray-500">{reusables.length}</div>
+        <div className="flex items-center gap-2">
+          {onBrowseOrgResources && (
+            <button
+              type="button"
+              onClick={onBrowseOrgResources}
+              className="text-[11px] px-2 py-1 border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] text-gray-600 dark:text-gray-300"
+            >
+              Browse org
+            </button>
+          )}
+          <div className="text-xs text-gray-500">{reusables.length}</div>
+        </div>
       </div>
       {!collapsed && (
         <div
