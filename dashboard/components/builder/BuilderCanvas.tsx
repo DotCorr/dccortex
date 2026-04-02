@@ -358,6 +358,8 @@ const BUILDER_CHART_TYPES = new Set([
   'heatmapChart', 'bubbleChart',
 ])
 
+const MissingReusableWarningContext = React.createContext(true)
+
 function cloneForReusableInstance(node: Node, namespace: string): Node {
   return {
     ...node,
@@ -403,6 +405,7 @@ function NodeRenderer({
 }) {
   const isSelected = !previewMode && selectedId === node.id
   const canDragNode = !previewMode && !isRoot && !!onMove
+  const showMissingReusableWarning = React.useContext(MissingReusableWarningContext)
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -687,6 +690,7 @@ function NodeRenderer({
     const reusableId = String(node.props.reusableId ?? '')
     const reusable = reusableId ? reusablesById?.get(reusableId) : undefined
     if (!reusable) {
+      if (!showMissingReusableWarning) return null
       return (
         <div className="text-xs px-2 py-1 rounded border border-dashed border-amber-400 text-amber-600">
           Missing reusable: {reusableId || 'unknown'}
@@ -2032,7 +2036,19 @@ function NodeRenderer({
 export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMode, suppressRootChrome = false, resolveBinding: resolveBindingFn, theme, onMove, onRunEvent, reusables = [] }: Props) {
   const reusablesById = new Map(reusables.map((r) => [r.id, r]))
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
+  const [showMissingReusableWarning, setShowMissingReusableWarning] = useState(reusables.length > 0)
   const scrollRef = React.useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // Avoid flashing transient "Missing reusable" while globals hydrate on startup.
+    if (reusables.length > 0) {
+      setShowMissingReusableWarning(true)
+      return
+    }
+    setShowMissingReusableWarning(false)
+    const timer = window.setTimeout(() => setShowMissingReusableWarning(true), 300)
+    return () => window.clearTimeout(timer)
+  }, [reusables.length, root.id])
 
   // Ensure any custom font families referenced by nodes are loaded in runtime/edit previews.
   useEffect(() => {
@@ -2277,6 +2293,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
           style={previewMode ? undefined : { position: 'relative' }}
           onDragOver={previewMode ? undefined : (e) => { e.preventDefault(); e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-builder-tree-node') ? 'move' : 'copy' }}
         >
+          <MissingReusableWarningContext.Provider value={showMissingReusableWarning}>
           <NodeErrorBoundary nodeId={root.id}>
           <NodeRenderer
             key={`${root.id}:${root.type}`}
@@ -2297,6 +2314,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
             onDragEndNode={() => setDraggingNodeId(null)}
           />
           </NodeErrorBoundary>
+          </MissingReusableWarningContext.Provider>
         </div>
       </div>
     </div>

@@ -45,9 +45,10 @@ type Props = {
   onPromoteReusable?: (reusable: ReusableDefinition) => void
   onRenameReusable?: (id: string, newName: string) => void
   activeReusableId?: string | null
+  promotingReusableIds?: string[]
 }
 
-export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onInsertReusable, onEditReusable, onDeleteReusable, onPromoteReusable, onRenameReusable, activeReusableId = null }: Props) {
+export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onInsertReusable, onEditReusable, onDeleteReusable, onPromoteReusable, onRenameReusable, activeReusableId = null, promotingReusableIds = [] }: Props) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -68,10 +69,15 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
   const initial = useMemo(loadPaneState, [])
   const [collapsed, setCollapsed] = useState(initial.collapsed)
   const [height, setHeight] = useState(initial.height)
+  const heightRef = useRef(initial.height)
   const [draggingResize, setDraggingResize] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const dropZoneRef = useRef<HTMLDivElement>(null)
   const dropHandledRef = useRef(false)
+
+  useEffect(() => {
+    heightRef.current = height
+  }, [height])
 
   useEffect(() => {
     const onDragEnd = () => {
@@ -137,14 +143,38 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
     persistPaneState({ collapsed: next, height })
   }
 
-  const startResize = () => setDraggingResize(true)
-  const stopResize = () => setDraggingResize(false)
-  const onResizeMove = (e: React.MouseEvent) => {
-    if (!draggingResize || collapsed) return
-    const next = Math.max(120, Math.min(460, height - e.movementY))
-    setHeight(next)
-    persistPaneState({ collapsed, height: next })
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setDraggingResize(true)
   }
+
+  useEffect(() => {
+    if (!draggingResize) return
+
+    const previousUserSelect = document.body.style.userSelect
+    const previousWebkitUserSelect = document.body.style.webkitUserSelect
+    document.body.style.userSelect = 'none'
+    document.body.style.webkitUserSelect = 'none'
+
+    const onMove = (e: MouseEvent) => {
+      if (collapsed) return
+      const next = Math.max(120, Math.min(460, height - e.movementY))
+      setHeight(next)
+    }
+    const onUp = () => {
+      setDraggingResize(false)
+      persistPaneState({ collapsed, height: heightRef.current })
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.userSelect = previousUserSelect
+      document.body.style.webkitUserSelect = previousWebkitUserSelect
+    }
+  }, [collapsed, draggingResize])
 
   const isTreeNodeDrag = useCallback((e: React.DragEvent) => {
     const payload = getBuilderDragPayload()
@@ -200,8 +230,8 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
   )
 
   return (
-    <div onMouseMove={onResizeMove} onMouseUp={stopResize} className="w-full shrink-0 border-t border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22]">
-      <div className="h-1 cursor-row-resize hover:bg-[var(--primary)]/40" onMouseDown={startResize} />
+    <div className="w-full shrink-0 border-t border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22]">
+      <div className="h-1 cursor-row-resize hover:bg-[var(--primary)]/40 select-none" tabIndex={-1} onMouseDown={startResize} />
       <div className="px-3 py-2 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button type="button" onClick={toggleCollapsed} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-[#21262d]">
@@ -251,7 +281,9 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
             <div className="text-xs text-gray-500 dark:text-gray-400">No global reusables yet.</div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {filtered.map((r) => (
+              {filtered.map((r) => {
+                const isPromoting = promotingReusableIds.includes(r.id)
+                return (
                 <div
                   key={r.id}
                   draggable
@@ -323,13 +355,15 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
                     <button
                       type="button"
                       onClick={() => onPromoteReusable(r)}
-                      className="mt-1 w-full text-xs px-2 py-1 border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]"
+                      disabled={isPromoting}
+                      className={`mt-1 w-full text-xs px-2 py-1 border border-gray-300 dark:border-[#30363d] rounded ${isPromoting ? 'opacity-60 cursor-wait' : 'hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
                     >
-                      Promote to org
+                      {isPromoting ? 'Promoting...' : 'Promote to org'}
                     </button>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
