@@ -1703,8 +1703,18 @@ export default function ScreenEditPage() {
     // This avoids stale presence from a previous tab/session overriding restored local settings.
     if (!selfPresence?.userId) return
 
+    // Deterministic leader/follower rule prevents two-way ping-pong when multiple users
+    // actively change viewport settings at the same time.
+    const localClientId = clientIdRef.current
+    const collaboratorClientIds = visibleCollaborators
+      .map((p) => p.clientId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    const allClientIds = Array.from(new Set([localClientId, ...collaboratorClientIds])).sort()
+    const leaderClientId = allClientIds[0]
+    if (!leaderClientId || leaderClientId === localClientId) return
+
     const candidates = visibleCollaborators
-      .filter((p) => p.screenId === screenId && p.viewState && typeof p.viewState === 'object')
+      .filter((p) => p.clientId === leaderClientId && p.screenId === screenId && p.viewState && typeof p.viewState === 'object')
       .map((p) => p.viewState as CollaboratorViewState)
       .filter((s) => typeof s.clientSentAt === 'number' && Number.isFinite(s.clientSentAt))
 
