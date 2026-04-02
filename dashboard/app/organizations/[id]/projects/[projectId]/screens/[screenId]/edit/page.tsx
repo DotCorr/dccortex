@@ -2975,6 +2975,13 @@ export default function ScreenEditPage() {
           center={
             <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
               <div className="shrink-0 flex flex-wrap items-center justify-center gap-3 py-2 border-b border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22]">
+                {editingReusableId && !previewMode && (
+                  <div className="flex items-center gap-2 rounded border border-[var(--primary)]/45 bg-[var(--primary)]/5 px-2.5 py-1.5 text-xs">
+                    <span className="font-medium text-gray-800 dark:text-gray-100">Editing reusable source</span>
+                    <span className="text-gray-500 dark:text-gray-400">{editingReusable?.name ?? 'Reusable'}</span>
+                    <button type="button" className="underline text-[var(--primary)]" onClick={stopEditingReusable}>Back to screen</button>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => undo()}
@@ -3251,13 +3258,6 @@ export default function ScreenEditPage() {
                       className="relative w-full h-full min-w-0 overflow-auto"
                       style={{ backgroundColor: canvasBgColor }}
                     >
-                      {editingReusableId && !previewMode && (
-                        <div className="absolute top-2 left-2 z-[140] flex items-center gap-2 rounded border border-[var(--primary)]/45 bg-white/92 dark:bg-[#0d1117]/92 px-2.5 py-1.5 text-xs shadow">
-                          <span className="font-medium text-gray-800 dark:text-gray-100">Editing reusable source</span>
-                          <span className="text-gray-500 dark:text-gray-400">{editingReusable?.name ?? 'Reusable'}</span>
-                          <button type="button" className="underline text-[var(--primary)]" onClick={stopEditingReusable}>Back to screen</button>
-                        </div>
-                      )}
                       <div
                         className={`${framedViewport ? 'min-w-full justify-center' : 'w-full justify-start'} min-h-full flex items-start`}
                         style={{
