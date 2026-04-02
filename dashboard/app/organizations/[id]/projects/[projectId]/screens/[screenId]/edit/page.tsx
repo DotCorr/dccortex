@@ -1552,16 +1552,31 @@ export default function ScreenEditPage() {
 
   const selectedNode = activeSelectedId ? findNode(activeRoot, activeSelectedId) : null
   const parentPropSchema = useMemo((): { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[] => {
+    const mergeByKey = (
+      primary: { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[],
+      fallback: { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[]
+    ) => {
+      const map = new Map<string, { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }>()
+      for (const item of fallback) map.set(item.key, item)
+      for (const item of primary) map.set(item.key, item)
+      return Array.from(map.values())
+    }
+
+    const liveContract = activeSelectedId ? (findContainingPropContract(activeRoot, activeSelectedId) ?? []) : []
+
     if (editingReusableId) {
-      return globalReusables.find((r) => r.id === editingReusableId)?.propsSchema ?? []
+      const savedSchema = globalReusables.find((r) => r.id === editingReusableId)?.propsSchema ?? []
+      if (liveContract.length > 0) return mergeByKey(liveContract, savedSchema)
+      return savedSchema
     }
     if (!activeSelectedId) return []
     const containingId = findContainingReusableId(activeRoot, activeSelectedId)
     if (containingId) {
-      return globalReusables.find((r) => r.id === containingId)?.propsSchema ?? []
+      const savedSchema = globalReusables.find((r) => r.id === containingId)?.propsSchema ?? []
+      if (liveContract.length > 0) return mergeByKey(liveContract, savedSchema)
+      return savedSchema
     }
-    const contract = findContainingPropContract(activeRoot, activeSelectedId)
-    return contract ?? []
+    return liveContract
   }, [editingReusableId, activeSelectedId, activeRoot, globalReusables])
   const handlePropChange = useCallback(
     (props: Record<string, unknown>) => {
