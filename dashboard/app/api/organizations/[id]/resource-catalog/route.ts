@@ -19,6 +19,16 @@ type OrgReusable = {
   propsSchema?: unknown
   createdAt?: string
   updatedAt?: string
+  sourceProjectId?: string
+  sourceProjectName?: string
+  sourceOwnerUserId?: string
+  sourceOwnerName?: string
+  sourceOwnerEmail?: string
+  promotedByUserId?: string
+}
+
+type ResourceCatalogRules = {
+  memberDataSharingEnabled: boolean
 }
 
 type ReusableUsageEntry = {
@@ -84,6 +94,28 @@ function textMatches(value: string | null | undefined, query: string): boolean {
   return String(value ?? '').toLowerCase().includes(query)
 }
 
+function parseResourceCatalogRules(metadata: unknown): ResourceCatalogRules {
+  if (!metadata || typeof metadata !== 'object') return { memberDataSharingEnabled: true }
+  const rules = (metadata as Record<string, unknown>).resourceCatalogRules
+  if (!rules || typeof rules !== 'object') return { memberDataSharingEnabled: true }
+
+  const memberDataSharingEnabledRaw = (rules as Record<string, unknown>).memberDataSharingEnabled
+  return {
+    memberDataSharingEnabled: typeof memberDataSharingEnabledRaw === 'boolean' ? memberDataSharingEnabledRaw : true,
+  }
+}
+
+function withResourceCatalogRules(metadata: unknown, rules: ResourceCatalogRules): Record<string, unknown> {
+  const base = metadata && typeof metadata === 'object'
+    ? JSON.parse(JSON.stringify(metadata)) as Record<string, unknown>
+    : {}
+  base.resourceCatalogRules = {
+    ...(base.resourceCatalogRules && typeof base.resourceCatalogRules === 'object' ? base.resourceCatalogRules as Record<string, unknown> : {}),
+    memberDataSharingEnabled: rules.memberDataSharingEnabled,
+  }
+  return base
+}
+
 async function getAccess(request: NextRequest, params: Promise<{ id: string }> | { id: string }) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
@@ -100,8 +132,8 @@ async function getAccess(request: NextRequest, params: Promise<{ id: string }> |
     return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
   }
 
-  const allowed = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
-  if (!allowed) {
+  const canViewApp = await hasPermission(organizationId, PERMISSIONS.APP_VIEW, session)
+  if (!canViewApp) {
     await logAuditEvent({
       action: 'org.resource_catalog.read',
       status: 'denied',
@@ -115,10 +147,13 @@ async function getAccess(request: NextRequest, params: Promise<{ id: string }> |
     return NextResponse.json({ error: 'Insufficient permissions to view organization resource catalog' }, { status: 403 })
   }
 
+  const canManage = await hasPermission(organizationId, PERMISSIONS.ORG_MANAGE, session)
+
   return {
     organizationId,
     actorUserId: session.user.id,
     organizationMetadata: organization.metadata,
+    canManage,
   }
 }
 
@@ -132,12 +167,27 @@ export async function GET(
 
     const query = request.nextUrl.searchParams.get('q')?.trim().toLowerCase() ?? ''
     const selectedProjectId = request.nextUrl.searchParams.get('projectId')?.trim() ?? ''
+    const rules = parseResourceCatalogRules(access.organizationMetadata)
+    const canViewDataResources = access.canManage || rules.memberDataSharingEnabled
 
     const projects = await prisma.project.findMany({
       where: { organizationId: access.organizationId },
-      select: { id: true, name: true, slug: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
       orderBy: { name: 'asc' },
     })
+
+    const projectById = new Map(projects.map((project) => [project.id, project]))
 
     const allowedProjectIds = new Set(projects.map((project) => project.id))
     const scopedProjectIds = selectedProjectId && allowedProjectIds.has(selectedProjectId)
@@ -145,56 +195,82 @@ export async function GET(
       : projects.map((project) => project.id)
 
     const [assets, apiSources, datasources, screens] = await Promise.all([
-      prisma.projectAsset.findMany({
-        where: { projectId: { in: scopedProjectIds } },
-        select: {
-          id: true,
-          name: true,
-          mimetype: true,
-          size: true,
-          url: true,
-          createdAt: true,
-          projectId: true,
-          project: { select: { name: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.externalApiSource.findMany({
-        where: { projectId: { in: scopedProjectIds } },
-        select: {
-          id: true,
-          name: true,
-          method: true,
-          url: true,
-          authType: true,
-          updatedAt: true,
-          projectId: true,
-          project: { select: { name: true } },
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
-      prisma.internalDatasource.findMany({
-        where: { projectId: { in: scopedProjectIds } },
-        select: {
-          id: true,
-          projectId: true,
-          project: { select: { name: true } },
-          tables: {
+      canViewDataResources
+        ? prisma.projectAsset.findMany({
+            where: { projectId: { in: scopedProjectIds } },
             select: {
               id: true,
               name: true,
-              _count: {
+              mimetype: true,
+              size: true,
+              url: true,
+              createdAt: true,
+              projectId: true,
+              project: {
                 select: {
-                  columns: true,
-                  rows: true,
+                  name: true,
+                  user: { select: { id: true, name: true, email: true } },
                 },
               },
             },
-            orderBy: { name: 'asc' },
-          },
-          updatedAt: true,
-        },
-      }),
+            orderBy: { createdAt: 'desc' },
+          })
+        : Promise.resolve([]),
+      canViewDataResources
+        ? prisma.externalApiSource.findMany({
+            where: { projectId: { in: scopedProjectIds } },
+            select: {
+              id: true,
+              name: true,
+              method: true,
+              url: true,
+              authType: true,
+              headers: true,
+              body: true,
+              authValue: true,
+              authHeader: true,
+              schema: true,
+              updatedAt: true,
+              projectId: true,
+              project: {
+                select: {
+                  name: true,
+                  user: { select: { id: true, name: true, email: true } },
+                },
+              },
+            },
+            orderBy: { updatedAt: 'desc' },
+          })
+        : Promise.resolve([]),
+      canViewDataResources
+        ? prisma.internalDatasource.findMany({
+            where: { projectId: { in: scopedProjectIds } },
+            select: {
+              id: true,
+              projectId: true,
+              project: {
+                select: {
+                  name: true,
+                  user: { select: { id: true, name: true, email: true } },
+                },
+              },
+              tables: {
+                select: {
+                  id: true,
+                  name: true,
+                  _count: {
+                    select: {
+                      columns: true,
+                      rows: true,
+                    },
+                  },
+                },
+                orderBy: { name: 'asc' },
+              },
+              updatedAt: true,
+            },
+          })
+        : Promise.resolve([]),
       prisma.appScreen.findMany({
         where: { projectId: { in: scopedProjectIds } },
         select: {
@@ -209,7 +285,19 @@ export async function GET(
     ])
 
     const orgReusables = parseOrgReusables(access.organizationMetadata)
-    const reusableNameById = new Map(orgReusables.map((item) => [item.id, item.name]))
+    const reusablesWithSourceMeta = orgReusables.map((item) => {
+      const sourceProjectId = item.sourceProjectId
+      const sourceProject = sourceProjectId ? projectById.get(sourceProjectId) : undefined
+      return {
+        ...item,
+        sourceProjectName: item.sourceProjectName ?? sourceProject?.name,
+        sourceOwnerUserId: item.sourceOwnerUserId ?? sourceProject?.user?.id,
+        sourceOwnerName: item.sourceOwnerName ?? sourceProject?.user?.name ?? null,
+        sourceOwnerEmail: item.sourceOwnerEmail ?? sourceProject?.user?.email ?? null,
+      }
+    })
+
+    const reusableNameById = new Map(reusablesWithSourceMeta.map((item) => [item.id, item.name]))
     const reusableUsageMap = new Map<string, ReusableUsageEntry[]>()
 
     for (const screen of screens) {
@@ -242,21 +330,38 @@ export async function GET(
       })
       .sort((a, b) => b.totalInstances - a.totalInstances)
 
-    const filteredOrgReusables = orgReusables
+    const filteredOrgReusables = reusablesWithSourceMeta
       .filter((item) => {
         if (!query) return true
-        return textMatches(item.name, query) || textMatches(item.id, query)
+        return (
+          textMatches(item.name, query)
+          || textMatches(item.id, query)
+          || textMatches(item.sourceProjectName, query)
+          || textMatches(item.sourceOwnerName, query)
+          || textMatches(item.sourceOwnerEmail, query)
+        )
       })
       .sort((a, b) => String(a.name).localeCompare(String(b.name)))
 
     const filteredAssets = assets.filter((asset) => {
       if (!query) return true
-      return textMatches(asset.name, query) || textMatches(asset.project?.name, query)
+      return (
+        textMatches(asset.name, query)
+        || textMatches(asset.project?.name, query)
+        || textMatches(asset.project?.user?.name, query)
+        || textMatches(asset.project?.user?.email, query)
+      )
     })
 
     const filteredApiSources = apiSources.filter((source) => {
       if (!query) return true
-      return textMatches(source.name, query) || textMatches(source.url, query) || textMatches(source.project?.name, query)
+      return (
+        textMatches(source.name, query)
+        || textMatches(source.url, query)
+        || textMatches(source.project?.name, query)
+        || textMatches(source.project?.user?.name, query)
+        || textMatches(source.project?.user?.email, query)
+      )
     })
 
     const filteredDatabases = datasources
@@ -264,6 +369,8 @@ export async function GET(
         datasourceId: datasource.id,
         projectId: datasource.projectId,
         projectName: datasource.project?.name ?? 'Unknown project',
+        projectOwnerName: datasource.project?.user?.name ?? null,
+        projectOwnerEmail: datasource.project?.user?.email ?? null,
         updatedAt: datasource.updatedAt,
         tableCount: datasource.tables.length,
         tables: datasource.tables.map((table) => ({
@@ -275,12 +382,26 @@ export async function GET(
       }))
       .filter((db) => {
         if (!query) return true
-        if (textMatches(db.projectName, query)) return true
+          if (textMatches(db.projectName, query) || textMatches(db.projectOwnerName, query) || textMatches(db.projectOwnerEmail, query)) return true
         return db.tables.some((table) => textMatches(table.name, query))
       })
 
     return NextResponse.json({
-      projects,
+      permissions: {
+        canManageOrgResources: access.canManage,
+        canViewDataResources,
+      },
+      rules,
+      projects: projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        slug: project.slug,
+        owner: {
+          userId: project.user?.id ?? null,
+          name: project.user?.name ?? null,
+          email: project.user?.email ?? null,
+        },
+      })),
       summary: {
         projectCount: projects.length,
         orgReusableCount: filteredOrgReusables.length,
@@ -294,8 +415,16 @@ export async function GET(
         organization: filteredOrgReusables,
         usage: reusableUsage,
       },
-      assets: filteredAssets,
-      apiSources: filteredApiSources,
+      assets: filteredAssets.map((asset) => ({
+        ...asset,
+        projectOwnerName: asset.project?.user?.name ?? null,
+        projectOwnerEmail: asset.project?.user?.email ?? null,
+      })),
+      apiSources: filteredApiSources.map((source) => ({
+        ...source,
+        projectOwnerName: source.project?.user?.name ?? null,
+        projectOwnerEmail: source.project?.user?.email ?? null,
+      })),
       databases: filteredDatabases,
     })
   } catch (error) {
@@ -311,6 +440,71 @@ export async function GET(
       request,
     })
     console.error('[org resource catalog GET]', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> | { id: string } }
+) {
+  try {
+    const access = await getAccess(request, params)
+    if (access instanceof NextResponse) return access
+
+    if (!access.canManage) {
+      await logAuditEvent({
+        action: 'org.resource_catalog.rules.update',
+        status: 'denied',
+        actorUserId: access.actorUserId,
+        organizationId: access.organizationId,
+        targetType: 'organization',
+        targetId: access.organizationId,
+        reason: 'insufficient_permissions',
+        request,
+      })
+      return NextResponse.json({ error: 'Insufficient permissions to update resource sharing rules' }, { status: 403 })
+    }
+
+    const body = await request.json().catch(() => ({})) as { memberDataSharingEnabled?: unknown }
+    if (typeof body.memberDataSharingEnabled !== 'boolean') {
+      return NextResponse.json({ error: 'memberDataSharingEnabled must be a boolean' }, { status: 400 })
+    }
+
+    const nextRules: ResourceCatalogRules = {
+      memberDataSharingEnabled: body.memberDataSharingEnabled,
+    }
+    const nextMetadata = withResourceCatalogRules(access.organizationMetadata, nextRules)
+    await prisma.organization.update({
+      where: { id: access.organizationId },
+      data: { metadata: nextMetadata as any },
+    })
+
+    await logAuditEvent({
+      action: 'org.resource_catalog.rules.update',
+      status: 'success',
+      actorUserId: access.actorUserId,
+      organizationId: access.organizationId,
+      targetType: 'organization',
+      targetId: access.organizationId,
+      metadata: nextRules,
+      request,
+    })
+
+    return NextResponse.json({ ok: true, rules: nextRules })
+  } catch (error) {
+    const resolvedParams = await Promise.resolve(params)
+    await logAuditEvent({
+      action: 'org.resource_catalog.rules.update',
+      status: 'failure',
+      actorUserId: null,
+      organizationId: resolvedParams.id,
+      targetType: 'organization',
+      targetId: resolvedParams.id,
+      reason: error instanceof Error ? error.message : 'unknown_error',
+      request,
+    })
+    console.error('[org resource catalog PATCH]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

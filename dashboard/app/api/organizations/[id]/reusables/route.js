@@ -82,6 +82,7 @@ export async function POST(request, { params }) {
 
     const body = await request.json().catch(() => ({}))
     const reusable = body?.reusable
+    const sourceProjectId = typeof body?.sourceProjectId === 'string' ? body.sourceProjectId : undefined
 
     if (!reusable || typeof reusable !== 'object' || !reusable.id || !reusable.name || reusable.root === undefined) {
       return NextResponse.json({ error: 'Invalid reusable payload' }, { status: 400 })
@@ -100,6 +101,8 @@ export async function POST(request, { params }) {
       name: String(reusable.name),
       root: JSON.parse(JSON.stringify(reusable.root)),
       propsSchema: reusable.propsSchema === undefined ? undefined : JSON.parse(JSON.stringify(reusable.propsSchema)),
+      sourceProjectId,
+      promotedByUserId: access.userId,
       createdAt: reusable.createdAt || now,
       updatedAt: now,
     }

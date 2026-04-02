@@ -103,7 +103,14 @@ type EditorNotice = {
 }
 
 type OrgResourceCatalog = {
-  projects: Array<{ id: string; name: string; slug: string }>
+  permissions: {
+    canManageOrgResources: boolean
+    canViewDataResources: boolean
+  }
+  rules: {
+    memberDataSharingEnabled: boolean
+  }
+  projects: Array<{ id: string; name: string; slug: string; owner?: { userId?: string | null; name?: string | null; email?: string | null } | null }>
   summary: {
     projectCount: number
     orgReusableCount: number
@@ -114,7 +121,20 @@ type OrgResourceCatalog = {
     tableCount: number
   }
   reusables: {
-    organization: Array<{ id: string; name: string; createdAt?: string; updatedAt?: string }>
+    organization: Array<{
+      id: string
+      name: string
+      root?: unknown
+      propsSchema?: unknown
+      createdAt?: string
+      updatedAt?: string
+      sourceProjectId?: string
+      sourceProjectName?: string | null
+      sourceOwnerUserId?: string
+      sourceOwnerName?: string | null
+      sourceOwnerEmail?: string | null
+      promotedByUserId?: string
+    }>
     usage: Array<{
       reusableId: string
       reusableName: string | null
@@ -129,12 +149,29 @@ type OrgResourceCatalog = {
       }>
     }>
   }
-  assets: Array<{ id: string; name: string; mimetype: string; size: number; url: string; projectId: string; project?: { name?: string } | null }>
-  apiSources: Array<{ id: string; name: string; method: string; url: string; authType: string; projectId: string; project?: { name?: string } | null }>
+  assets: Array<{ id: string; name: string; mimetype: string; size: number; url: string; projectId: string; projectOwnerName?: string | null; projectOwnerEmail?: string | null; project?: { name?: string } | null }>
+  apiSources: Array<{
+    id: string
+    name: string
+    method: string
+    url: string
+    authType: string
+    headers?: unknown
+    body?: string | null
+    authValue?: string | null
+    authHeader?: string | null
+    schema?: unknown
+    projectId: string
+    projectOwnerName?: string | null
+    projectOwnerEmail?: string | null
+    project?: { name?: string } | null
+  }>
   databases: Array<{
     datasourceId: string
     projectId: string
     projectName: string
+    projectOwnerName?: string | null
+    projectOwnerEmail?: string | null
     tableCount: number
     tables: Array<{ id: string; name: string; columnCount: number; rowCount: number }>
   }>
@@ -668,6 +705,8 @@ export default function ScreenEditPage() {
   const [orgResourceCatalogError, setOrgResourceCatalogError] = useState<string | null>(null)
   const [orgResourceSearch, setOrgResourceSearch] = useState('')
   const [orgResourceProjectFilter, setOrgResourceProjectFilter] = useState('')
+  const [orgRuleSaving, setOrgRuleSaving] = useState(false)
+  const [importingApiSourceIds, setImportingApiSourceIds] = useState<string[]>([])
 
   const dismissEditorNotice = useCallback((noticeId: string) => {
     const timeoutId = noticeTimeoutsRef.current[noticeId]
@@ -722,6 +761,47 @@ export default function ScreenEditPage() {
       setOrgResourceCatalogLoading(false)
     }
   }, [orgId, orgResourceProjectFilter, orgResourceSearch])
+
+  const updateOrgMemberDataSharingRule = useCallback(async (enabled: boolean) => {
+    if (!orgId) return
+    setOrgRuleSaving(true)
+    try {
+      await axios.patch(`/api/organizations/${orgId}/resource-catalog`, {
+        memberDataSharingEnabled: enabled,
+      })
+      pushEditorNotice('success', enabled ? 'Members can now reuse shared data resources.' : 'Member data sharing is now admin-only.')
+      await fetchOrgResourceCatalog(orgResourceSearch, orgResourceProjectFilter)
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to update sharing rule'
+      pushEditorNotice('error', msg)
+    } finally {
+      setOrgRuleSaving(false)
+    }
+  }, [fetchOrgResourceCatalog, orgId, orgResourceProjectFilter, orgResourceSearch, pushEditorNotice])
+
+  const importApiSourceFromOrg = useCallback(async (sourceId: string, sourceName: string) => {
+    if (!orgId) return
+    let started = false
+    setImportingApiSourceIds((prev) => {
+      if (prev.includes(sourceId)) return prev
+      started = true
+      return [...prev, sourceId]
+    })
+    if (!started) return
+
+    try {
+      await axios.post(`/api/projects/${projectId}/api-sources/import-from-org`, {
+        organizationId: orgId,
+        sourceId,
+      })
+      pushEditorNotice('success', `Linked API "${sourceName}" into this project.`)
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to link API source'
+      pushEditorNotice('error', msg)
+    } finally {
+      setImportingApiSourceIds((prev) => prev.filter((id) => id !== sourceId))
+    }
+  }, [orgId, projectId, pushEditorNotice])
 
   const readPreviewCacheSnapshot = useCallback(() => {
     if (typeof window === 'undefined') return null
@@ -3532,7 +3612,10 @@ export default function ScreenEditPage() {
 
                   const progressNoticeId = pushEditorNotice('info', `Promoting "${reusable.name}" to organization...`, 0)
                   try {
-                    await axios.post(`/api/organizations/${orgId}/reusables`, { reusable })
+                    await axios.post(`/api/organizations/${orgId}/reusables`, {
+                      reusable,
+                      sourceProjectId: projectId,
+                    })
                     dismissEditorNotice(progressNoticeId)
                     pushEditorNotice('success', `Promoted "${reusable.name}" to organization reusables.`)
                   } catch (err: any) {
@@ -3643,6 +3726,24 @@ export default function ScreenEditPage() {
               </button>
             </div>
 
+            {orgResourceCatalog?.permissions?.canManageOrgResources && (
+              <div className="px-4 py-2 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Member data sharing rule</div>
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">When disabled, only admins can browse and import shared data resources (APIs, databases, and assets).</div>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(orgResourceCatalog.rules?.memberDataSharingEnabled)}
+                    disabled={orgRuleSaving}
+                    onChange={(e) => void updateOrgMemberDataSharingRule(e.target.checked)}
+                  />
+                  Members can reuse data
+                </label>
+              </div>
+            )}
+
             <div className="flex-1 overflow-auto p-4 space-y-4">
               {orgResourceCatalogLoading && <div className="text-sm text-gray-500 dark:text-gray-300">Loading organization resources...</div>}
               {orgResourceCatalogError && <div className="text-sm text-rose-600 dark:text-rose-300">{orgResourceCatalogError}</div>}
@@ -3666,8 +3767,14 @@ export default function ScreenEditPage() {
                         {orgResourceCatalog.reusables.organization.length === 0 && <div className="text-xs text-gray-500">No reusables found.</div>}
                         {orgResourceCatalog.reusables.organization.map((item) => (
                           <div key={item.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5 text-xs flex items-center justify-between gap-2">
-                            <span className="font-medium text-gray-800 dark:text-gray-100 truncate">{item.name}</span>
-                            <span className="text-gray-500 truncate">{item.id}</span>
+                              <div className="min-w-0">
+                                <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{item.name}</div>
+                                <div className="text-[11px] text-gray-500 truncate">
+                                  From {item.sourceProjectName ?? 'Unknown project'}
+                                  {item.sourceOwnerName ? ` • Owner: ${item.sourceOwnerName}` : ''}
+                                </div>
+                              </div>
+                              <span className="text-gray-500 truncate">{item.id}</span>
                           </div>
                         ))}
                       </div>
@@ -3696,12 +3803,15 @@ export default function ScreenEditPage() {
 
                     <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
                       <h3 className="text-sm font-semibold mb-2">Project assets</h3>
+                      {!orgResourceCatalog.permissions.canViewDataResources && (
+                        <div className="text-xs text-amber-600 dark:text-amber-300 mb-2">Data sharing is currently admin-only in this organization.</div>
+                      )}
                       <div className="space-y-1.5 max-h-56 overflow-auto pr-1">
                         {orgResourceCatalog.assets.length === 0 && <div className="text-xs text-gray-500">No assets found.</div>}
                         {orgResourceCatalog.assets.map((asset) => (
                           <div key={asset.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5 text-xs">
                             <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{asset.name}</div>
-                            <div className="text-gray-500 truncate">{asset.project?.name ?? 'Unknown'} • {asset.mimetype} • {(asset.size / 1024).toFixed(1)} KB</div>
+                            <div className="text-gray-500 truncate">{asset.project?.name ?? 'Unknown'} • Owner: {asset.projectOwnerName ?? 'Unknown'} • {asset.mimetype} • {(asset.size / 1024).toFixed(1)} KB</div>
                           </div>
                         ))}
                       </div>
@@ -3714,11 +3824,25 @@ export default function ScreenEditPage() {
                           <div className="text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">API sources</div>
                           <div className="space-y-1">
                             {orgResourceCatalog.apiSources.length === 0 && <div className="text-xs text-gray-500">No API sources found.</div>}
-                            {orgResourceCatalog.apiSources.slice(0, 8).map((source) => (
-                              <div key={source.id} className="text-[11px] text-gray-600 dark:text-gray-300 truncate">
-                                [{source.method}] {source.name} ({source.project?.name ?? 'Unknown'})
-                              </div>
-                            ))}
+                            {orgResourceCatalog.apiSources.slice(0, 12).map((source) => {
+                              const importing = importingApiSourceIds.includes(source.id)
+                              return (
+                                <div key={source.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5">
+                                  <div className="text-[11px] text-gray-700 dark:text-gray-200 truncate">[{source.method}] {source.name}</div>
+                                  <div className="text-[11px] text-gray-500 truncate">From {source.project?.name ?? 'Unknown'} • Owner: {source.projectOwnerName ?? 'Unknown'}</div>
+                                  <div className="mt-1 flex justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={importing || !orgResourceCatalog.permissions.canViewDataResources}
+                                      onClick={() => void importApiSourceFromOrg(source.id, source.name)}
+                                      className={`text-[11px] px-2 py-0.5 border border-gray-300 dark:border-[#30363d] rounded ${importing || !orgResourceCatalog.permissions.canViewDataResources ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                                    >
+                                      {importing ? 'Linking...' : 'Link API to this project'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
                         </div>
                         <div>
@@ -3727,7 +3851,7 @@ export default function ScreenEditPage() {
                             {orgResourceCatalog.databases.length === 0 && <div className="text-xs text-gray-500">No internal databases found.</div>}
                             {orgResourceCatalog.databases.slice(0, 8).map((db) => (
                               <div key={db.datasourceId} className="text-[11px] text-gray-600 dark:text-gray-300 truncate">
-                                {db.projectName}: {db.tableCount} tables
+                                {db.projectName} • Owner: {db.projectOwnerName ?? 'Unknown'}: {db.tableCount} tables
                               </div>
                             ))}
                           </div>
