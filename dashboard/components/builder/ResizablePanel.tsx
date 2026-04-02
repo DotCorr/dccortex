@@ -47,6 +47,7 @@ export function ResizablePanelLayout({ leftTree, leftPalette, center, rightPanel
   const [widths, setWidths] = useState(() => loadWidths(storageKey))
   const [isMobile, setIsMobile] = useState(false)
   const [mobileSheet, setMobileSheet] = useState<'tree' | 'palette' | 'props' | null>(null)
+  const [dragging, setDragging] = useState<'tree' | 'palette' | 'panel' | null>(null)
 
   useEffect(() => {
     setWidths(loadWidths(storageKey))
@@ -82,10 +83,19 @@ export function ResizablePanelLayout({ leftTree, leftPalette, center, rightPanel
   const setPalette = useCallback((v: number) => setWidths((w) => ({ ...w, palette: clamp(v) })), [clamp])
   const setPanel = useCallback((v: number) => setWidths((w) => ({ ...w, panel: clamp(v) })), [clamp])
 
-  const [dragging, setDragging] = useState<'tree' | 'palette' | 'panel' | null>(null)
-  const handleMouseDown = useCallback((which: 'tree' | 'palette' | 'panel') => () => setDragging(which), [])
+  const handleMouseDown = useCallback((which: 'tree' | 'palette' | 'panel') => (e: React.MouseEvent) => {
+    e.preventDefault()
+    setDragging(which)
+  }, [])
+
   useEffect(() => {
     if (!dragging) return
+
+    const previousUserSelect = document.body.style.userSelect
+    const previousWebkitUserSelect = document.body.style.webkitUserSelect
+    document.body.style.userSelect = 'none'
+    document.body.style.webkitUserSelect = 'none'
+
     const onMove = (e: MouseEvent) => {
       if (dragging === 'tree') setTree(widths.tree + e.movementX)
       if (dragging === 'palette') setPalette(widths.palette + e.movementX)
@@ -97,14 +107,17 @@ export function ResizablePanelLayout({ leftTree, leftPalette, center, rightPanel
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      document.body.style.userSelect = previousUserSelect
+      document.body.style.webkitUserSelect = previousWebkitUserSelect
     }
   }, [dragging, widths, setTree, setPalette, setPanel])
 
-  const resizeClass = 'w-1 shrink-0 hover:bg-[var(--primary)]/30 bg-gray-200 dark:bg-[#30363d] cursor-col-resize flex items-center justify-center'
+  const resizeClass = 'w-1 shrink-0 hover:bg-[var(--primary)]/30 bg-gray-200 dark:bg-[#30363d] cursor-col-resize flex items-center justify-center select-none'
   const resizeBar = (which: 'tree' | 'palette' | 'panel') => (
     <div
       role="separator"
       aria-label={`Resize ${which}`}
+      tabIndex={-1}
       onMouseDown={handleMouseDown(which)}
       className={`${resizeClass} ${dragging === which ? 'bg-[var(--primary)]/50' : ''}`}
     >
