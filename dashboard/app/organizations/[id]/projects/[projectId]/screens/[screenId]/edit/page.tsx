@@ -706,6 +706,7 @@ export default function ScreenEditPage() {
   const [orgResourceSearch, setOrgResourceSearch] = useState('')
   const [orgResourceProjectFilter, setOrgResourceProjectFilter] = useState('')
   const [orgRuleSaving, setOrgRuleSaving] = useState(false)
+  const [importingOrgReusableIds, setImportingOrgReusableIds] = useState<string[]>([])
   const [importingApiSourceIds, setImportingApiSourceIds] = useState<string[]>([])
 
   const dismissEditorNotice = useCallback((noticeId: string) => {
@@ -2222,6 +2223,55 @@ export default function ScreenEditPage() {
     },
     [globalReusables, doInsertReusable]
   )
+
+  const importOrgReusableIntoProject = useCallback(async (
+    orgReusable: OrgResourceCatalog['reusables']['organization'][number],
+    insertNow: boolean
+  ) => {
+    if (!orgReusable || !orgReusable.id || !orgReusable.name || !orgReusable.root || typeof orgReusable.root !== 'object') {
+      pushEditorNotice('error', 'Reusable payload is invalid and cannot be imported.')
+      return
+    }
+
+    let started = false
+    setImportingOrgReusableIds((prev) => {
+      if (prev.includes(orgReusable.id)) return prev
+      started = true
+      return [...prev, orgReusable.id]
+    })
+    if (!started) return
+
+    try {
+      const existing = globalReusables.find((r) => r.id === orgReusable.id)
+      if (!existing) {
+        const importedReusable: ReusableDefinition = {
+          id: orgReusable.id,
+          name: orgReusable.name,
+          root: deepCloneNode(orgReusable.root as Node),
+          propsSchema: Array.isArray(orgReusable.propsSchema)
+            ? (orgReusable.propsSchema as ReusableDefinition['propsSchema'])
+            : undefined,
+          createdAt: orgReusable.createdAt,
+          updatedAt: orgReusable.updatedAt,
+        }
+        const nextReusables = [...globalReusables, importedReusable]
+        setGlobalReusables(nextReusables)
+        persistGlobals({ globalReusables: nextReusables })
+      }
+
+      if (insertNow) {
+        handleInsertReusable(orgReusable.id)
+      }
+      pushEditorNotice('success', insertNow
+        ? `Imported and inserted reusable "${orgReusable.name}".`
+        : `Imported reusable "${orgReusable.name}" into this project.`)
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to import reusable'
+      pushEditorNotice('error', msg)
+    } finally {
+      setImportingOrgReusableIds((prev) => prev.filter((id) => id !== orgReusable.id))
+    }
+  }, [globalReusables, handleInsertReusable, persistGlobals, pushEditorNotice])
 
   const startEditingReusable = useCallback((reusableId: string, preferredSelectedId?: string | null) => {
     const target = globalReusables.find((r) => r.id === reusableId)
@@ -3765,18 +3815,41 @@ export default function ScreenEditPage() {
                       <h3 className="text-sm font-semibold mb-2">Organization reusables</h3>
                       <div className="space-y-1.5 max-h-56 overflow-auto pr-1">
                         {orgResourceCatalog.reusables.organization.length === 0 && <div className="text-xs text-gray-500">No reusables found.</div>}
-                        {orgResourceCatalog.reusables.organization.map((item) => (
-                          <div key={item.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5 text-xs flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{item.name}</div>
-                                <div className="text-[11px] text-gray-500 truncate">
-                                  From {item.sourceProjectName ?? 'Unknown project'}
-                                  {item.sourceOwnerName ? ` • Owner: ${item.sourceOwnerName}` : ''}
+                          {orgResourceCatalog.reusables.organization.map((item) => {
+                            const importing = importingOrgReusableIds.includes(item.id)
+                            return (
+                              <div key={item.id} className="rounded border border-gray-200 dark:border-[#30363d] px-2 py-1.5 text-xs">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{item.name}</div>
+                                    <div className="text-[11px] text-gray-500 truncate">
+                                      From {item.sourceProjectName ?? 'Unknown project'}
+                                      {item.sourceOwnerName ? ` • Owner: ${item.sourceOwnerName}` : ''}
+                                    </div>
+                                  </div>
+                                  <span className="text-gray-500 truncate">{item.id}</span>
+                                </div>
+                                <div className="mt-1 flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    disabled={importing}
+                                    onClick={() => void importOrgReusableIntoProject(item, false)}
+                                    className={`text-[11px] px-2 py-0.5 border border-gray-300 dark:border-[#30363d] rounded ${importing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                                  >
+                                    {importing ? 'Importing...' : 'Add to this project'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={importing}
+                                    onClick={() => void importOrgReusableIntoProject(item, true)}
+                                    className={`text-[11px] px-2 py-0.5 border border-gray-300 dark:border-[#30363d] rounded ${importing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                                  >
+                                    Insert now
+                                  </button>
                                 </div>
                               </div>
-                              <span className="text-gray-500 truncate">{item.id}</span>
-                          </div>
-                        ))}
+                            )
+                          })}
                       </div>
                     </section>
 
