@@ -330,15 +330,8 @@ type CollaboratorPresence = {
 
 type CollaboratorViewState = {
   previewSize?: PreviewViewport
-  canvasZoom?: number
-  canvasExpanded?: boolean
-  previewTheme?: 'light' | 'dark'
   deviceFrameEnabled?: boolean
-  mobileAutoClosePalette?: boolean
-  canvasBgColor?: string
-  showCanvasMesh?: boolean
   frameConfigByCategory?: Partial<Record<FrameCategory, Partial<FrameConfig>>>
-  panelWidths?: Partial<{ tree: number; palette: number; panel: number }>
   clientSentAt?: number
 }
 
@@ -369,6 +362,106 @@ function shouldTrackApiUrl(url: string): boolean {
   return lower.includes('/api/') || lower.includes('openai') || lower.includes('anthropic') || lower.includes('/ai/')
 }
 
+type StoredPreviewSettings = Partial<{
+  previewMode: boolean
+  previewSize: PreviewViewport
+  canvasZoom: number
+  canvasExpanded: boolean
+  previewTheme: 'light' | 'dark'
+  deviceFrameEnabled: boolean
+  mobileAutoClosePalette: boolean
+  canvasBgColor: string
+  showCanvasMesh: boolean
+  frameConfigByCategory: Record<FrameCategory, FrameConfig>
+}>
+
+function loadStoredPreviewSettings(projectId: string, screenId: string): StoredPreviewSettings | null {
+  if (typeof window === 'undefined') return null
+
+  const previewSettingsKey = `dccortex:preview-settings:${projectId}:${screenId}`
+  const previewSizeStorageKey = `dccortex:preview-size:${projectId}:${screenId}`
+  const canvasZoomStorageKey = `dccortex:canvas-zoom:${projectId}:${screenId}`
+  const canvasExpandedStorageKey = `dccortex:canvas-expanded:${projectId}:${screenId}`
+  const deviceFrameStorageKey = `dccortex:device-frame:${projectId}:${screenId}`
+  const canvasColorStorageKey = `dccortex:canvas-color:${projectId}:${screenId}`
+  const canvasMeshStorageKey = `dccortex:canvas-mesh:${projectId}:${screenId}`
+  const frameConfigStorageKey = `dccortex:frame-config:${projectId}:${screenId}`
+
+  const state: StoredPreviewSettings = {}
+
+  try {
+    const raw = window.localStorage.getItem(previewSettingsKey)
+    if (raw) {
+      const parsed = JSON.parse(raw) as StoredPreviewSettings
+      if (typeof parsed.previewMode === 'boolean') state.previewMode = parsed.previewMode
+      if (parsed.previewTheme === 'light' || parsed.previewTheme === 'dark') state.previewTheme = parsed.previewTheme
+      if (typeof parsed.mobileAutoClosePalette === 'boolean') state.mobileAutoClosePalette = parsed.mobileAutoClosePalette
+      if (typeof parsed.canvasBgColor === 'string' && parsed.canvasBgColor.trim()) state.canvasBgColor = parsed.canvasBgColor
+      if (typeof parsed.showCanvasMesh === 'boolean') state.showCanvasMesh = parsed.showCanvasMesh
+      if (typeof parsed.deviceFrameEnabled === 'boolean') state.deviceFrameEnabled = parsed.deviceFrameEnabled
+      if (typeof parsed.canvasExpanded === 'boolean') state.canvasExpanded = parsed.canvasExpanded
+      if (typeof parsed.canvasZoom === 'number' && Number.isFinite(parsed.canvasZoom)) {
+        state.canvasZoom = Math.min(3, Math.max(0.25, parsed.canvasZoom))
+      }
+      if (parsed.frameConfigByCategory) {
+        state.frameConfigByCategory = {
+          mobile: normalizeFrameConfig('mobile', parsed.frameConfigByCategory.mobile),
+          tablet: normalizeFrameConfig('tablet', parsed.frameConfigByCategory.tablet),
+          desktop: normalizeFrameConfig('desktop', parsed.frameConfigByCategory.desktop),
+        }
+      }
+      if (parsed.previewSize === 'mobile' || parsed.previewSize === 'tablet' || parsed.previewSize === 'desktop' || parsed.previewSize === 'freeform') {
+        state.previewSize = parsed.previewSize
+      }
+    }
+
+    const previewSizeRaw = window.localStorage.getItem(previewSizeStorageKey)
+    if (previewSizeRaw === 'mobile' || previewSizeRaw === 'tablet' || previewSizeRaw === 'desktop' || previewSizeRaw === 'freeform') {
+      state.previewSize = previewSizeRaw
+    }
+
+    const zoomRaw = window.localStorage.getItem(canvasZoomStorageKey)
+    if (zoomRaw != null) {
+      const parsedZoom = Number(zoomRaw)
+      if (Number.isFinite(parsedZoom)) state.canvasZoom = Math.min(3, Math.max(0.25, parsedZoom))
+    }
+
+    const expandedRaw = window.localStorage.getItem(canvasExpandedStorageKey)
+    if (expandedRaw === 'true' || expandedRaw === 'false') {
+      state.canvasExpanded = expandedRaw === 'true'
+    }
+
+    const deviceFrameRaw = window.localStorage.getItem(deviceFrameStorageKey)
+    if (deviceFrameRaw === 'true' || deviceFrameRaw === 'false') {
+      state.deviceFrameEnabled = deviceFrameRaw === 'true'
+    }
+
+    const colorRaw = window.localStorage.getItem(canvasColorStorageKey)
+    if (typeof colorRaw === 'string' && colorRaw.trim()) {
+      state.canvasBgColor = colorRaw
+    }
+
+    const meshRaw = window.localStorage.getItem(canvasMeshStorageKey)
+    if (meshRaw === 'true' || meshRaw === 'false') {
+      state.showCanvasMesh = meshRaw === 'true'
+    }
+
+    const frameConfigRaw = window.localStorage.getItem(frameConfigStorageKey)
+    if (frameConfigRaw) {
+      try {
+        const parsedFrameConfig = JSON.parse(frameConfigRaw) as Partial<Record<FrameCategory, Partial<FrameConfig>>>
+        state.frameConfigByCategory = {
+          mobile: normalizeFrameConfig('mobile', parsedFrameConfig.mobile),
+          tablet: normalizeFrameConfig('tablet', parsedFrameConfig.tablet),
+          desktop: normalizeFrameConfig('desktop', parsedFrameConfig.desktop),
+        }
+      } catch {}
+    }
+  } catch {}
+
+  return Object.keys(state).length > 0 ? state : null
+}
+
 export default function ScreenEditPage() {
   const params = useParams()
   const queryClient = useQueryClient()
@@ -378,24 +471,26 @@ export default function ScreenEditPage() {
   const [root, setRoot] = useState<Node>(defaultLayout)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const [previewMode, setPreviewMode] = useState(false)
+  const [previewMode, setPreviewMode] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.previewMode ?? false)
   const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>({})
   const [previewSize, setPreviewSize] = useState<PreviewViewport>(() => {
+    const stored = loadStoredPreviewSettings(projectId, screenId)?.previewSize
+    if (stored) return stored
     if (typeof window === 'undefined') return 'desktop'
     if (window.innerWidth < 640) return 'mobile'
     if (window.innerWidth < 1024) return 'tablet'
     return 'desktop'
   })
-  const [canvasZoom, setCanvasZoom] = useState(1)
+  const [canvasZoom, setCanvasZoom] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.canvasZoom ?? 1)
   const ZOOM_STEP = 0.1
   const ZOOM_MIN = 0.25
   const ZOOM_MAX = 3
-  const [canvasBgColor, setCanvasBgColor] = useState('#f3f4f6')
-  const [showCanvasMesh, setShowCanvasMesh] = useState(false)
-  const [canvasExpanded, setCanvasExpanded] = useState(false)
-  const [deviceFrameEnabled, setDeviceFrameEnabled] = useState(true)
-  const [frameConfigByCategory, setFrameConfigByCategory] = useState<Record<FrameCategory, FrameConfig>>(DEFAULT_FRAME_CONFIG_BY_CATEGORY)
-  const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('light')
+  const [canvasBgColor, setCanvasBgColor] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.canvasBgColor ?? '#f3f4f6')
+  const [showCanvasMesh, setShowCanvasMesh] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.showCanvasMesh ?? false)
+  const [canvasExpanded, setCanvasExpanded] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.canvasExpanded ?? false)
+  const [deviceFrameEnabled, setDeviceFrameEnabled] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.deviceFrameEnabled ?? true)
+  const [frameConfigByCategory, setFrameConfigByCategory] = useState<Record<FrameCategory, FrameConfig>>(() => loadStoredPreviewSettings(projectId, screenId)?.frameConfigByCategory ?? DEFAULT_FRAME_CONFIG_BY_CATEGORY)
+  const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>(() => loadStoredPreviewSettings(projectId, screenId)?.previewTheme ?? 'light')
   const [theme, setTheme] = useState<ScreenTheme>(DEFAULT_THEME)
   const [script, setScript] = useState('')
   const [stateDefinitions, setStateDefinitions] = useState<StateDefinition[]>([])
@@ -447,6 +542,7 @@ export default function ScreenEditPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [packageManagerOpen, setPackageManagerOpen] = useState(false)
+  const [previewSettingsLoaded, setPreviewSettingsLoaded] = useState(false)
   const undoStackRef = useRef<Node[]>([])
   const redoStackRef = useRef<Node[]>([])
   const reusableUndoStackRef = useRef<Node[]>([])
@@ -472,6 +568,13 @@ export default function ScreenEditPage() {
   seoRef.current = seoSettings
   const [systemDark, setSystemDark] = useState(false)
   const previewSettingsKey = useMemo(() => `dccortex:preview-settings:${projectId}:${screenId}`, [projectId, screenId])
+  const previewSizeStorageKey = useMemo(() => `dccortex:preview-size:${projectId}:${screenId}`, [projectId, screenId])
+  const canvasZoomStorageKey = useMemo(() => `dccortex:canvas-zoom:${projectId}:${screenId}`, [projectId, screenId])
+  const canvasExpandedStorageKey = useMemo(() => `dccortex:canvas-expanded:${projectId}:${screenId}`, [projectId, screenId])
+  const deviceFrameStorageKey = useMemo(() => `dccortex:device-frame:${projectId}:${screenId}`, [projectId, screenId])
+  const canvasColorStorageKey = useMemo(() => `dccortex:canvas-color:${projectId}:${screenId}`, [projectId, screenId])
+  const canvasMeshStorageKey = useMemo(() => `dccortex:canvas-mesh:${projectId}:${screenId}`, [projectId, screenId])
+  const frameConfigStorageKey = useMemo(() => `dccortex:frame-config:${projectId}:${screenId}`, [projectId, screenId])
   const panelWidthsStorageKey = useMemo(() => `dccortex:panel-widths:${projectId}:${screenId}`, [projectId, screenId])
   const propertyPanelTabStorageKey = useMemo(() => `dccortex:property-tab:${projectId}:${screenId}`, [projectId, screenId])
   const debugConsoleStorageKey = useMemo(() => `dccortex:debug-console:${projectId}:${screenId}`, [projectId, screenId])
@@ -487,6 +590,39 @@ export default function ScreenEditPage() {
   const activeFrameOption = DeviceOptions[activeFrameConfig.device]
   const availableDevices = DEVICE_OPTIONS_BY_CATEGORY[frameCategory]
   const [canvasStageSize, setCanvasStageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
+
+  const readPreviewCacheSnapshot = useCallback(() => {
+    if (typeof window === 'undefined') return null
+
+    const rawPreviewSettings = window.localStorage.getItem(previewSettingsKey)
+    const rawPreviewSize = window.localStorage.getItem(previewSizeStorageKey)
+    const rawCanvasZoom = window.localStorage.getItem(canvasZoomStorageKey)
+    const rawCanvasExpanded = window.localStorage.getItem(canvasExpandedStorageKey)
+    const rawDeviceFrame = window.localStorage.getItem(deviceFrameStorageKey)
+    const rawCanvasColor = window.localStorage.getItem(canvasColorStorageKey)
+    const rawCanvasMesh = window.localStorage.getItem(canvasMeshStorageKey)
+    const rawFrameConfig = window.localStorage.getItem(frameConfigStorageKey)
+
+    return {
+      previewSettingsKey,
+      previewSizeStorageKey,
+      canvasZoomStorageKey,
+      canvasExpandedStorageKey,
+      deviceFrameStorageKey,
+      canvasColorStorageKey,
+      canvasMeshStorageKey,
+      frameConfigStorageKey,
+      previewSettings: rawPreviewSettings,
+      previewSize: rawPreviewSize,
+      canvasZoom: rawCanvasZoom,
+      canvasExpanded: rawCanvasExpanded,
+      deviceFrameEnabled: rawDeviceFrame,
+      canvasBgColor: rawCanvasColor,
+      showCanvasMesh: rawCanvasMesh,
+      frameConfigStored: Boolean(rawFrameConfig),
+      legacyPreviewSettingsStored: Boolean(rawPreviewSettings),
+    }
+  }, [previewSettingsKey, previewSizeStorageKey, canvasZoomStorageKey, canvasExpandedStorageKey, deviceFrameStorageKey, canvasColorStorageKey, canvasMeshStorageKey, frameConfigStorageKey])
   const logicalViewport = useMemo(() => {
     if (previewSize === 'freeform') {
       const width = Math.max(1, Math.round(canvasStageSize.width || 1280))
@@ -537,50 +673,120 @@ export default function ScreenEditPage() {
     if (typeof window === 'undefined') return
     try {
       const raw = window.localStorage.getItem(previewSettingsKey)
-      if (!raw) {
-        previewSettingsHydratedRef.current = true
-        return
+
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          previewMode?: boolean
+          previewSize?: PreviewViewport
+          canvasZoom?: number
+          canvasExpanded?: boolean
+          previewTheme?: 'light' | 'dark'
+          deviceFrameEnabled?: boolean
+          mobileAutoClosePalette?: boolean
+          canvasBgColor?: string
+          showCanvasMesh?: boolean
+          frameConfigByCategory?: Partial<Record<FrameCategory, Partial<FrameConfig>>>
+        }
+        if (typeof parsed.previewMode === 'boolean') setPreviewMode(parsed.previewMode)
+        if (parsed.previewTheme === 'light' || parsed.previewTheme === 'dark') setPreviewTheme(parsed.previewTheme)
+        if (typeof parsed.mobileAutoClosePalette === 'boolean') setMobileAutoClosePalette(parsed.mobileAutoClosePalette)
       }
-      const parsed = JSON.parse(raw) as {
-        previewMode?: boolean
-        previewSize?: PreviewViewport
-        canvasZoom?: number
-        canvasExpanded?: boolean
-        previewTheme?: 'light' | 'dark'
-        deviceFrameEnabled?: boolean
-        mobileAutoClosePalette?: boolean
-        canvasBgColor?: string
-        showCanvasMesh?: boolean
-        frameConfigByCategory?: Partial<Record<FrameCategory, Partial<FrameConfig>>>
+
+      const previewSizeRaw = window.localStorage.getItem(previewSizeStorageKey)
+      if (previewSizeRaw === 'mobile' || previewSizeRaw === 'tablet' || previewSizeRaw === 'desktop' || previewSizeRaw === 'freeform') {
+        setPreviewSize(previewSizeRaw)
+      } else if (raw) {
+        const parsed = JSON.parse(raw) as { previewSize?: PreviewViewport }
+        if (parsed.previewSize === 'mobile' || parsed.previewSize === 'tablet' || parsed.previewSize === 'desktop' || parsed.previewSize === 'freeform') {
+          setPreviewSize(parsed.previewSize)
+        }
       }
-      if (typeof parsed.previewMode === 'boolean') setPreviewMode(parsed.previewMode)
-      if (parsed.previewSize === 'mobile' || parsed.previewSize === 'tablet' || parsed.previewSize === 'desktop' || parsed.previewSize === 'freeform') {
-        setPreviewSize(parsed.previewSize)
+
+      const zoomRaw = window.localStorage.getItem(canvasZoomStorageKey)
+      if (zoomRaw != null) {
+        const parsedZoom = Number(zoomRaw)
+        if (Number.isFinite(parsedZoom)) {
+          setCanvasZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, parsedZoom)))
+        }
+      } else if (raw) {
+        const parsed = JSON.parse(raw) as { canvasZoom?: number }
+        if (typeof parsed.canvasZoom === 'number' && Number.isFinite(parsed.canvasZoom)) {
+          setCanvasZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, parsed.canvasZoom)))
+        }
       }
-      if (typeof parsed.canvasZoom === 'number' && Number.isFinite(parsed.canvasZoom)) {
-        setCanvasZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, parsed.canvasZoom)))
+
+      const expandedRaw = window.localStorage.getItem(canvasExpandedStorageKey)
+      if (expandedRaw === 'true' || expandedRaw === 'false') {
+        setCanvasExpanded(expandedRaw === 'true')
+      } else if (raw) {
+        const parsed = JSON.parse(raw) as { canvasExpanded?: boolean }
+        if (typeof parsed.canvasExpanded === 'boolean') setCanvasExpanded(parsed.canvasExpanded)
       }
-      if (typeof parsed.canvasExpanded === 'boolean') setCanvasExpanded(parsed.canvasExpanded)
-      if (parsed.previewTheme === 'light' || parsed.previewTheme === 'dark') setPreviewTheme(parsed.previewTheme)
-      if (typeof parsed.deviceFrameEnabled === 'boolean') setDeviceFrameEnabled(parsed.deviceFrameEnabled)
-      if (typeof parsed.mobileAutoClosePalette === 'boolean') setMobileAutoClosePalette(parsed.mobileAutoClosePalette)
-      if (typeof parsed.canvasBgColor === 'string' && parsed.canvasBgColor.trim()) setCanvasBgColor(parsed.canvasBgColor)
-      if (typeof parsed.showCanvasMesh === 'boolean') setShowCanvasMesh(parsed.showCanvasMesh)
-      if (parsed.frameConfigByCategory) {
-        setFrameConfigByCategory({
-          mobile: normalizeFrameConfig('mobile', parsed.frameConfigByCategory.mobile),
-          tablet: normalizeFrameConfig('tablet', parsed.frameConfigByCategory.tablet),
-          desktop: normalizeFrameConfig('desktop', parsed.frameConfigByCategory.desktop),
-        })
+
+      const deviceFrameRaw = window.localStorage.getItem(deviceFrameStorageKey)
+      if (deviceFrameRaw === 'true' || deviceFrameRaw === 'false') {
+        setDeviceFrameEnabled(deviceFrameRaw === 'true')
+      } else if (raw) {
+        const parsed = JSON.parse(raw) as { deviceFrameEnabled?: boolean }
+        if (typeof parsed.deviceFrameEnabled === 'boolean') setDeviceFrameEnabled(parsed.deviceFrameEnabled)
       }
+
+      const colorRaw = window.localStorage.getItem(canvasColorStorageKey)
+      if (typeof colorRaw === 'string' && colorRaw.trim()) {
+        setCanvasBgColor(colorRaw)
+      } else if (raw) {
+        const parsed = JSON.parse(raw) as { canvasBgColor?: string }
+        if (typeof parsed.canvasBgColor === 'string' && parsed.canvasBgColor.trim()) setCanvasBgColor(parsed.canvasBgColor)
+      }
+
+      const meshRaw = window.localStorage.getItem(canvasMeshStorageKey)
+      if (meshRaw === 'true' || meshRaw === 'false') {
+        setShowCanvasMesh(meshRaw === 'true')
+      } else if (raw) {
+        const parsed = JSON.parse(raw) as { showCanvasMesh?: boolean }
+        if (typeof parsed.showCanvasMesh === 'boolean') setShowCanvasMesh(parsed.showCanvasMesh)
+      }
+
+      const frameConfigRaw = window.localStorage.getItem(frameConfigStorageKey)
+      if (frameConfigRaw) {
+        try {
+          const parsedFrameConfig = JSON.parse(frameConfigRaw) as Partial<Record<FrameCategory, Partial<FrameConfig>>>
+          setFrameConfigByCategory({
+            mobile: normalizeFrameConfig('mobile', parsedFrameConfig.mobile),
+            tablet: normalizeFrameConfig('tablet', parsedFrameConfig.tablet),
+            desktop: normalizeFrameConfig('desktop', parsedFrameConfig.desktop),
+          })
+        } catch {
+          // Fall through to legacy blob parsing.
+        }
+      } else if (raw) {
+        const parsed = JSON.parse(raw) as { frameConfigByCategory?: Partial<Record<FrameCategory, Partial<FrameConfig>>> }
+        if (parsed.frameConfigByCategory) {
+          setFrameConfigByCategory({
+            mobile: normalizeFrameConfig('mobile', parsed.frameConfigByCategory.mobile),
+            tablet: normalizeFrameConfig('tablet', parsed.frameConfigByCategory.tablet),
+            desktop: normalizeFrameConfig('desktop', parsed.frameConfigByCategory.desktop),
+          })
+        }
+      }
+
+      console.info('[editor:persistence] hydrated', readPreviewCacheSnapshot())
     } catch {}
     previewSettingsHydratedRef.current = true
-  }, [previewSettingsKey])
+    setPreviewSettingsLoaded(true)
+  }, [readPreviewCacheSnapshot, ZOOM_MAX, ZOOM_MIN])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!previewSettingsHydratedRef.current) return
     try {
+      window.localStorage.setItem(previewSizeStorageKey, previewSize)
+      window.localStorage.setItem(canvasZoomStorageKey, String(canvasZoom))
+      window.localStorage.setItem(canvasExpandedStorageKey, canvasExpanded ? 'true' : 'false')
+      window.localStorage.setItem(deviceFrameStorageKey, deviceFrameEnabled ? 'true' : 'false')
+      window.localStorage.setItem(canvasColorStorageKey, canvasBgColor)
+      window.localStorage.setItem(canvasMeshStorageKey, showCanvasMesh ? 'true' : 'false')
+      window.localStorage.setItem(frameConfigStorageKey, JSON.stringify(frameConfigByCategory))
       window.localStorage.setItem(previewSettingsKey, JSON.stringify({
         previewMode,
         previewSize,
@@ -593,8 +799,20 @@ export default function ScreenEditPage() {
         showCanvasMesh,
         frameConfigByCategory,
       }))
+      console.info('[editor:persistence] saved', {
+        state: {
+          previewSize,
+          canvasZoom,
+          canvasExpanded,
+          deviceFrameEnabled,
+          canvasBgColor,
+          showCanvasMesh,
+          frameConfigByCategory,
+        },
+        cache: readPreviewCacheSnapshot(),
+      })
     } catch {}
-  }, [previewSettingsKey, previewMode, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory])
+  }, [readPreviewCacheSnapshot, previewSettingsKey, previewSizeStorageKey, canvasZoomStorageKey, canvasExpandedStorageKey, deviceFrameStorageKey, canvasColorStorageKey, canvasMeshStorageKey, frameConfigStorageKey, previewMode, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -687,6 +905,7 @@ export default function ScreenEditPage() {
       reusableRestoreAttemptedRef.current = true
     } catch {
       reusableRestoreAttemptedRef.current = true
+    setPreviewSettingsLoaded(true)
     }
   }, [reusableEditorStateStorageKey, globalReusables, editingReusableId])
 
@@ -960,12 +1179,16 @@ export default function ScreenEditPage() {
   const activeSelectedId = editingReusableId ? reusableSelectedId : selectedId
   selectionIdRef.current = activeSelectedId
   const uniquePresence = useMemo(
-    () => Array.from(new Map((presence || []).map((p) => [p.userId, p])).values()),
+    () => Array.from(new Map((presence || []).map((p) => [p.clientId ?? p.userId, p])).values()),
     [presence]
   )
-  const visibleCollaborators = useMemo(
-    () => uniquePresence.filter((p) => p.clientId !== clientIdRef.current),
+  const selfPresence = useMemo(
+    () => uniquePresence.find((p) => p.clientId === clientIdRef.current) ?? null,
     [uniquePresence]
+  )
+  const visibleCollaborators = useMemo(
+    () => uniquePresence.filter((p) => p.clientId !== clientIdRef.current && p.userId !== selfPresence?.userId),
+    [uniquePresence, selfPresence]
   )
   const visibleCursors = useMemo(
     () => visibleCollaborators.filter((p) => p.screenId === screenId && p.cursorX != null && p.cursorY != null),
@@ -980,35 +1203,13 @@ export default function ScreenEditPage() {
     }),
     [visibleCollaborators, screenId]
   )
-  const presenceSendingEnabled = presenceMode === 'slow' || (presenceMode === 'panel' && collaboratorsDialogOpen)
-  const readPanelWidths = useCallback((): Partial<{ tree: number; palette: number; panel: number }> | undefined => {
-    if (typeof window === 'undefined') return undefined
-    try {
-      const raw = window.localStorage.getItem(panelWidthsStorageKey)
-      if (!raw) return undefined
-      const parsed = JSON.parse(raw) as Partial<{ tree: number; palette: number; panel: number }>
-      return {
-        tree: typeof parsed.tree === 'number' ? parsed.tree : undefined,
-        palette: typeof parsed.palette === 'number' ? parsed.palette : undefined,
-        panel: typeof parsed.panel === 'number' ? parsed.panel : undefined,
-      }
-    } catch {
-      return undefined
-    }
-  }, [panelWidthsStorageKey])
+  const presenceSendingEnabled = previewSettingsLoaded && (presenceMode === 'slow' || (presenceMode === 'panel' && collaboratorsDialogOpen))
   const buildPresenceViewState = useCallback((): CollaboratorViewState => ({
     previewSize,
-    canvasZoom,
-    canvasExpanded,
-    previewTheme,
     deviceFrameEnabled,
-    mobileAutoClosePalette,
-    canvasBgColor,
-    showCanvasMesh,
     frameConfigByCategory,
-    panelWidths: readPanelWidths(),
     clientSentAt: Date.now(),
-  }), [previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory, readPanelWidths])
+  }), [previewSize, deviceFrameEnabled, frameConfigByCategory])
   const postPresence = useCallback((overrides?: Partial<{ cursorX: number | null; cursorY: number | null; selectionId: string | null }>) => {
     if (!presenceSendingEnabled) return
     axios.post(`/api/projects/${projectId}/presence`, {
@@ -1043,6 +1244,7 @@ export default function ScreenEditPage() {
 
   useEffect(() => {
     if (!projectId || !screenId) return
+    if (!previewSettingsLoaded) return
 
     const es = new EventSource(`/api/projects/${projectId}/sync`)
     es.onmessage = (evt) => {
@@ -1094,10 +1296,11 @@ export default function ScreenEditPage() {
     }
 
     return () => es.close()
-  }, [projectId, screenId, projectGlobalsCacheKey, refreshFromServer])
+  }, [projectId, screenId, projectGlobalsCacheKey, refreshFromServer, previewSettingsLoaded])
 
   useEffect(() => {
     if (!projectId || !screenId) return
+    if (!previewSettingsLoaded) return
     if (!presenceSendingEnabled) return
 
     let stopped = false
@@ -1133,7 +1336,7 @@ export default function ScreenEditPage() {
       if (heartbeat) clearInterval(heartbeat)
       axios.delete(`/api/projects/${projectId}/presence`, { data: { clientId } }).catch(() => {})
     }
-  }, [projectId, screenId, presenceSendingEnabled, presenceMode, buildPresenceViewState])
+  }, [projectId, screenId, presenceSendingEnabled, presenceMode, buildPresenceViewState, previewSettingsLoaded])
 
   useEffect(() => {
     if (!presenceSendingEnabled) return
@@ -1149,10 +1352,14 @@ export default function ScreenEditPage() {
       postPresence()
     }, 100)
     return () => window.clearTimeout(t)
-  }, [presenceSendingEnabled, postPresence, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory, panelWidthsVersion])
+  }, [presenceSendingEnabled, postPresence, previewSize, deviceFrameEnabled, frameConfigByCategory])
 
   const lastAppliedRemoteViewAtRef = useRef(0)
   useEffect(() => {
+    // Do not apply remote view sync until we can identify the current client/user.
+    // This avoids stale presence from a previous tab/session overriding restored local settings.
+    if (!selfPresence?.userId) return
+
     const candidates = visibleCollaborators
       .filter((p) => p.screenId === screenId && p.viewState && typeof p.viewState === 'object')
       .map((p) => p.viewState as CollaboratorViewState)
@@ -1164,18 +1371,20 @@ export default function ScreenEditPage() {
     if (sentAt <= lastAppliedRemoteViewAtRef.current) return
     lastAppliedRemoteViewAtRef.current = sentAt
 
+    console.info('[editor:persistence] applying remote collaborator view state', {
+      clientId: selfPresence?.clientId,
+      userId: selfPresence?.userId,
+      sentAt,
+      previewSize: latest.previewSize,
+      deviceFrameEnabled: latest.deviceFrameEnabled,
+      frameConfigByCategory: latest.frameConfigByCategory,
+      cacheBeforeApply: readPreviewCacheSnapshot(),
+    })
+
     if (latest.previewSize === 'mobile' || latest.previewSize === 'tablet' || latest.previewSize === 'desktop' || latest.previewSize === 'freeform') {
       setPreviewSize(latest.previewSize)
     }
-    if (typeof latest.canvasZoom === 'number' && Number.isFinite(latest.canvasZoom)) {
-      setCanvasZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, latest.canvasZoom)))
-    }
-    if (typeof latest.canvasExpanded === 'boolean') setCanvasExpanded(latest.canvasExpanded)
-    if (latest.previewTheme === 'light' || latest.previewTheme === 'dark') setPreviewTheme(latest.previewTheme)
     if (typeof latest.deviceFrameEnabled === 'boolean') setDeviceFrameEnabled(latest.deviceFrameEnabled)
-    if (typeof latest.mobileAutoClosePalette === 'boolean') setMobileAutoClosePalette(latest.mobileAutoClosePalette)
-    if (typeof latest.canvasBgColor === 'string' && latest.canvasBgColor.trim()) setCanvasBgColor(latest.canvasBgColor)
-    if (typeof latest.showCanvasMesh === 'boolean') setShowCanvasMesh(latest.showCanvasMesh)
     if (latest.frameConfigByCategory) {
       setFrameConfigByCategory({
         mobile: normalizeFrameConfig('mobile', latest.frameConfigByCategory.mobile),
@@ -1183,7 +1392,7 @@ export default function ScreenEditPage() {
         desktop: normalizeFrameConfig('desktop', latest.frameConfigByCategory.desktop),
       })
     }
-  }, [visibleCollaborators, screenId, ZOOM_MAX, ZOOM_MIN])
+  }, [visibleCollaborators, selfPresence, screenId, readPreviewCacheSnapshot])
 
   useEffect(() => {
     for (const painted of paintedSelectionsRef.current) {
@@ -3108,9 +3317,9 @@ export default function ScreenEditPage() {
                               <div
                                 className="pointer-events-none absolute inset-0 z-[60]"
                                 style={{
-                                  backgroundImage: 'linear-gradient(to right, rgba(0,0,0,0.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.12) 1px, transparent 1px), linear-gradient(to right, rgba(0,0,0,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.06) 1px, transparent 1px)',
-                                  backgroundSize: '80px 80px, 80px 80px, 20px 20px, 20px 20px',
-                                  backgroundPosition: '0 0, 0 0, 0 0, 0 0',
+                                  backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.14) 1px, transparent 1.1px), radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1.1px)',
+                                  backgroundSize: '20px 20px, 80px 80px',
+                                  backgroundPosition: '0 0, 10px 10px',
                                   mixBlendMode: 'multiply',
                                 }}
                               />
