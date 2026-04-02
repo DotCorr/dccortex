@@ -96,6 +96,12 @@ type ScreenLayoutPayload = {
   aiProtected?: boolean
 }
 
+type EditorNotice = {
+  id: string
+  kind: 'info' | 'success' | 'error'
+  message: string
+}
+
 function parseComparable(v: string): string | number | boolean {
   const s = String(v ?? '').trim()
   if (s === 'true') return true
@@ -498,6 +504,7 @@ export default function ScreenEditPage() {
   const [dataSources, setDataSources] = useState<DataSourceDef[]>([])
   const [namedScripts, setNamedScripts] = useState<Record<string, string>>({})
   const [globalReusables, setGlobalReusables] = useState<ReusableDefinition[]>([])
+  const [promotingReusableIds, setPromotingReusableIds] = useState<string[]>([])
   const [globalTheme, setGlobalTheme] = useState<ScreenTheme>({})
   const [previewScreenId, setPreviewScreenId] = useState<string | null>(null)
   const [previewNavHistory, setPreviewNavHistory] = useState<string[]>([])
@@ -590,6 +597,37 @@ export default function ScreenEditPage() {
   const activeFrameOption = DeviceOptions[activeFrameConfig.device]
   const availableDevices = DEVICE_OPTIONS_BY_CATEGORY[frameCategory]
   const [canvasStageSize, setCanvasStageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
+  const [editorNotices, setEditorNotices] = useState<EditorNotice[]>([])
+  const noticeTimeoutsRef = useRef<Record<string, number>>({})
+
+  const dismissEditorNotice = useCallback((noticeId: string) => {
+    const timeoutId = noticeTimeoutsRef.current[noticeId]
+    if (typeof timeoutId === 'number') {
+      window.clearTimeout(timeoutId)
+      delete noticeTimeoutsRef.current[noticeId]
+    }
+    setEditorNotices((prev) => prev.filter((notice) => notice.id !== noticeId))
+  }, [])
+
+  const pushEditorNotice = useCallback((kind: EditorNotice['kind'], message: string, durationMs = 3200) => {
+    const id = `notice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setEditorNotices((prev) => [...prev, { id, kind, message }])
+    if (durationMs > 0) {
+      const timeoutId = window.setTimeout(() => {
+        setEditorNotices((prev) => prev.filter((notice) => notice.id !== id))
+        delete noticeTimeoutsRef.current[id]
+      }, durationMs)
+      noticeTimeoutsRef.current[id] = timeoutId
+    }
+    return id
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      Object.values(noticeTimeoutsRef.current).forEach((timeoutId) => window.clearTimeout(timeoutId))
+      noticeTimeoutsRef.current = {}
+    }
+  }, [])
 
   const readPreviewCacheSnapshot = useCallback(() => {
     if (typeof window === 'undefined') return null
@@ -3370,17 +3408,32 @@ export default function ScreenEditPage() {
                 onDeleteReusable={handleDeleteReusable}
                 activeReusableId={editingReusableId}
                 onInsertReusable={handleInsertReusable}
+                promotingReusableIds={promotingReusableIds}
                 onPromoteReusable={async (reusable) => {
                   if (!orgId) {
-                    alert('Cannot promote reusable: missing organization context.')
+                    pushEditorNotice('error', 'Cannot promote reusable: missing organization context.')
                     return
                   }
+
+                  let started = false
+                  setPromotingReusableIds((prev) => {
+                    if (prev.includes(reusable.id)) return prev
+                    started = true
+                    return [...prev, reusable.id]
+                  })
+                  if (!started) return
+
+                  const progressNoticeId = pushEditorNotice('info', `Promoting "${reusable.name}" to organization...`, 0)
                   try {
                     await axios.post(`/api/organizations/${orgId}/reusables`, { reusable })
-                    alert(`Promoted "${reusable.name}" to organization reusables.`)
+                    dismissEditorNotice(progressNoticeId)
+                    pushEditorNotice('success', `Promoted "${reusable.name}" to organization reusables.`)
                   } catch (err: any) {
+                    dismissEditorNotice(progressNoticeId)
                     const msg = err?.response?.data?.error || err?.message || 'Unknown error'
-                    alert(`Failed to promote reusable: ${msg}`)
+                    pushEditorNotice('error', `Failed to promote reusable: ${msg}`)
+                  } finally {
+                    setPromotingReusableIds((prev) => prev.filter((id) => id !== reusable.id))
                   }
                 }}
                 onRenameReusable={(id, newName) => {
@@ -3438,6 +3491,30 @@ export default function ScreenEditPage() {
           }
         />
       </div>
+
+      {editorNotices.length > 0 && (
+        <div className="fixed top-4 right-4 z-[140] flex w-[340px] max-w-[calc(100vw-1.5rem)] flex-col gap-2">
+          {editorNotices.map((notice) => (
+            <div
+              key={notice.id}
+              className={`rounded-md border px-3 py-2 text-sm shadow-lg backdrop-blur-sm ${notice.kind === 'success' ? 'border-emerald-200 bg-emerald-50/95 text-emerald-800' : notice.kind === 'error' ? 'border-rose-200 bg-rose-50/95 text-rose-800' : 'border-blue-200 bg-blue-50/95 text-blue-800'}`}
+            >
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-current opacity-80" />
+                <div className="flex-1">{notice.message}</div>
+                <button
+                  type="button"
+                  onClick={() => dismissEditorNotice(notice.id)}
+                  className="text-current/70 transition hover:text-current"
+                  aria-label="Dismiss notification"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Insert reusable props modal */}
       {pendingInsert && (() => {

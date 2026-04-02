@@ -45,9 +45,10 @@ type Props = {
   onPromoteReusable?: (reusable: ReusableDefinition) => void
   onRenameReusable?: (id: string, newName: string) => void
   activeReusableId?: string | null
+  promotingReusableIds?: string[]
 }
 
-export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onInsertReusable, onEditReusable, onDeleteReusable, onPromoteReusable, onRenameReusable, activeReusableId = null }: Props) {
+export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onInsertReusable, onEditReusable, onDeleteReusable, onPromoteReusable, onRenameReusable, activeReusableId = null, promotingReusableIds = [] }: Props) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -280,7 +281,9 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
             <div className="text-xs text-gray-500 dark:text-gray-400">No global reusables yet.</div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {filtered.map((r) => (
+              {filtered.map((r) => {
+                const isPromoting = promotingReusableIds.includes(r.id)
+                return (
                 <div
                   key={r.id}
                   draggable
@@ -352,13 +355,15 @@ export function GlobalReusablesPane({ reusables, onDropNodeToCreateReusable, onI
                     <button
                       type="button"
                       onClick={() => onPromoteReusable(r)}
-                      className="mt-1 w-full text-xs px-2 py-1 border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]"
+                      disabled={isPromoting}
+                      className={`mt-1 w-full text-xs px-2 py-1 border border-gray-300 dark:border-[#30363d] rounded ${isPromoting ? 'opacity-60 cursor-wait' : 'hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
                     >
-                      Promote to org
+                      {isPromoting ? 'Promoting...' : 'Promote to org'}
                     </button>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
