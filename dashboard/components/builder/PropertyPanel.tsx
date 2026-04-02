@@ -541,6 +541,14 @@ export function PropertyPanel({
   const setProp = useCallback(
     (key: string, value: unknown) => {
       if (!node) return
+
+      // Data repeater expects the whole array source ({{data.sourceName}}), not a field token.
+      if (node.type === 'dataRepeater' && key === 'dataSource' && typeof value === 'string') {
+        const normalized = value.replace(/^\{\{data\.([^}.]+)\.field\}\}$/, '{{data.$1}}')
+        onUpdate({ ...props, [key]: normalized })
+        return
+      }
+
       onUpdate({ ...props, [key]: value })
     },
     [node, props, onUpdate]
