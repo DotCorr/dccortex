@@ -782,13 +782,8 @@ export default function ScreenEditPage() {
 
   const importApiSourceFromOrg = useCallback(async (sourceId: string, sourceName: string) => {
     if (!orgId) return
-    let started = false
-    setImportingApiSourceIds((prev) => {
-      if (prev.includes(sourceId)) return prev
-      started = true
-      return [...prev, sourceId]
-    })
-    if (!started) return
+    if (importingApiSourceIds.includes(sourceId)) return
+    setImportingApiSourceIds((prev) => (prev.includes(sourceId) ? prev : [...prev, sourceId]))
 
     try {
       await axios.post(`/api/projects/${projectId}/api-sources/import-from-org`, {
@@ -802,7 +797,7 @@ export default function ScreenEditPage() {
     } finally {
       setImportingApiSourceIds((prev) => prev.filter((id) => id !== sourceId))
     }
-  }, [orgId, projectId, pushEditorNotice])
+  }, [orgId, projectId, pushEditorNotice, importingApiSourceIds])
 
   const readPreviewCacheSnapshot = useCallback(() => {
     if (typeof window === 'undefined') return null
@@ -2233,13 +2228,8 @@ export default function ScreenEditPage() {
       return
     }
 
-    let started = false
-    setImportingOrgReusableIds((prev) => {
-      if (prev.includes(orgReusable.id)) return prev
-      started = true
-      return [...prev, orgReusable.id]
-    })
-    if (!started) return
+    if (importingOrgReusableIds.includes(orgReusable.id)) return
+    setImportingOrgReusableIds((prev) => (prev.includes(orgReusable.id) ? prev : [...prev, orgReusable.id]))
 
     try {
       const existing = globalReusables.find((r) => r.id === orgReusable.id)
@@ -2271,7 +2261,7 @@ export default function ScreenEditPage() {
     } finally {
       setImportingOrgReusableIds((prev) => prev.filter((id) => id !== orgReusable.id))
     }
-  }, [globalReusables, handleInsertReusable, persistGlobals, pushEditorNotice])
+  }, [globalReusables, handleInsertReusable, persistGlobals, pushEditorNotice, importingOrgReusableIds])
 
   const startEditingReusable = useCallback((reusableId: string, preferredSelectedId?: string | null) => {
     const target = globalReusables.find((r) => r.id === reusableId)
@@ -3652,13 +3642,8 @@ export default function ScreenEditPage() {
                     return
                   }
 
-                  let started = false
-                  setPromotingReusableIds((prev) => {
-                    if (prev.includes(reusable.id)) return prev
-                    started = true
-                    return [...prev, reusable.id]
-                  })
-                  if (!started) return
+                  if (promotingReusableIds.includes(reusable.id)) return
+                  setPromotingReusableIds((prev) => (prev.includes(reusable.id) ? prev : [...prev, reusable.id]))
 
                   const progressNoticeId = pushEditorNotice('info', `Promoting "${reusable.name}" to organization...`, 0)
                   try {
