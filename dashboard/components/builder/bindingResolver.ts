@@ -99,6 +99,33 @@ function getByPath(obj: Record<string, unknown>, path: string): unknown {
   return current
 }
 
+function findPathInObject(root: unknown, parts: string[], depth = 0): unknown {
+  if (!parts.length || root == null || typeof root !== 'object' || depth > 10) return undefined
+  const obj = root as Record<string, unknown>
+  const direct = getByPath(obj, parts.join('.'))
+  if (direct !== undefined) return direct
+  for (const value of Object.values(obj)) {
+    const nested = findPathInObject(value, parts, depth + 1)
+    if (nested !== undefined) return nested
+  }
+  return undefined
+}
+
+function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
+  const direct = getByPath(data, path)
+  if (direct !== undefined) return direct
+
+  const parts = path.trim().split('.').filter(Boolean)
+  if (parts.length < 2) return direct
+
+  const source = parts[0]
+  const tail = parts.slice(1)
+  const sourceRoot = data[source]
+  if (sourceRoot == null || typeof sourceRoot !== 'object') return direct
+
+  return findPathInObject(sourceRoot, tail)
+}
+
 export function resolveBinding(raw: string, ctx: ResolveContext): string {
   if (typeof raw !== 'string') return String(raw ?? '')
   return raw.replace(BINDING_REGEX, (_, expr) => {
@@ -109,7 +136,7 @@ export function resolveBinding(raw: string, ctx: ResolveContext): string {
     }
     if (e.startsWith('data.')) {
       const path = e.slice(5).trim()
-      const v = ctx.data ? getByPath(ctx.data, path) : undefined
+      const v = ctx.data ? resolveDataPath(ctx.data, path) : undefined
       return v === undefined || v === null ? '[data]' : typeof v === 'object' ? JSON.stringify(v) : String(v)
     }
     if (e.startsWith('event.')) {
@@ -151,7 +178,7 @@ export function isBinding(value: unknown): boolean {
 function resolveToken(expr: string, ctx: ResolveContext): unknown {
   const e = expr.trim()
   if (e.startsWith('state.'))   return ctx.state ? getByPath(ctx.state as Record<string, unknown>, e.slice(6).trim()) : undefined
-  if (e.startsWith('data.'))    return ctx.data    ? getByPath(ctx.data,    e.slice(5).trim()) : undefined
+  if (e.startsWith('data.'))    return ctx.data    ? resolveDataPath(ctx.data, e.slice(5).trim()) : undefined
   if (e.startsWith('event.'))   return ctx.event   ? getByPath(ctx.event,   e.slice(6).trim()) : undefined
   if (e.startsWith('prop.'))    return ctx.props   ? getByPath(ctx.props,   e.slice(5).trim()) : undefined
   if (e.startsWith('navProp.')) return ctx.navProp ? getByPath(ctx.navProp, e.slice(8).trim()) : undefined
@@ -365,6 +392,22 @@ function evalExpr(s: string, values: Map<string, unknown>): unknown {
  */
 export function resolveExpression(raw: string, ctx: ResolveContext): string {
   if (typeof raw !== 'string') return String(raw ?? '')
+  const bareScoped = raw.trim().match(/^(state|data|prop|script|navProp|dateNow|dateTime)\.([A-Za-z0-9_.$\-\s]+)$/)
+  if (bareScoped && !raw.includes('{{')) {
+    if (bareScoped[1] === 'data') {
+      const rawPath = String(bareScoped[2] ?? '')
+      const parts = rawPath.split('.')
+      const source = String(parts[0] ?? '')
+        .trim()
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .toLowerCase()
+      const tail = parts.slice(1).join('.')
+      raw = tail ? `{{data.${source}.${tail}}}` : `{{data.${source}}}`
+    } else {
+      raw = `{{${raw.trim()}}}`
+    }
+  }
   // Users often start from {{data.sourceName}} and then append .field via transform UI.
   // Normalize that shape so both forms resolve the same.
   raw = raw.replace(

@@ -2527,6 +2527,8 @@ export default function ScreenEditPage() {
   }, [effectiveStateDefinitions, customTypes])
 
   const [runtimeState, setRuntimeState] = useState<Record<string, unknown>>(initialStateValues)
+  const runtimeStateRef = useRef<Record<string, unknown>>(runtimeState)
+  runtimeStateRef.current = runtimeState
   const debugHandleRef = useRef<DebugConsoleHandle | null>(null)
 
   const pushApiLog = useCallback((entry: Omit<ApiLogEntry, 'id' | 'ts'>) => {
@@ -2775,7 +2777,7 @@ export default function ScreenEditPage() {
         // Simple state.key resolution: {{state.key}} → runtimeState[key]
         const stateMatch = binding.match(/^\{\{state\.([^}]+)\}\}$/)
         if (stateMatch) {
-          const val = runtimeState[stateMatch[1]]
+          const val = runtimeStateRef.current[stateMatch[1]]
           if (val !== undefined && val !== null) resolved[paramName] = String(val)
         } else {
           resolved[paramName] = binding
@@ -2786,9 +2788,26 @@ export default function ScreenEditPage() {
     const varsParam = Object.keys(vars).length ? `?vars=${encodeURIComponent(JSON.stringify(vars))}` : ''
     fetch(`/api/projects/${projectId}/runtime-data${varsParam}`)
       .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d?.data) setRuntimeData(d.data) })
+      .then((d) => {
+        if (!d?.data || typeof d.data !== 'object') return
+        const incoming = d.data as Record<string, unknown>
+        setRuntimeData((prev) => {
+          const next: Record<string, unknown> = { ...prev }
+          for (const [key, value] of Object.entries(incoming)) {
+            // Keep last known good snapshot when a source temporarily fails and returns null/undefined.
+            if ((value === null || value === undefined) && prev[key] !== undefined && prev[key] !== null) continue
+            next[key] = value
+          }
+          return next
+        })
+      })
       .catch(() => {})
-  }, [projectId, dataSources, runtimeState])
+  }, [projectId, dataSources])
+
+  // Hydrate runtime data in editor mode too, so bindings/transforms are available before preview.
+  useEffect(() => {
+    fetchRuntimeData()
+  }, [fetchRuntimeData])
 
   // Fetch runtime data (API sources + internal DB tables) whenever preview mode is activated
   useEffect(() => {
@@ -2801,7 +2820,7 @@ export default function ScreenEditPage() {
     if (!previewMode || !hasExternalApiSources) return
     const timer = setInterval(() => {
       fetchRuntimeData()
-    }, 5000)
+    }, 2000)
     return () => clearInterval(timer)
   }, [previewMode, hasExternalApiSources, fetchRuntimeData])
 
@@ -2836,7 +2855,7 @@ export default function ScreenEditPage() {
         return undefined
       }
     },
-    [namedScripts, runtimeState]
+    [namedScripts, runtimeState, runtimeData]
   )
 
   const resolveBindingFn = useCallback(
@@ -3698,10 +3717,17 @@ export default function ScreenEditPage() {
                   const visualWidth = scaledWidth + framePadScaled * 2
                   const visualHeight = scaledHeight + framePadScaled * 2
                   const framedViewport = previewSize !== 'freeform' && effectiveDeviceFrameEnabled
+                  const previewUsesDarkBackdrop =
+                    previewTheme === 'dark' ||
+                    effectiveTheme.colorMode === 'dark' ||
+                    (effectiveTheme.colorMode === 'adaptive' && systemDark)
+                  const stageBackdropColor = previewMode
+                    ? (effectiveTheme.background?.trim() || (previewUsesDarkBackdrop ? '#0f172a' : '#f8fafc'))
+                    : canvasBgColor
                   return (
                     <div
                       className="relative w-full h-full min-w-0 overflow-auto"
-                      style={{ backgroundColor: canvasBgColor }}
+                      style={{ backgroundColor: stageBackdropColor }}
                     >
                       <div
                         className={`${framedViewport ? 'min-w-full justify-center' : 'w-full justify-start'} min-h-full flex items-start`}
