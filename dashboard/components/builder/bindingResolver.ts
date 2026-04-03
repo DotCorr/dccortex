@@ -365,6 +365,22 @@ function evalExpr(s: string, values: Map<string, unknown>): unknown {
  */
 export function resolveExpression(raw: string, ctx: ResolveContext): string {
   if (typeof raw !== 'string') return String(raw ?? '')
+  const bareScoped = raw.trim().match(/^(state|data|prop|script|navProp|dateNow|dateTime)\.([A-Za-z0-9_.$\-\s]+)$/)
+  if (bareScoped && !raw.includes('{{')) {
+    if (bareScoped[1] === 'data') {
+      const rawPath = String(bareScoped[2] ?? '')
+      const parts = rawPath.split('.')
+      const source = String(parts[0] ?? '')
+        .trim()
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .toLowerCase()
+      const tail = parts.slice(1).join('.')
+      raw = tail ? `{{data.${source}.${tail}}}` : `{{data.${source}}}`
+    } else {
+      raw = `{{${raw.trim()}}}`
+    }
+  }
   // Users often start from {{data.sourceName}} and then append .field via transform UI.
   // Normalize that shape so both forms resolve the same.
   raw = raw.replace(

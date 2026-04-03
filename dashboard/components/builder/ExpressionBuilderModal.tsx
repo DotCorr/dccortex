@@ -10,8 +10,11 @@
 // ── Visual flow-based no-code expression builder ──────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import type { StateDefinition } from './PropertyPanel'
 import type { DataSourceDef } from './PropertyPanel'
+
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 
 // ─── Props (unchanged — PropertyPanel compatibility) ──────────────────────────
 
@@ -55,12 +58,23 @@ type FlowBlock =
   | { id: string; type: 'math'; left: ValueSource; mathOp: MathOp; right: ValueSource }
   | { id: string; type: 'nullish'; fallback: ValueSource }
 
+function normalizeSourceName(name: string): string {
+  return String(name ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
+}
+
 // ─── Expression codegen ───────────────────────────────────────────────────────
 
 function srcExpr(v: ValueSource, prev: string): string {
   switch (v.kind) {
     case 'state': return v.field ? `{{state.${v.name}.${v.field}}}` : `{{state.${v.name}}}`
-    case 'data': return v.field ? `{{data.${v.name}.${v.field}}}` : `{{data.${v.name}}}`
+    case 'data': {
+      const normalized = normalizeSourceName(v.name)
+      return v.field ? `{{data.${normalized}.${v.field}}}` : `{{data.${normalized}}}`
+    }
     case 'script': return `{{script.${v.name}}}`
     case 'prop': return v.field ? `{{prop.${v.name}.${v.field}}}` : `{{prop.${v.name}}}`
     case 'literal': {
@@ -194,14 +208,35 @@ function topIdx(s: string, needle: string, from = 0): number {
 
 function parseSrc(s: string): ValueSource {
   s = s.trim()
-  const sm = s.match(/^\{\{state\.(\w+)(?:\.(\w+))?\}\}$/)
-  if (sm) return sm[2] ? { kind: 'state', name: sm[1], field: sm[2] } : { kind: 'state', name: sm[1] }
-  const dm = s.match(/^\{\{data\.(\w+)(?:\.(\w+))?\}\}$/)
-  if (dm) return dm[2] ? { kind: 'data', name: dm[1], field: dm[2] } : { kind: 'data', name: dm[1] }
-  const sc = s.match(/^\{\{script\.(\w+)\}\}$/)
-  if (sc) return { kind: 'script', name: sc[1] }
-  const pc = s.match(/^\{\{prop\.(\w+)(?:\.(\w+))?\}\}$/)
-  if (pc) return pc[2] ? { kind: 'prop', name: pc[1], field: pc[2] } : { kind: 'prop', name: pc[1] }
+  const parseScoped = (prefix: 'state' | 'data' | 'prop'): ValueSource | null => {
+    const m = s.match(new RegExp(`^\\{\\{${prefix}\\.([^}]+)\\}\\}$`))
+    if (!m) return null
+    const path = String(m[1] ?? '').trim()
+    if (!path) return { kind: 'literal', value: '' }
+    const dot = path.indexOf('.')
+    if (dot < 0) {
+      return prefix === 'state'
+        ? { kind: 'state', name: path }
+        : prefix === 'data'
+          ? { kind: 'data', name: path }
+          : { kind: 'prop', name: path }
+    }
+    const name = path.slice(0, dot)
+    const field = path.slice(dot + 1)
+    return prefix === 'state'
+      ? { kind: 'state', name, field }
+      : prefix === 'data'
+        ? { kind: 'data', name, field }
+        : { kind: 'prop', name, field }
+  }
+  const stateSrc = parseScoped('state')
+  if (stateSrc) return stateSrc
+  const dataSrc = parseScoped('data')
+  if (dataSrc) return dataSrc
+  const propSrc = parseScoped('prop')
+  if (propSrc) return propSrc
+  const sc = s.match(/^\{\{script\.([^}]+)\}\}$/)
+  if (sc) return { kind: 'script', name: String(sc[1]).trim() }
   const qm = s.match(/^['"](.*)['"\s]*$/)
   if (qm) return { kind: 'literal', value: qm[1] }
   return { kind: 'literal', value: s }
@@ -743,12 +778,52 @@ export function ExpressionBuilderModal({
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [rawMode, setRawMode] = useState(false)
   const [rawExpr, setRawExpr] = useState('')
+  const [monacoReady, setMonacoReady] = useState(false)
+
+  const toSnakeCase = useCallback((name: string) => {
+    return String(name ?? '')
+      .trim()
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase()
+  }, [])
 
   const generatedExpr = buildExpression(blocks)
   const finalExpr = rawMode ? rawExpr.trim() : generatedExpr
 
+  const normalizeInsertExpression = useCallback((expr: string): string => {
+    const trimmed = String(expr ?? '').trim()
+    if (!trimmed) return ''
+    if (!trimmed.includes('{{')) {
+      const bareRef = trimmed.match(/^(state|data|prop|script|navProp|dateNow|dateTime)\.[A-Za-z0-9_.$\-\s]+$/)
+      if (bareRef) {
+        if (bareRef[1] === 'data') {
+          const rawPath = trimmed.slice(5)
+          const parts = rawPath.split('.')
+          const source = normalizeSourceName(parts[0] ?? '')
+          const tail = parts.slice(1).join('.')
+          return tail ? `{{data.${source}.${tail}}}` : `{{data.${source}}}`
+        }
+        return `{{${trimmed}}}`
+      }
+    }
+    return trimmed
+  }, [])
+
   const reset = useCallback((sn: string[], dn: string[]) => {
     setBlocks([{ id: uid(), type: 'start', source: makeDefaultSrc(sn, dn) }])
+  }, [])
+
+  useEffect(() => {
+    let raf = 0
+    let timer: ReturnType<typeof setTimeout> | null = null
+    raf = window.requestAnimationFrame(() => {
+      timer = setTimeout(() => setMonacoReady(true), 0)
+    })
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf)
+      if (timer) clearTimeout(timer)
+    }
   }, [])
 
   useEffect(() => {
@@ -808,7 +883,7 @@ export function ExpressionBuilderModal({
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] rounded-xl shadow-2xl w-full max-w-2xl flex flex-col"
+        className="bg-white dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] shadow-2xl w-full max-w-2xl flex flex-col"
         style={{ minHeight: '72vh', maxHeight: '92vh' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -826,7 +901,7 @@ export function ExpressionBuilderModal({
             <button
               type="button"
               onClick={() => { setRawMode((v) => !v); if (!rawMode) setRawExpr((prev) => prev || generatedExpr) }}
-              className={`text-[10px] px-2.5 py-1 rounded border transition-colors ${
+              className={`text-[10px] px-2.5 py-1 border transition-colors ${
                 rawMode
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
                   : 'border-gray-200 dark:border-[#30363d] text-gray-500 hover:border-gray-400'
@@ -835,7 +910,7 @@ export function ExpressionBuilderModal({
               {rawMode ? 'Visual flow' : 'Edit raw'}
             </button>
             <button type="button" onClick={onClose}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-[#21262d] text-gray-500 text-xs">
+              className="p-1 hover:bg-gray-100 dark:hover:bg-[#21262d] text-gray-500 text-xs">
               x
             </button>
           </div>
@@ -847,34 +922,52 @@ export function ExpressionBuilderModal({
             /* Raw expression editor */
             <div className="flex flex-col gap-2">
               <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Raw expression</label>
-              <textarea
-                value={rawExpr}
-                onChange={(e) => setRawExpr(e.target.value)}
-                rows={9}
-                autoFocus
-                placeholder={"{{state.count}} > 0 ? 'Shown' : 'Hidden'"}
-                className="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              />
+              <div className="w-full h-[190px] border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22]">
+                {!monacoReady ? (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <span className="w-4 h-4 border-2 border-gray-300 dark:border-[#30363d] border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <MonacoEditor
+                    language="javascript"
+                    value={rawExpr}
+                    onChange={(value) => setRawExpr(value ?? '')}
+                    options={{
+                      minimap: { enabled: false },
+                      scrollBeyondLastLine: false,
+                      wordWrap: 'on',
+                      fontSize: 12,
+                      lineNumbers: 'on',
+                      padding: { top: 8, bottom: 8 },
+                    }}
+                    loading={
+                      <div className="w-full h-full flex items-center justify-center">
+                        <span className="w-4 h-4 border-2 border-gray-300 dark:border-[#30363d] border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    }
+                  />
+                )}
+              </div>
               {(stateNames.length > 0 || dataNames.length > 0 || propNames.length > 0) && (
                 <div className="flex flex-wrap gap-1 mt-1">
                   {stateNames.map((n) => (
                     <button key={n} type="button"
                       onClick={() => setRawExpr((p) => p + `{{state.${n}}}`)}
-                      className="px-2 py-0.5 text-[10px] font-mono rounded border border-gray-200 dark:border-[#30363d] hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-600 dark:text-gray-400">
+                      className="px-2 py-0.5 text-[10px] font-mono border border-gray-200 dark:border-[#30363d] hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-600 dark:text-gray-400">
                       state.{n}
                     </button>
                   ))}
                   {dataNames.map((n) => (
                     <button key={n} type="button"
-                      onClick={() => setRawExpr((p) => p + `{{data.${n}.field}}`)}
-                      className="px-2 py-0.5 text-[10px] font-mono rounded border border-gray-200 dark:border-[#30363d] hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-600 dark:text-gray-400">
-                      data.{n}
+                      onClick={() => setRawExpr((p) => p + `{{data.${toSnakeCase(n)}}}`)}
+                      className="px-2 py-0.5 text-[10px] font-mono border border-gray-200 dark:border-[#30363d] hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-600 dark:text-gray-400">
+                      data.{toSnakeCase(n)}
                     </button>
                   ))}
                   {propNames.map((n) => (
                     <button key={n} type="button"
                       onClick={() => setRawExpr((p) => p + `{{prop.${n}}}`)}
-                      className="px-2 py-0.5 text-[10px] font-mono rounded border border-gray-200 dark:border-[#30363d] hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-600 dark:text-gray-400">
+                      className="px-2 py-0.5 text-[10px] font-mono border border-gray-200 dark:border-[#30363d] hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-600 dark:text-gray-400">
                       prop.{n}
                     </button>
                   ))}
@@ -913,20 +1006,20 @@ export function ExpressionBuilderModal({
                   <button
                     type="button"
                     onClick={() => setAddMenuOpen((v) => !v)}
-                    className="px-3 py-1.5 text-xs text-gray-500 border border-dashed border-gray-300 dark:border-[#30363d] rounded-full hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    className="px-3 py-1.5 text-xs text-gray-500 border border-dashed border-gray-300 dark:border-[#30363d] hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                   >
                     + Add step
                   </button>
                   <div className="flex-1 h-px bg-gray-200 dark:bg-[#30363d]" />
                 </div>
                 {addMenuOpen && (
-                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-10 w-72 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded-lg shadow-xl p-2 grid grid-cols-2 gap-1">
+                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-10 w-72 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] shadow-xl p-2 grid grid-cols-2 gap-1">
                     {ADD_OPTIONS.map((opt) => (
                       <button
                         key={opt.type}
                         type="button"
                         onClick={() => addBlock(opt.type)}
-                        className="flex flex-col gap-0.5 p-2.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 text-left"
+                        className="flex flex-col gap-0.5 p-2.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-left"
                       >
                         <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{opt.label}</span>
                         <span className="text-[10px] text-gray-400">{opt.desc}</span>
@@ -957,28 +1050,30 @@ export function ExpressionBuilderModal({
             </button>
             <div className="flex gap-2">
               <button type="button" onClick={onClose}
-                className="px-3 py-1.5 text-xs rounded border border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]">
+                className="px-3 py-1.5 text-xs border border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]">
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => {
                   if (finalExpr) {
+                    const normalizedExpr = normalizeInsertExpression(finalExpr)
+                    if (!normalizedExpr) return
                     try {
                       if (rawMode) {
                         // Raw insert — save a marker so we know to reopen in raw mode
-                        localStorage.setItem('__eb:' + finalExpr, JSON.stringify({ __raw: true }))
+                        localStorage.setItem('__eb:' + normalizedExpr, JSON.stringify({ __raw: true }))
                       } else {
                         // Visual insert — save full block list for exact restoration
-                        localStorage.setItem('__eb:' + finalExpr, JSON.stringify(blocks))
+                        localStorage.setItem('__eb:' + normalizedExpr, JSON.stringify(blocks))
                       }
                     } catch {}
-                    onInsert(finalExpr)
+                    onInsert(normalizedExpr)
                     onClose()
                   }
                 }}
                 disabled={!finalExpr}
-                className="px-4 py-1.5 text-xs font-medium rounded bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-4 py-1.5 text-xs font-medium bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Insert
               </button>
