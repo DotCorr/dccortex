@@ -743,7 +743,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -774,7 +774,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -827,7 +827,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -856,7 +856,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -896,7 +896,7 @@ export function PropertyPanel({
                 onChange={(e) => {
                   const v = e.target.value
                   if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`)
-                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`)
+                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`)
                   else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`)
                   else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`)
                   else if (v.startsWith('asset:')) setProp(key, v.slice(6))
@@ -983,7 +983,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -1036,7 +1036,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -1122,7 +1122,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -1271,7 +1271,7 @@ export function PropertyPanel({
                 onChange={(e) => {
                   const v = e.target.value
                   if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`)
-                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`)
+                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`)
                   else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`)
                   else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`)
                   else if (v.startsWith('asset:')) setProp(key, v.slice(6))
@@ -1471,7 +1471,7 @@ export function PropertyPanel({
                 onChange={(e) => {
                   const v = e.target.value
                   if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`)
-                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`)
+                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`)
                   else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`)
                   else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`)
                   else if (v.startsWith('asset:')) setProp(key, v.slice(6))
@@ -1575,7 +1575,7 @@ export function PropertyPanel({
           {isBindable && bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -2061,7 +2061,7 @@ export function PropertyPanel({
                             onChange={(e) => {
                               const v = e.target.value
                               if (v.startsWith('state:')) setProp('visibleWhen', `{{state.${v.slice(6)}}}`)
-                              else if (v.startsWith('data:')) setProp('visibleWhen', `{{data.${v.slice(5)}.field}}`)
+                              else if (v.startsWith('data:')) setProp('visibleWhen', `{{data.${v.slice(5)}}}`)
                               else if (v.startsWith('script:')) setProp('visibleWhen', `{{script.${v.slice(7)}}}`)
                               else if (v.startsWith('prop:')) setProp('visibleWhen', `{{prop.${v.slice(5)}}}`)
                               setBindingFor(null)
@@ -2188,7 +2188,7 @@ export function PropertyPanel({
                                 onChange={(e) => {
                                   const v = e.target.value
                                   if (v.startsWith('state:')) setProp(entry.key, `{{state.${v.slice(6)}}}`)
-                                  else if (v.startsWith('data:')) setProp(entry.key, `{{data.${v.slice(5)}.field}}`)
+                                  else if (v.startsWith('data:')) setProp(entry.key, `{{data.${v.slice(5)}}}`)
                                   else if (v.startsWith('script:')) setProp(entry.key, `{{script.${v.slice(7)}}}`)
                                   else if (v.startsWith('prop:')) setProp(entry.key, `{{prop.${v.slice(5)}}}`)
                                   else if (v.startsWith('asset:')) setProp(entry.key, v.slice(6))
