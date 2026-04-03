@@ -2786,7 +2786,19 @@ export default function ScreenEditPage() {
     const varsParam = Object.keys(vars).length ? `?vars=${encodeURIComponent(JSON.stringify(vars))}` : ''
     fetch(`/api/projects/${projectId}/runtime-data${varsParam}`)
       .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d?.data) setRuntimeData(d.data) })
+      .then((d) => {
+        if (!d?.data || typeof d.data !== 'object') return
+        const incoming = d.data as Record<string, unknown>
+        setRuntimeData((prev) => {
+          const next: Record<string, unknown> = { ...prev }
+          for (const [key, value] of Object.entries(incoming)) {
+            // Keep last known good snapshot when a source temporarily fails and returns null/undefined.
+            if ((value === null || value === undefined) && prev[key] !== undefined && prev[key] !== null) continue
+            next[key] = value
+          }
+          return next
+        })
+      })
       .catch(() => {})
   }, [projectId, dataSources, runtimeState])
 
@@ -2836,7 +2848,7 @@ export default function ScreenEditPage() {
         return undefined
       }
     },
-    [namedScripts, runtimeState]
+    [namedScripts, runtimeState, runtimeData]
   )
 
   const resolveBindingFn = useCallback(
