@@ -606,6 +606,18 @@ export function PropertyPanel({
     (key: string, value: unknown) => {
       if (!node) return
 
+      if (typeof value === 'string') {
+        const dataSourceMatch = value.match(/^\{\{data\.([^}]+)\}\}$/)
+        if (dataSourceMatch) {
+          const sourceToken = dataSourceMatch[1].trim()
+          // Keep transformed paths intact; normalize only root source tokens picked from dropdown.
+          if (sourceToken && !sourceToken.includes('.')) {
+            const preferred = expandSourceAliases(sourceToken).find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? sourceToken
+            value = `{{data.${preferred}}}`
+          }
+        }
+      }
+
       // Data repeater expects the whole array source ({{data.sourceName}}), not a field token.
       if (node.type === 'dataRepeater' && key === 'dataSource' && typeof value === 'string') {
         const normalized = value.replace(/^\{\{data\.([^}.]+)\.field\}\}$/, '{{data.$1}}')
@@ -615,7 +627,7 @@ export function PropertyPanel({
 
       onUpdate({ ...props, [key]: value })
     },
-    [node, props, onUpdate]
+    [node, props, onUpdate, expandSourceAliases]
   )
   const reusablePropsObj = (props.reusableProps ?? {}) as Record<string, unknown>
   const setReusableProp = useCallback(
@@ -1373,19 +1385,28 @@ export function PropertyPanel({
       return (
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-          <textarea
-            value={rawJson}
-            onChange={(e) => {
-              try {
-                const parsed = JSON.parse(e.target.value)
-                if (parsed && typeof parsed === 'object') setProp(key, parsed)
-              } catch {
-                // Keep raw input editable; parser applies when JSON is valid.
-              }
-            }}
-            rows={5}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-          />
+          <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
+            <MonacoEditor
+              language="json"
+              value={rawJson}
+              onChange={(value) => {
+                try {
+                  const parsed = JSON.parse(value ?? '{}')
+                  if (parsed && typeof parsed === 'object') setProp(key, parsed)
+                } catch {
+                  // Keep raw input editable; parser applies when JSON is valid.
+                }
+              }}
+              height="132px"
+              options={{
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                fontSize: 12,
+                padding: { top: 8, bottom: 8 },
+              }}
+            />
+          </div>
           <p className="text-[11px] text-gray-500 mt-1">Use values or bindings like <code>{'{{state.userName}}'}</code>. Reusable internals can read <code>{'{{prop.userName}}'}</code>.</p>
         </div>
       )
@@ -1629,12 +1650,21 @@ export function PropertyPanel({
       return (
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-          <textarea
-            value={String(val ?? '')}
-            onChange={(e) => setProp(key, e.target.value)}
-            rows={3}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-          />
+          <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
+            <MonacoEditor
+              language="json"
+              value={String(val ?? '')}
+              onChange={(value) => setProp(key, value ?? '')}
+              height="100px"
+              options={{
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                fontSize: 12,
+                padding: { top: 8, bottom: 8 },
+              }}
+            />
+          </div>
         </div>
       )
     }
@@ -1823,9 +1853,21 @@ export function PropertyPanel({
             <div className="space-y-1.5">
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Custom CSS</label>
               <p className="text-[10px] text-gray-400">Injected into this screen's canvas. Use CSS variables, keyframe animations, etc.</p>
-              <textarea value={theme.customCss ?? ''} onChange={(e) => onThemeChange({ customCss: e.target.value || undefined })} rows={5}
-                placeholder=".my-class { color: red; }\n@keyframes myAnim { from { opacity:0 } to { opacity:1 } }"
-                className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono resize-y" />
+              <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
+                <MonacoEditor
+                  language="css"
+                  value={theme.customCss ?? ''}
+                  onChange={(value) => onThemeChange({ customCss: (value ?? '').trim() || undefined })}
+                  height="140px"
+                  options={{
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    fontSize: 12,
+                    padding: { top: 8, bottom: 8 },
+                  }}
+                />
+              </div>
             </div>
 
             {/* Global theme */}
@@ -1870,9 +1912,27 @@ export function PropertyPanel({
             <div className="space-y-1">
               <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">{label}</label>
               {textarea ? (
-                <textarea value={(s[field] as string) ?? ''} onChange={e => onSeoChange?.({ [field]: e.target.value || undefined } as Partial<SeoSettings>)}
-                  placeholder={placeholder} rows={3}
-                  className="w-full px-2 py-1.5 text-xs border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] font-mono resize-y" />
+                field === 'customHead' ? (
+                  <div className="border border-[var(--border)] rounded overflow-hidden bg-[var(--background)]">
+                    <MonacoEditor
+                      language="html"
+                      value={(s[field] as string) ?? ''}
+                      onChange={(value) => onSeoChange?.({ [field]: (value ?? '').trim() || undefined } as Partial<SeoSettings>)}
+                      height="120px"
+                      options={{
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        wordWrap: 'on',
+                        fontSize: 12,
+                        padding: { top: 8, bottom: 8 },
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <textarea value={(s[field] as string) ?? ''} onChange={e => onSeoChange?.({ [field]: e.target.value || undefined } as Partial<SeoSettings>)}
+                    placeholder={placeholder} rows={3}
+                    className="w-full px-2 py-1.5 text-xs border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] font-mono resize-y" />
+                )
               ) : (
                 <input type="text" value={(s[field] as string) ?? ''} onChange={e => onSeoChange?.({ [field]: e.target.value || undefined } as Partial<SeoSettings>)}
                   placeholder={placeholder}
