@@ -1549,13 +1549,34 @@ export function PropertyPanel({
                 <img src={previewUrl} alt="" width={28} height={28} className="shrink-0 border border-gray-200 dark:border-[#30363d] rounded p-0.5 bg-gray-50 dark:bg-[#0d1117] dark:invert" />
               ) : null
             })()}
-            <input
-              type="text"
-              value={rawVal}
-              onChange={(e) => setProp(key, isNumber ? Number(e.target.value) : e.target.value)}
-              placeholder={key === 'icon' ? 'e.g. mdi:home, lucide:star' : 'e.g. {{prop.x}}, {{state.count}}'}
-              className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-            />
+            {isNumber ? (
+              <input
+                type="text"
+                value={rawVal}
+                onChange={(e) => setProp(key, Number(e.target.value))}
+                placeholder={key === 'icon' ? 'e.g. mdi:home, lucide:star' : 'e.g. {{prop.x}}, {{state.count}}'}
+                className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
+              />
+            ) : (
+              <div className="flex-1 border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
+                <MonacoEditor
+                  language="javascript"
+                  value={rawVal}
+                  onChange={(value) => setProp(key, value ?? '')}
+                  height="42px"
+                  options={{
+                    minimap: { enabled: false },
+                    lineNumbers: 'off',
+                    glyphMargin: false,
+                    folding: false,
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'off',
+                    fontSize: 12,
+                    padding: { top: 8, bottom: 8 },
+                  }}
+                />
+              </div>
+            )}
             {key === 'icon' && (
               <button
                 type="button"
