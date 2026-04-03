@@ -525,10 +525,30 @@ export function PropertyPanel({
   const [projectApiSourceNames, setProjectApiSourceNames] = useState<string[]>([])
   const [projectTableNames, setProjectTableNames] = useState<string[]>([])
   const [inspectorSource, setInspectorSource] = useState('')
+  const [inspectorCopyNotice, setInspectorCopyNotice] = useState('')
   const [monacoReady, setMonacoReady] = useState(false)
+  const inspectorCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bodyScrollRef = useRef<HTMLDivElement | null>(null)
 
   const props = node?.props ?? {}
+
+  const copyInspectorText = useCallback((text: string, label = 'Copied') => {
+    navigator.clipboard?.writeText(text)
+      .then(() => {
+        setInspectorCopyNotice(label)
+        if (inspectorCopyTimerRef.current) clearTimeout(inspectorCopyTimerRef.current)
+        inspectorCopyTimerRef.current = setTimeout(() => setInspectorCopyNotice(''), 1200)
+      })
+      .catch(() => {
+        setInspectorCopyNotice('Copy failed')
+        if (inspectorCopyTimerRef.current) clearTimeout(inspectorCopyTimerRef.current)
+        inspectorCopyTimerRef.current = setTimeout(() => setInspectorCopyNotice(''), 1600)
+      })
+  }, [])
+
+  useEffect(() => () => {
+    if (inspectorCopyTimerRef.current) clearTimeout(inspectorCopyTimerRef.current)
+  }, [])
 
   useEffect(() => {
     let canceled = false
@@ -3213,7 +3233,7 @@ export function PropertyPanel({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => { navigator.clipboard?.writeText(inspectorDumpToken).catch(() => {}) }}
+                    onClick={() => copyInspectorText(inspectorDumpToken, 'Copied payload token')}
                     className="px-2 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
                     title={`Copy ${inspectorDumpToken}`}
                   >
@@ -3222,12 +3242,15 @@ export function PropertyPanel({
                   {inspectorSafeDumpToken && inspectorSafeDumpToken !== inspectorDumpToken && (
                     <button
                       type="button"
-                      onClick={() => { navigator.clipboard?.writeText(inspectorSafeDumpToken).catch(() => {}) }}
+                      onClick={() => copyInspectorText(inspectorSafeDumpToken, 'Copied safe alias token')}
                       className="px-2 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
                       title={`Copy ${inspectorSafeDumpToken}`}
                     >
                       Copy safe alias token
                     </button>
+                  )}
+                  {inspectorCopyNotice && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{inspectorCopyNotice}</span>
                   )}
                   <p className="text-[10px] text-gray-500 dark:text-gray-400">For a dump preview in Text, set Content to only this token (no extra text) while Preview is ON.</p>
                 </div>
@@ -3238,7 +3261,7 @@ export function PropertyPanel({
                     <span className="text-[10px] uppercase tracking-wider text-gray-300">Payload Preview</span>
                     <button
                       type="button"
-                      onClick={() => { navigator.clipboard?.writeText(inspectorPayloadPreview).catch(() => {}) }}
+                      onClick={() => copyInspectorText(inspectorPayloadPreview, 'Copied payload preview')}
                       className="px-1.5 py-0.5 text-[10px] border border-gray-500 text-gray-200 hover:bg-gray-800"
                       title="Copy payload preview"
                     >
@@ -3263,7 +3286,7 @@ export function PropertyPanel({
                         <div className="text-[10px] text-gray-700 dark:text-gray-300 font-mono">{`{{${token}}}`}</div>
                         <button
                           type="button"
-                          onClick={() => { navigator.clipboard?.writeText(`{{${token}}}`).catch(() => {}) }}
+                          onClick={() => copyInspectorText(`{{${token}}}`, 'Copied token')}
                           className="px-1.5 py-0.5 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]"
                           title={`Copy {{${token}}}`}
                         >
