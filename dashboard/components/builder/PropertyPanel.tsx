@@ -3234,7 +3234,17 @@ export function PropertyPanel({
               )}
               {runtimeSourceNames.length > 0 && inspectorPayloadPreview && (
                 <div className="border border-gray-200 dark:border-[#30363d] bg-black text-green-300">
-                  <div className="px-2 py-1 border-b border-gray-700 text-[10px] uppercase tracking-wider text-gray-300">Payload Preview</div>
+                  <div className="px-2 py-1 border-b border-gray-700 flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-gray-300">Payload Preview</span>
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard?.writeText(inspectorPayloadPreview).catch(() => {}) }}
+                      className="px-1.5 py-0.5 text-[10px] border border-gray-500 text-gray-200 hover:bg-gray-800"
+                      title="Copy payload preview"
+                    >
+                      Copy
+                    </button>
+                  </div>
                   <pre className="max-h-72 min-h-36 overflow-auto px-2 py-1.5 text-[10px] leading-relaxed font-mono whitespace-pre-wrap break-words">{inspectorPayloadPreview}</pre>
                 </div>
               )}
@@ -3245,16 +3255,23 @@ export function PropertyPanel({
               ) : (
                 <div className="grid grid-cols-1 gap-1.5 max-h-[32rem] min-h-40 overflow-auto">
                   {inspectorTokens.map((token) => (
-                    <button
+                    <div
                       key={token}
-                      type="button"
-                      onClick={() => { navigator.clipboard?.writeText(`{{${token}}}`).catch(() => {}) }}
-                      className="text-left p-1.5 border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] hover:bg-gray-100 dark:hover:bg-[#21262d]"
-                      title={`Copy {{${token}}}`}
+                      className="text-left p-1.5 border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117]"
                     >
-                      <div className="text-[10px] text-gray-700 dark:text-gray-300 font-mono">{`{{${token}}}`}</div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] text-gray-700 dark:text-gray-300 font-mono">{`{{${token}}}`}</div>
+                        <button
+                          type="button"
+                          onClick={() => { navigator.clipboard?.writeText(`{{${token}}}`).catch(() => {}) }}
+                          className="px-1.5 py-0.5 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]"
+                          title={`Copy {{${token}}}`}
+                        >
+                          Copy
+                        </button>
+                      </div>
                       <div className="mt-1 bg-black text-emerald-300 font-mono text-[10px] px-1.5 py-1 overflow-hidden text-ellipsis whitespace-nowrap">{inspectorTokenValuePreview[token] ?? 'undefined'}</div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
