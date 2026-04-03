@@ -1195,6 +1195,16 @@ export default function ScreenEditPage() {
   })
   const internalDatasource = dsListData?.datasources?.[0]
   const realtimePollMs: number = internalDatasource?.realtimePollMs ?? 0
+  const { data: apiSourceListData } = useQuery({
+    queryKey: ['api-sources', projectId],
+    queryFn: async () => {
+      const res = await axios.get(`/api/projects/${projectId}/api-sources`)
+      return res.data
+    },
+    enabled: !!projectId,
+    staleTime: 10000,
+  })
+  const hasExternalApiSources = Array.isArray(apiSourceListData?.sources) && apiSourceListData.sources.length > 0
 
   const screen = data?.screen
   useEffect(() => {
@@ -2753,9 +2763,8 @@ export default function ScreenEditPage() {
     }
   }, [initialStateValues, stateCacheKey, defsFingerprint])
 
-  // Fetch runtime data (API sources + internal DB tables) whenever preview mode is activated
-  useEffect(() => {
-    if (!previewMode) return
+  const fetchRuntimeData = useCallback(() => {
+    if (!projectId) return
     // Build vars map from dataSources urlParamBindings resolved against current runtimeState
     const vars: Record<string, Record<string, string>> = {}
     for (const ds of dataSources) {
@@ -2779,7 +2788,22 @@ export default function ScreenEditPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d?.data) setRuntimeData(d.data) })
       .catch(() => {})
-  }, [previewMode, projectId, dataSources, runtimeState])
+  }, [projectId, dataSources, runtimeState])
+
+  // Fetch runtime data (API sources + internal DB tables) whenever preview mode is activated
+  useEffect(() => {
+    if (!previewMode) return
+    fetchRuntimeData()
+  }, [previewMode, fetchRuntimeData])
+
+  // External API polling: refresh runtime data periodically while preview is on.
+  useEffect(() => {
+    if (!previewMode || !hasExternalApiSources) return
+    const timer = setInterval(() => {
+      fetchRuntimeData()
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [previewMode, hasExternalApiSources, fetchRuntimeData])
 
   // Real-time streaming: subscribe to SSE when datasource has realtimePollMs > 0.
   // Server pushes DB snapshots over a single persistent connection — no repeated HTTP
