@@ -753,6 +753,32 @@ export function PropertyPanel({
     { title: 'Other', keys: ['cursor', 'pointerEvents', 'userSelect', 'aspectRatio', 'overflow', 'overflowX', 'overflowY', 'objectFit', 'objectPosition', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight'] },
   ]
 
+  const renderExpressionEditor = (
+    value: string,
+    onChange: (next: string) => void,
+    placeholder?: string,
+    className = 'w-full'
+  ) => (
+    <div className={`${className} border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`} title={placeholder}>
+      <MonacoEditor
+        language="javascript"
+        value={value}
+        onChange={(next) => onChange(next ?? '')}
+        height="42px"
+        options={{
+          minimap: { enabled: false },
+          lineNumbers: 'off',
+          glyphMargin: false,
+          folding: false,
+          scrollBeyondLastLine: false,
+          wordWrap: 'off',
+          fontSize: 12,
+          padding: { top: 8, bottom: 8 },
+        }}
+      />
+    </div>
+  )
+
   const renderLayoutField = (key: string) => {
     const val = props[key]
     const isNumber = typeof def?.defaultProps[key] === 'number'
@@ -783,7 +809,7 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input type="text" value={rawVal} onChange={(e) => setProp('customId', e.target.value.trim() || undefined)} placeholder={node?.id ?? 'node-id'} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono" />
+          {renderExpressionEditor(rawVal, (next) => setProp('customId', next.trim() || undefined), node?.id ?? 'node-id')}
         </div>
       )
     }
@@ -814,13 +840,9 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input
-            type="text"
-            value={rawVal}
-            onChange={(e) => setProp(key, e.target.value)}
-            placeholder={`e.g. ${picks[0]}${picks[1] ? `, ${picks[1]}` : ''}, {{state.x}}`}
-            className={`w-full px-2 py-1.5 text-sm border font-mono ${isBound ? 'border-amber-400 dark:border-amber-600' : 'border-gray-300 dark:border-[#30363d]'} bg-white dark:bg-[#0d1117] text-black dark:text-white mb-1.5`}
-          />
+          <div className="mb-1.5">
+            {renderExpressionEditor(rawVal, (next) => setProp(key, next), `e.g. ${picks[0]}${picks[1] ? `, ${picks[1]}` : ''}, {{state.x}}`)}
+          </div>
           <div className="flex flex-wrap gap-1">
             {picks.map((p) => (
               <button
@@ -896,7 +918,7 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input type="text" value={rawVal} onChange={(e) => setProp(key, e.target.value)} placeholder="e.g. {{state.x}}" className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono" />
+          {renderExpressionEditor(rawVal, (next) => setProp(key, next), 'e.g. {{state.x}}')}
         </div>
       )
     }
@@ -951,13 +973,7 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input
-            type={isNumber ? 'number' : 'text'}
-            value={rawVal}
-            onChange={(e) => setProp(key, isNumber ? Number(e.target.value) : e.target.value)}
-            placeholder={key === 'width' || key === 'height' ? 'e.g. 100%, 200px, {{state.w}}' : 'e.g. {{state.x}}'}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-          />
+          {renderExpressionEditor(rawVal, (next) => setProp(key, next), key === 'width' || key === 'height' ? 'e.g. 100%, 200px, {{state.w}}' : 'e.g. {{state.x}}')}
         </div>
       )
     }
@@ -1024,14 +1040,7 @@ export function PropertyPanel({
             </div>
           )}
           <div className="flex gap-1">
-            <input
-              type="text"
-              value={strVal}
-              onChange={(e) => { setProp(key, e.target.value); injectFont(e.target.value) }}
-              placeholder="e.g. Inter, 'Roboto Mono', {{state.font}}"
-              className={`flex-1 px-2 py-1.5 text-sm border font-mono ${isBound ? 'border-amber-400 dark:border-amber-600' : 'border-gray-300 dark:border-[#30363d]'} bg-white dark:bg-[#0d1117] text-black dark:text-white`}
-              style={strVal && !strVal.startsWith('{{') ? { fontFamily: strVal } : undefined}
-            />
+            {renderExpressionEditor(strVal, (next) => { setProp(key, next); injectFont(next) }, "e.g. Inter, 'Roboto Mono', {{state.font}}", 'flex-1')}
             <button
               type="button"
               onClick={() => setFontPickerOpen(true)}
@@ -1076,13 +1085,9 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input
-            type="text"
-            value={strVal}
-            onChange={(e) => setProp(key, e.target.value)}
-            placeholder={`e.g. ${picks[0]}${picks[1] ? `, ${picks[1]}` : ''}, {{state.x}}`}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono mb-1.5"
-          />
+          <div className="mb-1.5">
+            {renderExpressionEditor(strVal, (next) => setProp(key, next), `e.g. ${picks[0]}${picks[1] ? `, ${picks[1]}` : ''}, {{state.x}}`)}
+          </div>
           <div className="flex flex-wrap gap-1">
             {picks.map((p) => (
               <button
@@ -1163,13 +1168,7 @@ export function PropertyPanel({
             </div>
           )}
           {isBound ? (
-            <input
-              type="text"
-              value={strVal}
-              onChange={(e) => setProp(key, e.target.value)}
-              placeholder="e.g. {{state.x}}"
-              className="w-full px-2 py-1.5 text-sm border border-amber-400 dark:border-amber-600 bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-            />
+            renderExpressionEditor(strVal, (next) => setProp(key, next), 'e.g. {{state.x}}')
           ) : (
             <select
               value={strVal || sf.defaultVal || ''}
@@ -1189,13 +1188,9 @@ export function PropertyPanel({
       return (
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-          <input
-            type="text"
-            value={strVal}
-            onChange={(e) => setProp(key, e.target.value)}
-            placeholder="e.g. fadeIn 0.5s ease both"
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono mb-1.5"
-          />
+          <div className="mb-1.5">
+            {renderExpressionEditor(strVal, (next) => setProp(key, next), 'e.g. fadeIn 0.5s ease both')}
+          </div>
           <div className="flex flex-wrap gap-1">
             {ANIMATION_PRESETS.map((p) => (
               <button
@@ -1231,13 +1226,7 @@ export function PropertyPanel({
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
           <div className="flex gap-1 mb-1.5">
-            <input
-              type="text"
-              value={strVal}
-              onChange={(e) => setProp(key, e.target.value)}
-              placeholder="linear-gradient(135deg, #f00, #00f) or url(…)"
-              className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-            />
+            {renderExpressionEditor(strVal, (next) => setProp(key, next), 'linear-gradient(135deg, #f00, #00f) or url(…)', 'flex-1')}
             <button
               type="button"
               onClick={() => setGradientBuilderFor(key)}
@@ -1335,13 +1324,7 @@ export function PropertyPanel({
                 className="w-8 h-8 rounded border border-gray-300 dark:border-[#30363d] cursor-pointer"
               />
             )}
-            <input
-              type="text"
-              value={strVal}
-              onChange={(e) => setProp(key, e.target.value)}
-              placeholder={isColor ? '#hex or {{state.color}}' : 'e.g. 14px, {{state.size}}'}
-              className={`flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono`}
-            />
+            {renderExpressionEditor(strVal, (next) => setProp(key, next), isColor ? '#hex or {{state.color}}' : 'e.g. 14px, {{state.size}}', 'flex-1')}
           </div>
         </div>
       )
@@ -1549,34 +1532,7 @@ export function PropertyPanel({
                 <img src={previewUrl} alt="" width={28} height={28} className="shrink-0 border border-gray-200 dark:border-[#30363d] rounded p-0.5 bg-gray-50 dark:bg-[#0d1117] dark:invert" />
               ) : null
             })()}
-            {isNumber ? (
-              <input
-                type="text"
-                value={rawVal}
-                onChange={(e) => setProp(key, Number(e.target.value))}
-                placeholder={key === 'icon' ? 'e.g. mdi:home, lucide:star' : 'e.g. {{prop.x}}, {{state.count}}'}
-                className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-              />
-            ) : (
-              <div className="flex-1 border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
-                <MonacoEditor
-                  language="javascript"
-                  value={rawVal}
-                  onChange={(value) => setProp(key, value ?? '')}
-                  height="42px"
-                  options={{
-                    minimap: { enabled: false },
-                    lineNumbers: 'off',
-                    glyphMargin: false,
-                    folding: false,
-                    scrollBeyondLastLine: false,
-                    wordWrap: 'off',
-                    fontSize: 12,
-                    padding: { top: 8, bottom: 8 },
-                  }}
-                />
-              </div>
-            )}
+            {renderExpressionEditor(rawVal, (next) => setProp(key, next), key === 'icon' ? 'e.g. mdi:home, lucide:star' : 'e.g. {{prop.x}}, {{state.count}}', 'flex-1')}
             {key === 'icon' && (
               <button
                 type="button"
@@ -1645,9 +1601,13 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <select value={String(val ?? options[0].value)} onChange={(e) => setProp(key, e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white">
-            {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          {isBound ? (
+            renderExpressionEditor(rawVal, (next) => setProp(key, next), 'e.g. {{state.x}}')
+          ) : (
+            <select value={String(val ?? options[0].value)} onChange={(e) => setProp(key, e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white">
+              {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          )}
           {isBindable && <p className="text-[10px] text-gray-500 mt-0.5">Or use bolt to bind e.g. {`{{state.x}}`}</p>}
         </div>
       )
