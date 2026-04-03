@@ -3843,6 +3843,7 @@ export default function ScreenEditPage() {
                 persistGlobals({ globalStateDefinitions: next })
               }}
               dataSources={dataSources}
+              runtimeData={runtimeData}
               onDataSourcesChange={setDataSources}
               namedScripts={namedScripts}
               onNamedScriptsChange={setNamedScripts}

@@ -75,6 +75,8 @@ type Props = {
   onStateDefinitionsChange?: (state: StateDefinition[]) => void
   dataSources?: DataSourceDef[]
   onDataSourcesChange?: (data: DataSourceDef[]) => void
+  /** Live runtime data payload for Data Inspector path discovery. */
+  runtimeData?: Record<string, unknown>
   namedScripts?: Record<string, string>
   onNamedScriptsChange?: (scripts: Record<string, string>) => void
   theme?: ScreenTheme
@@ -470,6 +472,7 @@ export function PropertyPanel({
   onStateDefinitionsChange,
   dataSources = [],
   onDataSourcesChange,
+  runtimeData = {},
   namedScripts = {},
   onNamedScriptsChange,
   theme = {},
@@ -509,6 +512,7 @@ export function PropertyPanel({
   const [propExpressionKey, setPropExpressionKey] = useState<string | null>(null)
   const [projectApiSourceNames, setProjectApiSourceNames] = useState<string[]>([])
   const [projectTableNames, setProjectTableNames] = useState<string[]>([])
+  const [inspectorSource, setInspectorSource] = useState('')
   const bodyScrollRef = useRef<HTMLDivElement | null>(null)
 
   const props = node?.props ?? {}
@@ -629,6 +633,55 @@ export function PropertyPanel({
     return Array.from(new Set(base.flatMap((name) => expandSourceAliases(name))))
   }, [dataSources, projectApiSourceNames, projectTableNames, expandSourceAliases])
   const bindingDataSources = useMemo<DataSourceDef[]>(() => bindingDataSourceNames.map((name) => ({ id: `binding-${name}`, name })), [bindingDataSourceNames])
+  const runtimeSourceNames = useMemo(
+    () => bindingDataSourceNames.filter((name) => Object.prototype.hasOwnProperty.call(runtimeData, name)),
+    [bindingDataSourceNames, runtimeData]
+  )
+  useEffect(() => {
+    if (runtimeSourceNames.length === 0) {
+      setInspectorSource('')
+      return
+    }
+    if (!inspectorSource || !runtimeSourceNames.includes(inspectorSource)) {
+      setInspectorSource(runtimeSourceNames[0])
+    }
+  }, [runtimeSourceNames, inspectorSource])
+
+  const inspectorTokens = useMemo(() => {
+    if (!inspectorSource) return [] as string[]
+    const sourceValue = runtimeData[inspectorSource]
+    const out = new Set<string>()
+
+    const walk = (value: unknown, path: string, depth: number) => {
+      if (!path || depth > 4 || out.size >= 80) return
+
+      if (Array.isArray(value)) {
+        out.add(path)
+        const first = value[0]
+        if (first && typeof first === 'object' && !Array.isArray(first)) {
+          for (const [k, v] of Object.entries(first as Record<string, unknown>).slice(0, 12)) {
+            walk(v, `${path}.0.${k}`, depth + 1)
+            if (out.size >= 80) break
+          }
+        }
+        return
+      }
+
+      if (value && typeof value === 'object') {
+        out.add(path)
+        for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 20)) {
+          walk(v, `${path}.${k}`, depth + 1)
+          if (out.size >= 80) break
+        }
+        return
+      }
+
+      out.add(path)
+    }
+
+    walk(sourceValue, `data.${inspectorSource}`, 0)
+    return Array.from(out)
+  }, [inspectorSource, runtimeData])
   const propKeys = def ? Object.keys(def.defaultProps) : Object.keys(props)
   const uniqueKeys = Array.from(new Set([...propKeys, ...Object.keys(props), ...STYLE_PROP_KEYS, ...LAYOUT_KEYS, 'visibleWhen']))
   const isLayout = node ? ['container', 'section', 'stackV', 'stackH', 'header', 'main', 'footer', 'nav', 'aside', 'article'].includes(node.type) : false
@@ -2947,6 +3000,45 @@ export function PropertyPanel({
           return (
           <div className="space-y-3">
             <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.some.path&#125;&#125;</code> for nested fields, and repeater with array paths only.</p>
+
+            <div className="border border-gray-200 dark:border-[#30363d] rounded p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Data Inspector</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Live keys from preview runtime. Click to copy binding.</p>
+                </div>
+                {runtimeSourceNames.length > 0 && (
+                  <select
+                    value={inspectorSource}
+                    onChange={(e) => setInspectorSource(e.target.value)}
+                    className="px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                  >
+                    {runtimeSourceNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {runtimeSourceNames.length === 0 ? (
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">No live data detected yet. Turn Preview on to fetch runtime data for this screen.</p>
+              ) : inspectorTokens.length === 0 ? (
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">No inspectable keys for this source yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-auto">
+                  {inspectorTokens.map((token) => (
+                    <button
+                      key={token}
+                      type="button"
+                      onClick={() => { navigator.clipboard?.writeText(`{{${token}}}`).catch(() => {}) }}
+                      className="px-2 py-0.5 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
+                      title={`Copy {{${token}}}`}
+                    >
+                      {`{{${token}}}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {onDataSourcesChange && dataSources.length > 0 && (
               <div className="space-y-3">
