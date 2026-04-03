@@ -8,6 +8,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Zap } from 'lucide-react'
 import type { Node } from './registry'
 import { getComponentDef, STYLE_PROP_KEYS } from './registry'
@@ -27,6 +28,8 @@ import { GradientBuilderModal } from './GradientBuilderModal'
 import { AssetPickerModal } from './AssetPickerModal'
 import { AnimationSequenceBuilder, type AnimationSequenceConfig } from './AnimationSequenceBuilder'
 import type { ReusableDefinition, ReusablePropSchema } from './globals'
+
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 
 export type StateDefinition = { id: string; name: string; initialValue: string; type?: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date' }
 export type CustomTypeField = { name: string; type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date'; defaultValue?: string }
@@ -2608,13 +2611,24 @@ export function PropertyPanel({
                               <option value="__inline__">Inline script</option>
                             </select>
                             {(config.scriptName === '__inline__' || !config.scriptName) && (
-                              <textarea
-                                value={config.customScript ?? ''}
-                                onChange={(e) => updateStep(stepIdx, { ...config, customScript: e.target.value })}
-                                placeholder="Inline JS (access state, data, helpers)"
-                                rows={2}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                              />
+                              <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#161b22]">
+                                <MonacoEditor
+                                  language="javascript"
+                                  value={config.customScript ?? ''}
+                                  onChange={(value) => updateStep(stepIdx, { ...config, customScript: value ?? '' })}
+                                  height="88px"
+                                  options={{
+                                    minimap: { enabled: false },
+                                    lineNumbers: 'off',
+                                    glyphMargin: false,
+                                    folding: false,
+                                    scrollBeyondLastLine: false,
+                                    wordWrap: 'on',
+                                    fontSize: 12,
+                                    padding: { top: 8, bottom: 8 },
+                                  }}
+                                />
+                              </div>
                             )}
                           </>
                         )}
@@ -2742,13 +2756,24 @@ export function PropertyPanel({
 
                         {/* Custom JS */}
                         {config.action === 'custom' && (
-                          <textarea
-                            value={config.customScript ?? ''}
-                            onChange={(e) => updateStep(stepIdx, { ...config, customScript: e.target.value })}
-                            placeholder="JavaScript (state, data, DateTime, Math)"
-                            rows={2}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                          />
+                          <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#161b22]">
+                            <MonacoEditor
+                              language="javascript"
+                              value={config.customScript ?? ''}
+                              onChange={(value) => updateStep(stepIdx, { ...config, customScript: value ?? '' })}
+                              height="88px"
+                              options={{
+                                minimap: { enabled: false },
+                                lineNumbers: 'off',
+                                glyphMargin: false,
+                                folding: false,
+                                scrollBeyondLastLine: false,
+                                wordWrap: 'on',
+                                fontSize: 12,
+                                padding: { top: 8, bottom: 8 },
+                              }}
+                            />
+                          </div>
                         )}
 
                         {/* Per-step condition */}
