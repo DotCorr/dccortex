@@ -164,6 +164,12 @@ const PROP_LABELS: Record<string, string> = {
   hamburgerIcon: 'Hamburger icon (replaces 3-bar)',
   hamburgerIconSize: 'Hamburger icon size (px)',
   hamburgerContentOffset: 'Content padding-top to clear hamburger (px)',
+  suspenseEnabled: 'Loading fallback',
+  suspenseVariant: 'Fallback style',
+  suspenseDirection: 'Line direction',
+  suspenseLabel: 'Fallback label',
+  suspenseWhen: 'Show while (expression)',
+  suspenseSmart: 'Auto-detect data loading',
   size: 'Icon size (px)',
   placeholder: 'Placeholder',
   options: 'Options (comma-separated)',
@@ -733,7 +739,7 @@ export function PropertyPanel({
   const styleKeys = [...STYLE_PROP_KEYS]
   const eventKeys = (def?.events ?? BUILDER_EVENT_KEYS) as readonly string[]
   const availableStateDefinitions = [...globalStateDefinitions, ...stateDefinitions.filter((s) => !globalStateDefinitions.some((g) => g.name === s.name))]
-  const contentKeysAll = uniqueKeys.filter((k) => k !== 'customId' && k !== 'script' && k !== '__propContract' && k !== 'visibleWhen' && !k.startsWith('__') && !LAYOUT_KEYS.includes(k) && !STYLE_PROP_KEYS.includes(k as any) && !eventKeys.includes(k))
+  const contentKeysAll = uniqueKeys.filter((k) => k !== 'customId' && k !== 'script' && k !== '__propContract' && k !== 'visibleWhen' && k !== 'suspenseEnabled' && k !== 'suspenseVariant' && k !== 'suspenseDirection' && k !== 'suspenseLabel' && k !== 'suspenseWhen' && k !== 'suspenseSmart' && !k.startsWith('__') && !LAYOUT_KEYS.includes(k) && !STYLE_PROP_KEYS.includes(k as any) && !eventKeys.includes(k))
   const selectedReusable = node?.type === 'reusableInstance' && node?.props?.reusableId
     ? globalReusables.find((r) => r.id === node.props.reusableId)
     : null
@@ -754,6 +760,11 @@ export function PropertyPanel({
     for (const k of [...contentKeys, ...layoutKeys, ...styleKeys]) set.add(k)
     return set
   })()
+  const hasDataOrStateBinding = useMemo(
+    () => Object.values(props).some((v) => typeof v === 'string' && /\{\{\s*(data|state|script|prop|navProp)\./.test(v)),
+    [props]
+  )
+  const loadingUxEnabled = Boolean(props.suspenseEnabled)
   /* Style only: typography, colors, borders, shadow, position, etc. No layout (width/height/padding/margin live in Layout tab). */
   const styleGroups: { title: string; keys: readonly string[] }[] = [
     { title: 'Typography', keys: ['color', 'fontSize', 'fontWeight', 'fontFamily', 'fontStyle', 'lineHeight', 'letterSpacing', 'textAlign', 'textDecoration', 'textTransform', 'textOverflow', 'textShadow', 'textIndent', 'whiteSpace', 'wordBreak', 'verticalAlign', 'lineClamp', 'listStyleType', 'listStylePosition'] },
@@ -2212,6 +2223,87 @@ export function PropertyPanel({
                         </button>
                       )}
                     </div>
+                  </div>
+                  <div className="mb-3 pb-3 border-b border-gray-200 dark:border-[#30363d]">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div>
+                        <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Loading UX</div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">Wrap this component with a suspense-style fallback while data is loading.</p>
+                      </div>
+                      <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={loadingUxEnabled}
+                          onChange={(e) => setProp('suspenseEnabled', e.target.checked)}
+                        />
+                        Enable
+                      </label>
+                    </div>
+                    {!loadingUxEnabled && hasDataOrStateBinding && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProp('suspenseEnabled', true)
+                          if (props.suspenseSmart === undefined) setProp('suspenseSmart', true)
+                          if (!props.suspenseVariant) setProp('suspenseVariant', 'skeleton')
+                        }}
+                        className="text-[11px] px-2 py-1 border border-gray-300 dark:border-[#30363d] hover:bg-gray-100 dark:hover:bg-[#21262d]"
+                      >
+                        Suggestion: add loading fallback for bound data
+                      </button>
+                    )}
+                    {loadingUxEnabled && (
+                      <div className="mt-2 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Style</label>
+                            <select
+                              value={String(props.suspenseVariant ?? 'skeleton')}
+                              onChange={(e) => setProp('suspenseVariant', e.target.value)}
+                              className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                            >
+                              <option value="skeleton">Skeleton</option>
+                              <option value="spinner">Spinner</option>
+                              <option value="line">Line loader</option>
+                              <option value="dots">Dots</option>
+                              <option value="custom">Custom label</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Direction</label>
+                            <select
+                              value={String(props.suspenseDirection ?? 'horizontal')}
+                              onChange={(e) => setProp('suspenseDirection', e.target.value)}
+                              className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                            >
+                              <option value="horizontal">Horizontal</option>
+                              <option value="vertical">Vertical</option>
+                            </select>
+                          </div>
+                        </div>
+                        <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={props.suspenseSmart !== false}
+                            onChange={(e) => setProp('suspenseSmart', e.target.checked)}
+                          />
+                          Auto-detect bound data sources still loading
+                        </label>
+                        <div>
+                          <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Manual loading condition (optional)</label>
+                          {renderExpressionEditor(String(props.suspenseWhen ?? ''), (next) => setProp('suspenseWhen', next || undefined), '{{state.isLoading}}')}
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Fallback label</label>
+                          <input
+                            type="text"
+                            value={String(props.suspenseLabel ?? 'Loading...')}
+                            onChange={(e) => setProp('suspenseLabel', e.target.value)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                   {contentKeys.length > 0 && (
                     <>

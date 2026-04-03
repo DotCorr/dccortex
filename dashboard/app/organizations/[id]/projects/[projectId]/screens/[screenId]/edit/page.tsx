@@ -583,6 +583,7 @@ export default function ScreenEditPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [previewMode, setPreviewMode] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.previewMode ?? false)
   const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>({})
+  const [runtimePendingSources, setRuntimePendingSources] = useState<string[]>([])
   const [previewSize, setPreviewSize] = useState<PreviewViewport>(() => {
     const stored = loadStoredPreviewSettings(projectId, screenId)?.previewSize
     if (stored) return stored
@@ -1205,6 +1206,18 @@ export default function ScreenEditPage() {
     staleTime: 10000,
   })
   const hasExternalApiSources = Array.isArray(apiSourceListData?.sources) && apiSourceListData.sources.length > 0
+  const externalApiSourceNames = useMemo(
+    () => (Array.isArray(apiSourceListData?.sources)
+      ? apiSourceListData.sources.map((s: { name?: string }) => String(s?.name ?? '').trim()).filter(Boolean)
+      : []),
+    [apiSourceListData?.sources]
+  )
+  const runtimeResolvedSources = useMemo(
+    () => Object.entries(runtimeData)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .map(([key]) => key),
+    [runtimeData]
+  )
 
   const screen = data?.screen
   useEffect(() => {
@@ -2786,6 +2799,7 @@ export default function ScreenEditPage() {
       if (Object.keys(resolved).length) vars[ds.name] = resolved
     }
     const varsParam = Object.keys(vars).length ? `?vars=${encodeURIComponent(JSON.stringify(vars))}` : ''
+    if (externalApiSourceNames.length > 0) setRuntimePendingSources(externalApiSourceNames)
     fetch(`/api/projects/${projectId}/runtime-data${varsParam}`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
@@ -2802,7 +2816,8 @@ export default function ScreenEditPage() {
         })
       })
       .catch(() => {})
-  }, [projectId, dataSources])
+      .finally(() => setRuntimePendingSources([]))
+  }, [projectId, dataSources, externalApiSourceNames])
 
   // Hydrate runtime data in editor mode too, so bindings/transforms are available before preview.
   useEffect(() => {
@@ -3665,6 +3680,8 @@ export default function ScreenEditPage() {
                       onRunEvent={handleRunEvent}
                       reusables={globalReusables}
                       reusablePropsCtx={activeReusablePropsCtx}
+                      runtimePendingSources={runtimePendingSources}
+                      runtimeResolvedSources={runtimeResolvedSources}
                     />
                   )
                   const themeVars = effectiveTheme
@@ -4305,6 +4322,8 @@ export default function ScreenEditPage() {
                   previewTheme={previewTheme}
                   onRunEvent={handleRunEvent}
                   reusables={globalReusables}
+                  runtimePendingSources={runtimePendingSources}
+                  runtimeResolvedSources={runtimeResolvedSources}
                 />
               </div>
             </div>

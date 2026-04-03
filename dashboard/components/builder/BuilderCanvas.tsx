@@ -7,7 +7,7 @@
 
 'use client'
 
-import React, { useCallback, useState, useEffect, Fragment } from 'react'
+import React, { useCallback, useState, useEffect, useMemo, Fragment } from 'react'
 import type { Node } from './registry'
 import { createNode, nodePropsToStyle, getDomId } from './registry'
 import type { ScreenTheme } from './PropertyPanel'
@@ -245,6 +245,10 @@ type Props = {
   reusables?: ReusableDefinition[]
   /** Optional prop context used when rendering reusable source in edit mode. */
   reusablePropsCtx?: Record<string, unknown>
+  /** Source names currently being fetched by runtime-data. */
+  runtimePendingSources?: string[]
+  /** Source names that currently have resolved non-null data in runtimeData. */
+  runtimeResolvedSources?: string[]
 }
 
 /** Resolve {{state.x}} / {{data.x}} so state works for all components. Use for every bindable prop (see registry bindableProps). */
@@ -373,6 +377,38 @@ function normalizeRepeaterItems(source: unknown): unknown[] {
   return entries.map(([key, value]) => ({ key, value }))
 }
 
+function normalizeSourceKey(value: string): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
+}
+
+function extractDataSourcesFromUnknown(input: unknown): string[] {
+  const out = new Set<string>()
+  const walk = (value: unknown, depth = 0) => {
+    if (depth > 5 || value == null) return
+    if (typeof value === 'string') {
+      const tokenMatches = value.match(/\{\{\s*data\.([a-zA-Z0-9_-]+)/g) ?? []
+      for (const m of tokenMatches) {
+        const source = m.replace(/\{\{\s*data\./, '').trim()
+        if (source) out.add(normalizeSourceKey(source))
+      }
+      return
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1)
+      return
+    }
+    if (typeof value === 'object') {
+      for (const child of Object.values(value as Record<string, unknown>)) walk(child, depth + 1)
+    }
+  }
+  walk(input)
+  return Array.from(out)
+}
+
 const BUILDER_CHART_TYPES = new Set([
   'lineChart', 'barChart', 'pieChart', 'areaChart', 'doughnutChart', 'horizontalBarChart',
   'stackedBarChart', 'scatterChart', 'radarChart', 'gaugeChart', 'funnelChart', 'stepLineChart',
@@ -380,6 +416,10 @@ const BUILDER_CHART_TYPES = new Set([
 ])
 
 const MissingReusableWarningContext = React.createContext(true)
+const LoadingSignalContext = React.createContext<{ pending: Set<string>; resolved: Set<string> }>({
+  pending: new Set<string>(),
+  resolved: new Set<string>(),
+})
 
 function cloneForReusableInstance(node: Node, namespace: string): Node {
   return {
@@ -427,6 +467,7 @@ function NodeRenderer({
   const isSelected = !previewMode && selectedId === node.id
   const canDragNode = !previewMode && !isRoot && !!onMove
   const showMissingReusableWarning = React.useContext(MissingReusableWarningContext)
+  const loadingSignals = React.useContext(LoadingSignalContext)
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -713,6 +754,63 @@ function NodeRenderer({
       ;(style as Record<string, unknown>).minHeight = 0
       ;(style as Record<string, unknown>).backdropFilter = 'none'
     }
+  }
+
+  const suspenseEnabled = Boolean(node.props?.suspenseEnabled)
+  const suspenseSmart = node.props?.suspenseSmart !== false
+  const suspenseWhen = String(node.props?.suspenseWhen ?? '').trim()
+  const suspenseVariant = String(node.props?.suspenseVariant ?? 'skeleton')
+  const suspenseDirection = String(node.props?.suspenseDirection ?? 'horizontal')
+  const suspenseLabel = String(node.props?.suspenseLabel ?? 'Loading...')
+  const suspenseManualActive = suspenseWhen
+    ? evaluateVisibleWhen(resolveWithProps(suspenseWhen, resolveBindingFn, reusablePropsCtx), resolveBindingFn)
+    : false
+  const suspenseReferencedSources = suspenseSmart ? extractDataSourcesFromUnknown(node.props) : []
+  const suspenseAutoActive = suspenseReferencedSources.some(
+    (source) => loadingSignals.pending.has(source) && !loadingSignals.resolved.has(source)
+  )
+  const showSuspenseFallback = Boolean(previewMode) && suspenseEnabled && (suspenseManualActive || suspenseAutoActive)
+
+  if (showSuspenseFallback) {
+    const shellCls = 'w-full h-full min-h-[36px] border border-dashed border-gray-300/70 dark:border-[#30363d] bg-white/70 dark:bg-[#0d1117]/80 text-gray-500 dark:text-gray-300'
+    const fallbackBody =
+      suspenseVariant === 'spinner' ? (
+        <div className="flex items-center justify-center gap-2 w-full h-full">
+          <span className="w-4 h-4 border-2 border-gray-300 dark:border-[#30363d] border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs">{suspenseLabel}</span>
+        </div>
+      ) : suspenseVariant === 'line' ? (
+        <div className={`w-full h-full flex ${suspenseDirection === 'vertical' ? 'flex-col' : 'flex-row'} gap-2 p-2`}>
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded flex-1" />
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded flex-1" />
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded flex-1" />
+        </div>
+      ) : suspenseVariant === 'dots' ? (
+        <div className="w-full h-full flex items-center justify-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse [animation-delay:120ms]" />
+          <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse [animation-delay:240ms]" />
+        </div>
+      ) : suspenseVariant === 'custom' ? (
+        <div className="w-full h-full flex items-center justify-center text-xs px-2 text-center">{suspenseLabel || 'Loading...'}</div>
+      ) : (
+        <div className="w-full h-full p-2 space-y-2">
+          <div className="h-3 w-3/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
+          <div className="h-3 w-4/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
+          <div className="h-3 w-2/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
+        </div>
+      )
+
+    return (
+      <div
+        id={domId}
+        data-node-id={node.id}
+        className={`${shellCls} overflow-hidden`}
+        style={style}
+      >
+        {fallbackBody}
+      </div>
+    )
   }
 
   if (node.type === 'reusableInstance') {
@@ -2069,8 +2167,12 @@ function NodeRenderer({
   )
 }
 
-export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMode, suppressRootChrome = false, resolveBinding: resolveBindingFn, theme, onMove, onRunEvent, reusables = [], reusablePropsCtx }: Props) {
+export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMode, suppressRootChrome = false, resolveBinding: resolveBindingFn, theme, onMove, onRunEvent, reusables = [], reusablePropsCtx, runtimePendingSources = [], runtimeResolvedSources = [] }: Props) {
   const reusablesById = new Map(reusables.map((r) => [r.id, r]))
+  const loadingSignalValue = useMemo(() => ({
+    pending: new Set(runtimePendingSources.map(normalizeSourceKey)),
+    resolved: new Set(runtimeResolvedSources.map(normalizeSourceKey)),
+  }), [runtimePendingSources, runtimeResolvedSources])
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
   const [showMissingReusableWarning, setShowMissingReusableWarning] = useState(reusables.length > 0)
   const scrollRef = React.useRef<HTMLDivElement>(null)
@@ -2330,6 +2432,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
           onDragOver={previewMode ? undefined : (e) => { e.preventDefault(); e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-builder-tree-node') ? 'move' : 'copy' }}
         >
           <MissingReusableWarningContext.Provider value={showMissingReusableWarning}>
+          <LoadingSignalContext.Provider value={loadingSignalValue}>
           <NodeErrorBoundary nodeId={root.id}>
           <NodeRenderer
             key={`${root.id}:${root.type}`}
@@ -2351,6 +2454,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
             onDragEndNode={() => setDraggingNodeId(null)}
           />
           </NodeErrorBoundary>
+          </LoadingSignalContext.Provider>
           </MissingReusableWarningContext.Provider>
         </div>
       </div>
