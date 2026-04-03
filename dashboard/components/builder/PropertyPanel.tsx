@@ -683,6 +683,19 @@ export function PropertyPanel({
     walk(sourceValue, `data.${inspectorSource}`, 0)
     return Array.from(out)
   }, [inspectorSource, runtimeData])
+  const inspectorPreferredSource = useMemo(() => {
+    if (!inspectorSource) return ''
+    const aliases = expandSourceAliases(inspectorSource)
+    return aliases.find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? inspectorSource
+  }, [inspectorSource, expandSourceAliases])
+  const inspectorDumpToken = useMemo(() => {
+    if (!inspectorSource) return ''
+    return `{{data.${inspectorSource}}}`
+  }, [inspectorSource])
+  const inspectorSafeDumpToken = useMemo(() => {
+    if (!inspectorPreferredSource) return ''
+    return `{{data.${inspectorPreferredSource}}}`
+  }, [inspectorPreferredSource])
   const propKeys = def ? Object.keys(def.defaultProps) : Object.keys(props)
   const uniqueKeys = Array.from(new Set([...propKeys, ...Object.keys(props), ...STYLE_PROP_KEYS, ...LAYOUT_KEYS, 'visibleWhen']))
   const isLayout = node ? ['container', 'section', 'stackV', 'stackH', 'header', 'main', 'footer', 'nav', 'aside', 'article'].includes(node.type) : false
@@ -3020,6 +3033,29 @@ export function PropertyPanel({
                   </select>
                 )}
               </div>
+              {runtimeSourceNames.length > 0 && inspectorDumpToken && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { navigator.clipboard?.writeText(inspectorDumpToken).catch(() => {}) }}
+                    className="px-2 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
+                    title={`Copy ${inspectorDumpToken}`}
+                  >
+                    Copy full payload token
+                  </button>
+                  {inspectorSafeDumpToken && inspectorSafeDumpToken !== inspectorDumpToken && (
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard?.writeText(inspectorSafeDumpToken).catch(() => {}) }}
+                      className="px-2 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
+                      title={`Copy ${inspectorSafeDumpToken}`}
+                    >
+                      Copy safe alias token
+                    </button>
+                  )}
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">For a dump preview in Text, set Content to only this token (no extra text) while Preview is ON.</p>
+                </div>
+              )}
               {runtimeSourceNames.length === 0 ? (
                 <p className="text-[11px] text-gray-500 dark:text-gray-400">No live data detected yet. Turn Preview on to fetch runtime data for this screen.</p>
               ) : inspectorTokens.length === 0 ? (
