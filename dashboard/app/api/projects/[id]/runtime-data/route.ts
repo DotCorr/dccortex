@@ -9,6 +9,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireProjectDataAccess } from '@/lib/project-access'
 
+const EXTERNAL_API_TIMEOUT_MS = 3500
+
 function resolveEnvPlaceholders(input: string): string {
   return input.replace(/\{\{env\.([A-Za-z0-9_]+)\}\}/g, (_m, key: string) => process.env[key] ?? '')
 }
@@ -104,7 +106,7 @@ export async function GET(
           const fetchOptions: RequestInit = {
             method: src.method,
             headers,
-            signal: AbortSignal.timeout(10000),
+            signal: AbortSignal.timeout(EXTERNAL_API_TIMEOUT_MS),
           }
 
           // Resolve {{paramName}} template variables in URL using urlParams defaults

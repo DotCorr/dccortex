@@ -2527,6 +2527,8 @@ export default function ScreenEditPage() {
   }, [effectiveStateDefinitions, customTypes])
 
   const [runtimeState, setRuntimeState] = useState<Record<string, unknown>>(initialStateValues)
+  const runtimeStateRef = useRef<Record<string, unknown>>(runtimeState)
+  runtimeStateRef.current = runtimeState
   const debugHandleRef = useRef<DebugConsoleHandle | null>(null)
 
   const pushApiLog = useCallback((entry: Omit<ApiLogEntry, 'id' | 'ts'>) => {
@@ -2775,7 +2777,7 @@ export default function ScreenEditPage() {
         // Simple state.key resolution: {{state.key}} → runtimeState[key]
         const stateMatch = binding.match(/^\{\{state\.([^}]+)\}\}$/)
         if (stateMatch) {
-          const val = runtimeState[stateMatch[1]]
+          const val = runtimeStateRef.current[stateMatch[1]]
           if (val !== undefined && val !== null) resolved[paramName] = String(val)
         } else {
           resolved[paramName] = binding
@@ -2800,7 +2802,12 @@ export default function ScreenEditPage() {
         })
       })
       .catch(() => {})
-  }, [projectId, dataSources, runtimeState])
+  }, [projectId, dataSources])
+
+  // Hydrate runtime data in editor mode too, so bindings/transforms are available before preview.
+  useEffect(() => {
+    fetchRuntimeData()
+  }, [fetchRuntimeData])
 
   // Fetch runtime data (API sources + internal DB tables) whenever preview mode is activated
   useEffect(() => {
@@ -2813,7 +2820,7 @@ export default function ScreenEditPage() {
     if (!previewMode || !hasExternalApiSources) return
     const timer = setInterval(() => {
       fetchRuntimeData()
-    }, 5000)
+    }, 2000)
     return () => clearInterval(timer)
   }, [previewMode, hasExternalApiSources, fetchRuntimeData])
 
