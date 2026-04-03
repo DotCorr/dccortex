@@ -108,6 +108,8 @@ type Props = {
   onSeoChange?: (updates: Partial<SeoSettings>) => void
   /** Open reusable definition editor from selected instance. */
   onEditReusable?: (id: string) => void
+  /** Wrap selected node in a suspense component for explicit component architecture. */
+  onWrapSelectedWithSuspense?: () => void
   /** User-defined object schemas for typed state values. */
   customTypes?: CustomTypeDef[]
   onCustomTypesChange?: (defs: CustomTypeDef[]) => void
@@ -499,6 +501,7 @@ export function PropertyPanel({
   projectAssets,
   seoSettings = {},
   onSeoChange,
+  onWrapSelectedWithSuspense,
   tabStorageKey,
   scrollStorageKey,
 }: Props) {
@@ -730,6 +733,59 @@ export function PropertyPanel({
     if (!inspectorPreferredSource) return ''
     return `{{data.${inspectorPreferredSource}}}`
   }, [inspectorPreferredSource])
+  const inspectorPayloadPreview = useMemo(() => {
+    if (!inspectorSource) return ''
+    const value = runtimeData[inspectorSource]
+    if (value === undefined) return ''
+    try {
+      const raw = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+      return raw.length > 6000 ? `${raw.slice(0, 6000)}\n... (truncated)` : raw
+    } catch {
+      return String(value)
+    }
+  }, [inspectorSource, runtimeData])
+  const inspectorTokenValuePreview = useMemo(() => {
+    const readByPath = (root: unknown, path: string): unknown => {
+      const parts = path.split('.').filter(Boolean)
+      let current: unknown = root
+      for (const part of parts) {
+        if (current == null) return undefined
+        if (Array.isArray(current)) {
+          const idx = Number(part)
+          if (!Number.isInteger(idx) || idx < 0 || idx >= current.length) return undefined
+          current = current[idx]
+          continue
+        }
+        if (typeof current !== 'object') return undefined
+        current = (current as Record<string, unknown>)[part]
+      }
+      return current
+    }
+
+    const formatInline = (value: unknown): string => {
+      if (value === undefined) return 'undefined'
+      if (value === null) return 'null'
+      if (typeof value === 'string') {
+        const compact = value.length > 120 ? `${value.slice(0, 120)}...` : value
+        return `"${compact}"`
+      }
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+      try {
+        const json = JSON.stringify(value)
+        if (!json) return String(value)
+        return json.length > 140 ? `${json.slice(0, 140)}...` : json
+      } catch {
+        return String(value)
+      }
+    }
+
+    const out: Record<string, string> = {}
+    for (const token of inspectorTokens) {
+      const path = token.startsWith('data.') ? token.slice(5) : token
+      out[token] = formatInline(readByPath(runtimeData, path))
+    }
+    return out
+  }, [inspectorTokens, runtimeData])
   const propKeys = def ? Object.keys(def.defaultProps) : Object.keys(props)
   const uniqueKeys = Array.from(new Set([...propKeys, ...Object.keys(props), ...STYLE_PROP_KEYS, ...LAYOUT_KEYS, 'visibleWhen']))
   const isLayout = node ? ['container', 'section', 'stackV', 'stackH', 'header', 'main', 'footer', 'nav', 'aside', 'article'].includes(node.type) : false
@@ -2243,13 +2299,19 @@ export function PropertyPanel({
                       <button
                         type="button"
                         onClick={() => {
+                          if (onWrapSelectedWithSuspense && node?.type !== 'suspense') {
+                            onWrapSelectedWithSuspense()
+                            return
+                          }
                           setProp('suspenseEnabled', true)
                           if (props.suspenseSmart === undefined) setProp('suspenseSmart', true)
                           if (!props.suspenseVariant) setProp('suspenseVariant', 'skeleton')
                         }}
                         className="text-[11px] px-2 py-1 border border-gray-300 dark:border-[#30363d] hover:bg-gray-100 dark:hover:bg-[#21262d]"
                       >
-                        Suggestion: add loading fallback for bound data
+                        {onWrapSelectedWithSuspense && node?.type !== 'suspense'
+                          ? 'Suggestion: wrap in Suspense component'
+                          : 'Suggestion: add loading fallback for bound data'}
                       </button>
                     )}
                     {loadingUxEnabled && (
@@ -3170,21 +3232,28 @@ export function PropertyPanel({
                   <p className="text-[10px] text-gray-500 dark:text-gray-400">For a dump preview in Text, set Content to only this token (no extra text) while Preview is ON.</p>
                 </div>
               )}
+              {runtimeSourceNames.length > 0 && inspectorPayloadPreview && (
+                <div className="border border-gray-200 dark:border-[#30363d] bg-black text-green-300">
+                  <div className="px-2 py-1 border-b border-gray-700 text-[10px] uppercase tracking-wider text-gray-300">Payload Preview</div>
+                  <pre className="max-h-72 min-h-36 overflow-auto px-2 py-1.5 text-[10px] leading-relaxed font-mono whitespace-pre-wrap break-words">{inspectorPayloadPreview}</pre>
+                </div>
+              )}
               {runtimeSourceNames.length === 0 ? (
                 <p className="text-[11px] text-gray-500 dark:text-gray-400">No live data detected yet. Turn Preview on to fetch runtime data for this screen.</p>
               ) : inspectorTokens.length === 0 ? (
                 <p className="text-[11px] text-gray-500 dark:text-gray-400">No inspectable keys for this source yet.</p>
               ) : (
-                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-auto">
+                <div className="grid grid-cols-1 gap-1.5 max-h-[32rem] min-h-40 overflow-auto">
                   {inspectorTokens.map((token) => (
                     <button
                       key={token}
                       type="button"
                       onClick={() => { navigator.clipboard?.writeText(`{{${token}}}`).catch(() => {}) }}
-                      className="px-2 py-0.5 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
+                      className="text-left p-1.5 border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] hover:bg-gray-100 dark:hover:bg-[#21262d]"
                       title={`Copy {{${token}}}`}
                     >
-                      {`{{${token}}}`}
+                      <div className="text-[10px] text-gray-700 dark:text-gray-300 font-mono">{`{{${token}}}`}</div>
+                      <div className="mt-1 bg-black text-emerald-300 font-mono text-[10px] px-1.5 py-1 overflow-hidden text-ellipsis whitespace-nowrap">{inspectorTokenValuePreview[token] ?? 'undefined'}</div>
                     </button>
                   ))}
                 </div>
