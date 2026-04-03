@@ -110,7 +110,7 @@ export function resolveBinding(raw: string, ctx: ResolveContext): string {
     if (e.startsWith('data.')) {
       const path = e.slice(5).trim()
       const v = ctx.data ? getByPath(ctx.data, path) : undefined
-      return v === undefined || v === null ? '[data]' : String(v)
+      return v === undefined || v === null ? '[data]' : typeof v === 'object' ? JSON.stringify(v) : String(v)
     }
     if (e.startsWith('event.')) {
       const path = e.slice(6).trim()
@@ -365,6 +365,12 @@ function evalExpr(s: string, values: Map<string, unknown>): unknown {
  */
 export function resolveExpression(raw: string, ctx: ResolveContext): string {
   if (typeof raw !== 'string') return String(raw ?? '')
+  // Users often start from {{data.sourceName}} and then append .field via transform UI.
+  // Normalize that shape so both forms resolve the same.
+  raw = raw.replace(
+    /\{\{\s*data\.([^}]+?)\s*\}\}\.([a-zA-Z0-9_.$-]+)/g,
+    (_m, sourcePath: string, extraPath: string) => `{{data.${sourcePath.trim()}.${extraPath.trim()}}}`
+  )
   // Users sometimes wrap bindings in quotes inside expressions (e.g. '!\'{{prop.icon}}\' ? ...').
   // Normalize quoted tokens back to raw {{...}} so ternary/logic evaluation still works.
   raw = raw.replace(/(['"])\s*\{\{\s*([^}]+?)\s*\}\}\s*\1/g, '{{$2}}')
@@ -381,6 +387,23 @@ export function resolveExpression(raw: string, ctx: ResolveContext): string {
 
   // Quick path: no expression syntax, just token substitution
   if (!raw.includes('{{')) return raw
+
+  // For plain text templates like "data dump: {{data.source}}", avoid expression parsing.
+  // This guarantees object tokens are shown as JSON and avoids accidental operator parsing
+  // from characters inside token paths (e.g. hyphens in source names).
+  const stripped = raw.replace(BINDING_REGEX, '').trim()
+  const hasExpressionOperators = /\?|\|\||&&|\?\?|===|!==|>=|<=|==|!=|\+|\-|\*|\/|%|>|</.test(raw)
+  const isLikelyTemplateString = stripped.length > 0 && !hasExpressionOperators
+  if (isLikelyTemplateString) {
+    return raw.replace(BINDING_REGEX, (_, expr) => {
+      const v = resolveToken(expr, ctx)
+      if (v === undefined || v === null) return ''
+      if (typeof v === 'object') {
+        try { return JSON.stringify(v) } catch { return String(v) }
+      }
+      return String(v)
+    })
+  }
 
   // Helper: coerce a resolved value to string, serialising arrays/objects as JSON
   // so that dataRepeater, chart, and table nodes can JSON.parse them back

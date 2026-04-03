@@ -348,6 +348,31 @@ function resolveWithProps(raw: unknown, fn?: ResolveBindingFn, propsCtx?: Record
   })
 }
 
+function normalizeRepeaterItems(source: unknown): unknown[] {
+  if (Array.isArray(source)) return source
+  if (!source || typeof source !== 'object') return []
+
+  const entries = Object.entries(source as Record<string, unknown>)
+  if (entries.length === 0) return []
+
+  const allArrays = entries.every(([, value]) => Array.isArray(value))
+  if (allArrays) {
+    const lengths = entries.map(([, value]) => (value as unknown[]).length)
+    const maxLen = lengths.length > 0 ? Math.max(...lengths) : 0
+    const rows: Record<string, unknown>[] = []
+    for (let idx = 0; idx < maxLen; idx++) {
+      const row: Record<string, unknown> = {}
+      for (const [key, value] of entries) {
+        row[key] = (value as unknown[])[idx]
+      }
+      rows.push(row)
+    }
+    return rows
+  }
+
+  return entries.map(([key, value]) => ({ key, value }))
+}
+
 const BUILDER_CHART_TYPES = new Set([
   'lineChart', 'barChart', 'pieChart', 'areaChart', 'doughnutChart', 'horizontalBarChart',
   'stackedBarChart', 'scatterChart', 'radarChart', 'gaugeChart', 'funnelChart', 'stepLineChart',
@@ -1952,7 +1977,7 @@ function NodeRenderer({
     try {
       if (resolvedSource && resolvedSource !== dataSourceKey) {
         const parsed = JSON.parse(resolvedSource)
-        if (Array.isArray(parsed)) items = parsed
+        items = normalizeRepeaterItems(parsed)
       }
     } catch { /* non-JSON means binding not yet resolved */ }
     if (!previewMode) {
@@ -1973,7 +1998,7 @@ function NodeRenderer({
           className={`border-2 ${isSelected ? 'border-[var(--primary)] bg-[var(--primary)]/5' : 'border-dashed border-amber-300 dark:border-amber-700'} rounded relative`} style={style}>
           <span className="absolute top-0 left-0 bg-amber-400 text-white text-[10px] font-semibold px-1.5 py-0.5 z-50 pointer-events-none">repeater: {dataSourceKey || 'no data source'}</span>
           {(node.children ?? []).length === 0
-            ? <div className="text-xs text-gray-400 py-6 text-center">Drop the item template here<br/><span className="opacity-60">Use {`{{${itemVar}.field}}`} to bind fields</span></div>
+            ? <div className="text-xs text-gray-400 py-6 text-center">Drop the item template here<br/><span className="opacity-60">Use {`{{prop.${itemVar}.field}}`} to bind fields</span></div>
             : childEls}
         </div>
       )

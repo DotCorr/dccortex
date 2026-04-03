@@ -8,6 +8,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Zap } from 'lucide-react'
 import type { Node } from './registry'
 import { getComponentDef, STYLE_PROP_KEYS } from './registry'
@@ -27,6 +28,8 @@ import { GradientBuilderModal } from './GradientBuilderModal'
 import { AssetPickerModal } from './AssetPickerModal'
 import { AnimationSequenceBuilder, type AnimationSequenceConfig } from './AnimationSequenceBuilder'
 import type { ReusableDefinition, ReusablePropSchema } from './globals'
+
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 
 export type StateDefinition = { id: string; name: string; initialValue: string; type?: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date' }
 export type CustomTypeField = { name: string; type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date'; defaultValue?: string }
@@ -75,6 +78,8 @@ type Props = {
   onStateDefinitionsChange?: (state: StateDefinition[]) => void
   dataSources?: DataSourceDef[]
   onDataSourcesChange?: (data: DataSourceDef[]) => void
+  /** Live runtime data payload for Data Inspector path discovery. */
+  runtimeData?: Record<string, unknown>
   namedScripts?: Record<string, string>
   onNamedScriptsChange?: (scripts: Record<string, string>) => void
   theme?: ScreenTheme
@@ -470,6 +475,7 @@ export function PropertyPanel({
   onStateDefinitionsChange,
   dataSources = [],
   onDataSourcesChange,
+  runtimeData = {},
   namedScripts = {},
   onNamedScriptsChange,
   theme = {},
@@ -509,6 +515,8 @@ export function PropertyPanel({
   const [propExpressionKey, setPropExpressionKey] = useState<string | null>(null)
   const [projectApiSourceNames, setProjectApiSourceNames] = useState<string[]>([])
   const [projectTableNames, setProjectTableNames] = useState<string[]>([])
+  const [inspectorSource, setInspectorSource] = useState('')
+  const [monacoReady, setMonacoReady] = useState(false)
   const bodyScrollRef = useRef<HTMLDivElement | null>(null)
 
   const props = node?.props ?? {}
@@ -595,9 +603,33 @@ export function PropertyPanel({
     el.addEventListener('scroll', onScroll)
     return () => el.removeEventListener('scroll', onScroll)
   }, [scrollStorageKey])
+
+  useEffect(() => {
+    let raf = 0
+    let timer: ReturnType<typeof setTimeout> | null = null
+    raf = window.requestAnimationFrame(() => {
+      timer = setTimeout(() => setMonacoReady(true), 0)
+    })
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf)
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
   const setProp = useCallback(
     (key: string, value: unknown) => {
       if (!node) return
+
+      if (typeof value === 'string') {
+        const dataSourceMatch = value.match(/^\{\{data\.([^}]+)\}\}$/)
+        if (dataSourceMatch) {
+          const sourceToken = dataSourceMatch[1].trim()
+          // Keep transformed paths intact; normalize only root source tokens picked from dropdown.
+          if (sourceToken && !sourceToken.includes('.')) {
+            const preferred = expandSourceAliases(sourceToken).find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? sourceToken
+            value = `{{data.${preferred}}}`
+          }
+        }
+      }
 
       // Data repeater expects the whole array source ({{data.sourceName}}), not a field token.
       if (node.type === 'dataRepeater' && key === 'dataSource' && typeof value === 'string') {
@@ -608,7 +640,7 @@ export function PropertyPanel({
 
       onUpdate({ ...props, [key]: value })
     },
-    [node, props, onUpdate]
+    [node, props, onUpdate, expandSourceAliases]
   )
   const reusablePropsObj = (props.reusableProps ?? {}) as Record<string, unknown>
   const setReusableProp = useCallback(
@@ -626,9 +658,72 @@ export function PropertyPanel({
       ...projectApiSourceNames,
       ...projectTableNames,
     ]
-    return Array.from(new Set(base.flatMap((name) => expandSourceAliases(name))))
-  }, [dataSources, projectApiSourceNames, projectTableNames, expandSourceAliases])
+    // Return only original names; aliases still work in binding resolution via setWithAliases() in runtime-data endpoint
+    return Array.from(new Set(base))
+  }, [dataSources, projectApiSourceNames, projectTableNames])
   const bindingDataSources = useMemo<DataSourceDef[]>(() => bindingDataSourceNames.map((name) => ({ id: `binding-${name}`, name })), [bindingDataSourceNames])
+  const runtimeSourceNames = useMemo(
+    () => bindingDataSourceNames.filter((name) => Object.prototype.hasOwnProperty.call(runtimeData, name)),
+    [bindingDataSourceNames, runtimeData]
+  )
+  useEffect(() => {
+    if (runtimeSourceNames.length === 0) {
+      setInspectorSource('')
+      return
+    }
+    if (!inspectorSource || !runtimeSourceNames.includes(inspectorSource)) {
+      setInspectorSource(runtimeSourceNames[0])
+    }
+  }, [runtimeSourceNames, inspectorSource])
+
+  const inspectorTokens = useMemo(() => {
+    if (!inspectorSource) return [] as string[]
+    const sourceValue = runtimeData[inspectorSource]
+    const out = new Set<string>()
+
+    const walk = (value: unknown, path: string, depth: number) => {
+      if (!path || depth > 4 || out.size >= 80) return
+
+      if (Array.isArray(value)) {
+        out.add(path)
+        const first = value[0]
+        if (first && typeof first === 'object' && !Array.isArray(first)) {
+          for (const [k, v] of Object.entries(first as Record<string, unknown>).slice(0, 12)) {
+            walk(v, `${path}.0.${k}`, depth + 1)
+            if (out.size >= 80) break
+          }
+        }
+        return
+      }
+
+      if (value && typeof value === 'object') {
+        out.add(path)
+        for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 20)) {
+          walk(v, `${path}.${k}`, depth + 1)
+          if (out.size >= 80) break
+        }
+        return
+      }
+
+      out.add(path)
+    }
+
+    walk(sourceValue, `data.${inspectorSource}`, 0)
+    return Array.from(out)
+  }, [inspectorSource, runtimeData])
+  const inspectorPreferredSource = useMemo(() => {
+    if (!inspectorSource) return ''
+    const aliases = expandSourceAliases(inspectorSource)
+    return aliases.find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? inspectorSource
+  }, [inspectorSource, expandSourceAliases])
+  const inspectorDumpToken = useMemo(() => {
+    if (!inspectorSource) return ''
+    return `{{data.${inspectorSource}}}`
+  }, [inspectorSource])
+  const inspectorSafeDumpToken = useMemo(() => {
+    if (!inspectorPreferredSource) return ''
+    return `{{data.${inspectorPreferredSource}}}`
+  }, [inspectorPreferredSource])
   const propKeys = def ? Object.keys(def.defaultProps) : Object.keys(props)
   const uniqueKeys = Array.from(new Set([...propKeys, ...Object.keys(props), ...STYLE_PROP_KEYS, ...LAYOUT_KEYS, 'visibleWhen']))
   const isLayout = node ? ['container', 'section', 'stackV', 'stackH', 'header', 'main', 'footer', 'nav', 'aside', 'article'].includes(node.type) : false
@@ -671,6 +766,60 @@ export function PropertyPanel({
     { title: 'Other', keys: ['cursor', 'pointerEvents', 'userSelect', 'aspectRatio', 'overflow', 'overflowX', 'overflowY', 'objectFit', 'objectPosition', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight'] },
   ]
 
+  const monacoLoading = (
+    <div className="w-full h-full flex items-center justify-center bg-white dark:bg-[#0d1117]">
+      <span className="w-4 h-4 border-2 border-gray-300 dark:border-[#30363d] border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+
+  const renderExpressionEditor = (
+    value: string,
+    onChange: (next: string) => void,
+    placeholder?: string,
+    className = 'w-full'
+  ) => {
+    const expressionLike = /\{\{[^}]*\}\}|\b(state|data|prop|script|navProp)\.|\?[^:]*:|&&|\|\||===|!==|>=|<=|==|!=/.test(value)
+    if (!expressionLike) {
+      return (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={`${className} px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono`}
+        />
+      )
+    }
+    if (!monacoReady) {
+      return (
+        <div className={`${className} h-[42px] border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`}>
+          {monacoLoading}
+        </div>
+      )
+    }
+    return (
+      <div className={`${className} border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`} title={placeholder}>
+        <MonacoEditor
+          language="javascript"
+          value={value}
+          onChange={(next) => onChange(next ?? '')}
+          height="42px"
+          loading={monacoLoading}
+          options={{
+            minimap: { enabled: false },
+            lineNumbers: 'off',
+            glyphMargin: false,
+            folding: false,
+            scrollBeyondLastLine: false,
+            wordWrap: 'off',
+            fontSize: 12,
+            padding: { top: 8, bottom: 8 },
+          }}
+        />
+      </div>
+    )
+  }
+
   const renderLayoutField = (key: string) => {
     const val = props[key]
     const isNumber = typeof def?.defaultProps[key] === 'number'
@@ -689,7 +838,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -701,7 +850,7 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input type="text" value={rawVal} onChange={(e) => setProp('customId', e.target.value.trim() || undefined)} placeholder={node?.id ?? 'node-id'} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono" />
+          {renderExpressionEditor(rawVal, (next) => setProp('customId', next.trim() || undefined), node?.id ?? 'node-id')}
         </div>
       )
     }
@@ -720,7 +869,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -732,13 +881,9 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input
-            type="text"
-            value={rawVal}
-            onChange={(e) => setProp(key, e.target.value)}
-            placeholder={`e.g. ${picks[0]}${picks[1] ? `, ${picks[1]}` : ''}, {{state.x}}`}
-            className={`w-full px-2 py-1.5 text-sm border font-mono ${isBound ? 'border-amber-400 dark:border-amber-600' : 'border-gray-300 dark:border-[#30363d]'} bg-white dark:bg-[#0d1117] text-black dark:text-white mb-1.5`}
-          />
+          <div className="mb-1.5">
+            {renderExpressionEditor(rawVal, (next) => setProp(key, next), `e.g. ${picks[0]}${picks[1] ? `, ${picks[1]}` : ''}, {{state.x}}`)}
+          </div>
           <div className="flex flex-wrap gap-1">
             {picks.map((p) => (
               <button
@@ -773,7 +918,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -802,7 +947,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -814,7 +959,7 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input type="text" value={rawVal} onChange={(e) => setProp(key, e.target.value)} placeholder="e.g. {{state.x}}" className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono" />
+          {renderExpressionEditor(rawVal, (next) => setProp(key, next), 'e.g. {{state.x}}')}
         </div>
       )
     }
@@ -842,7 +987,7 @@ export function PropertyPanel({
                 onChange={(e) => {
                   const v = e.target.value
                   if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`)
-                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`)
+                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`)
                   else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`)
                   else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`)
                   else if (v.startsWith('asset:')) setProp(key, v.slice(6))
@@ -869,13 +1014,7 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input
-            type={isNumber ? 'number' : 'text'}
-            value={rawVal}
-            onChange={(e) => setProp(key, isNumber ? Number(e.target.value) : e.target.value)}
-            placeholder={key === 'width' || key === 'height' ? 'e.g. 100%, 200px, {{state.w}}' : 'e.g. {{state.x}}'}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-          />
+          {renderExpressionEditor(rawVal, (next) => setProp(key, next), key === 'width' || key === 'height' ? 'e.g. 100%, 200px, {{state.w}}' : 'e.g. {{state.x}}')}
         </div>
       )
     }
@@ -929,7 +1068,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -942,14 +1081,7 @@ export function PropertyPanel({
             </div>
           )}
           <div className="flex gap-1">
-            <input
-              type="text"
-              value={strVal}
-              onChange={(e) => { setProp(key, e.target.value); injectFont(e.target.value) }}
-              placeholder="e.g. Inter, 'Roboto Mono', {{state.font}}"
-              className={`flex-1 px-2 py-1.5 text-sm border font-mono ${isBound ? 'border-amber-400 dark:border-amber-600' : 'border-gray-300 dark:border-[#30363d]'} bg-white dark:bg-[#0d1117] text-black dark:text-white`}
-              style={strVal && !strVal.startsWith('{{') ? { fontFamily: strVal } : undefined}
-            />
+            {renderExpressionEditor(strVal, (next) => { setProp(key, next); injectFont(next) }, "e.g. Inter, 'Roboto Mono', {{state.font}}", 'flex-1')}
             <button
               type="button"
               onClick={() => setFontPickerOpen(true)}
@@ -982,7 +1114,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -994,13 +1126,9 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <input
-            type="text"
-            value={strVal}
-            onChange={(e) => setProp(key, e.target.value)}
-            placeholder={`e.g. ${picks[0]}${picks[1] ? `, ${picks[1]}` : ''}, {{state.x}}`}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono mb-1.5"
-          />
+          <div className="mb-1.5">
+            {renderExpressionEditor(strVal, (next) => setProp(key, next), `e.g. ${picks[0]}${picks[1] ? `, ${picks[1]}` : ''}, {{state.x}}`)}
+          </div>
           <div className="flex flex-wrap gap-1">
             {picks.map((p) => (
               <button
@@ -1068,7 +1196,7 @@ export function PropertyPanel({
           {bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -1081,13 +1209,7 @@ export function PropertyPanel({
             </div>
           )}
           {isBound ? (
-            <input
-              type="text"
-              value={strVal}
-              onChange={(e) => setProp(key, e.target.value)}
-              placeholder="e.g. {{state.x}}"
-              className="w-full px-2 py-1.5 text-sm border border-amber-400 dark:border-amber-600 bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-            />
+            renderExpressionEditor(strVal, (next) => setProp(key, next), 'e.g. {{state.x}}')
           ) : (
             <select
               value={strVal || sf.defaultVal || ''}
@@ -1107,13 +1229,9 @@ export function PropertyPanel({
       return (
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-          <input
-            type="text"
-            value={strVal}
-            onChange={(e) => setProp(key, e.target.value)}
-            placeholder="e.g. fadeIn 0.5s ease both"
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono mb-1.5"
-          />
+          <div className="mb-1.5">
+            {renderExpressionEditor(strVal, (next) => setProp(key, next), 'e.g. fadeIn 0.5s ease both')}
+          </div>
           <div className="flex flex-wrap gap-1">
             {ANIMATION_PRESETS.map((p) => (
               <button
@@ -1149,13 +1267,7 @@ export function PropertyPanel({
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
           <div className="flex gap-1 mb-1.5">
-            <input
-              type="text"
-              value={strVal}
-              onChange={(e) => setProp(key, e.target.value)}
-              placeholder="linear-gradient(135deg, #f00, #00f) or url(…)"
-              className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-            />
+            {renderExpressionEditor(strVal, (next) => setProp(key, next), 'linear-gradient(135deg, #f00, #00f) or url(…)', 'flex-1')}
             <button
               type="button"
               onClick={() => setGradientBuilderFor(key)}
@@ -1217,7 +1329,7 @@ export function PropertyPanel({
                 onChange={(e) => {
                   const v = e.target.value
                   if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`)
-                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`)
+                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`)
                   else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`)
                   else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`)
                   else if (v.startsWith('asset:')) setProp(key, v.slice(6))
@@ -1253,13 +1365,7 @@ export function PropertyPanel({
                 className="w-8 h-8 rounded border border-gray-300 dark:border-[#30363d] cursor-pointer"
               />
             )}
-            <input
-              type="text"
-              value={strVal}
-              onChange={(e) => setProp(key, e.target.value)}
-              placeholder={isColor ? '#hex or {{state.color}}' : 'e.g. 14px, {{state.size}}'}
-              className={`flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono`}
-            />
+            {renderExpressionEditor(strVal, (next) => setProp(key, next), isColor ? '#hex or {{state.color}}' : 'e.g. 14px, {{state.size}}', 'flex-1')}
           </div>
         </div>
       )
@@ -1303,19 +1409,29 @@ export function PropertyPanel({
       return (
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-          <textarea
-            value={rawJson}
-            onChange={(e) => {
-              try {
-                const parsed = JSON.parse(e.target.value)
-                if (parsed && typeof parsed === 'object') setProp(key, parsed)
-              } catch {
-                // Keep raw input editable; parser applies when JSON is valid.
-              }
-            }}
-            rows={5}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-          />
+          <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
+            <MonacoEditor
+              language="json"
+              value={rawJson}
+              onChange={(value) => {
+                try {
+                  const parsed = JSON.parse(value ?? '{}')
+                  if (parsed && typeof parsed === 'object') setProp(key, parsed)
+                } catch {
+                  // Keep raw input editable; parser applies when JSON is valid.
+                }
+              }}
+              height="132px"
+              loading={monacoLoading}
+              options={{
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                fontSize: 12,
+                padding: { top: 8, bottom: 8 },
+              }}
+            />
+          </div>
           <p className="text-[11px] text-gray-500 mt-1">Use values or bindings like <code>{'{{state.userName}}'}</code>. Reusable internals can read <code>{'{{prop.userName}}'}</code>.</p>
         </div>
       )
@@ -1417,7 +1533,7 @@ export function PropertyPanel({
                 onChange={(e) => {
                   const v = e.target.value
                   if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`)
-                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`)
+                  else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`)
                   else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`)
                   else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`)
                   else if (v.startsWith('asset:')) setProp(key, v.slice(6))
@@ -1458,13 +1574,7 @@ export function PropertyPanel({
                 <img src={previewUrl} alt="" width={28} height={28} className="shrink-0 border border-gray-200 dark:border-[#30363d] rounded p-0.5 bg-gray-50 dark:bg-[#0d1117] dark:invert" />
               ) : null
             })()}
-            <input
-              type="text"
-              value={rawVal}
-              onChange={(e) => setProp(key, isNumber ? Number(e.target.value) : e.target.value)}
-              placeholder={key === 'icon' ? 'e.g. mdi:home, lucide:star' : 'e.g. {{prop.x}}, {{state.count}}'}
-              className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-            />
+            {renderExpressionEditor(rawVal, (next) => setProp(key, next), key === 'icon' ? 'e.g. mdi:home, lucide:star' : 'e.g. {{prop.x}}, {{state.count}}', 'flex-1')}
             {key === 'icon' && (
               <button
                 type="button"
@@ -1521,7 +1631,7 @@ export function PropertyPanel({
           {isBindable && bindingFor === key && (
             <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
-              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}.field}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
+              <select className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white" onChange={(e) => { const v = e.target.value; if (v.startsWith('state:')) setProp(key, `{{state.${v.slice(6)}}}`); else if (v.startsWith('data:')) setProp(key, `{{data.${v.slice(5)}}}`); else if (v.startsWith('script:')) setProp(key, `{{script.${v.slice(7)}}}`); else if (v.startsWith('prop:')) setProp(key, `{{prop.${v.slice(5)}}}`); else if (v.startsWith('asset:')) setProp(key, v.slice(6)); else if (v === 'expr') setProp(key, '{{ }}'); setBindingFor(null) }}>
                 <option value="">Select…</option>
                 {parentPropSchema.length > 0 && parentPropSchema.map((p) => <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>)}
                 {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>)}
@@ -1533,9 +1643,13 @@ export function PropertyPanel({
               <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
             </div>
           )}
-          <select value={String(val ?? options[0].value)} onChange={(e) => setProp(key, e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white">
-            {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          {isBound ? (
+            renderExpressionEditor(rawVal, (next) => setProp(key, next), 'e.g. {{state.x}}')
+          ) : (
+            <select value={String(val ?? options[0].value)} onChange={(e) => setProp(key, e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white">
+              {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          )}
           {isBindable && <p className="text-[10px] text-gray-500 mt-0.5">Or use bolt to bind e.g. {`{{state.x}}`}</p>}
         </div>
       )
@@ -1559,12 +1673,22 @@ export function PropertyPanel({
       return (
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-          <textarea
-            value={String(val ?? '')}
-            onChange={(e) => setProp(key, e.target.value)}
-            rows={3}
-            className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-          />
+          <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
+            <MonacoEditor
+              language="json"
+              value={String(val ?? '')}
+              onChange={(value) => setProp(key, value ?? '')}
+              height="100px"
+              loading={monacoLoading}
+              options={{
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                fontSize: 12,
+                padding: { top: 8, bottom: 8 },
+              }}
+            />
+          </div>
         </div>
       )
     }
@@ -1753,9 +1877,22 @@ export function PropertyPanel({
             <div className="space-y-1.5">
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Custom CSS</label>
               <p className="text-[10px] text-gray-400">Injected into this screen's canvas. Use CSS variables, keyframe animations, etc.</p>
-              <textarea value={theme.customCss ?? ''} onChange={(e) => onThemeChange({ customCss: e.target.value || undefined })} rows={5}
-                placeholder=".my-class { color: red; }\n@keyframes myAnim { from { opacity:0 } to { opacity:1 } }"
-                className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono resize-y" />
+              <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
+                <MonacoEditor
+                  language="css"
+                  value={theme.customCss ?? ''}
+                  onChange={(value) => onThemeChange({ customCss: (value ?? '').trim() || undefined })}
+                  height="140px"
+                  loading={monacoLoading}
+                  options={{
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    fontSize: 12,
+                    padding: { top: 8, bottom: 8 },
+                  }}
+                />
+              </div>
             </div>
 
             {/* Global theme */}
@@ -1800,9 +1937,28 @@ export function PropertyPanel({
             <div className="space-y-1">
               <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">{label}</label>
               {textarea ? (
-                <textarea value={(s[field] as string) ?? ''} onChange={e => onSeoChange?.({ [field]: e.target.value || undefined } as Partial<SeoSettings>)}
-                  placeholder={placeholder} rows={3}
-                  className="w-full px-2 py-1.5 text-xs border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] font-mono resize-y" />
+                field === 'customHead' ? (
+                  <div className="border border-[var(--border)] rounded overflow-hidden bg-[var(--background)]">
+                    <MonacoEditor
+                      language="html"
+                      value={(s[field] as string) ?? ''}
+                      onChange={(value) => onSeoChange?.({ [field]: (value ?? '').trim() || undefined } as Partial<SeoSettings>)}
+                      height="120px"
+                      loading={monacoLoading}
+                      options={{
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        wordWrap: 'on',
+                        fontSize: 12,
+                        padding: { top: 8, bottom: 8 },
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <textarea value={(s[field] as string) ?? ''} onChange={e => onSeoChange?.({ [field]: e.target.value || undefined } as Partial<SeoSettings>)}
+                    placeholder={placeholder} rows={3}
+                    className="w-full px-2 py-1.5 text-xs border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] font-mono resize-y" />
+                )
               ) : (
                 <input type="text" value={(s[field] as string) ?? ''} onChange={e => onSeoChange?.({ [field]: e.target.value || undefined } as Partial<SeoSettings>)}
                   placeholder={placeholder}
@@ -2007,7 +2163,7 @@ export function PropertyPanel({
                             onChange={(e) => {
                               const v = e.target.value
                               if (v.startsWith('state:')) setProp('visibleWhen', `{{state.${v.slice(6)}}}`)
-                              else if (v.startsWith('data:')) setProp('visibleWhen', `{{data.${v.slice(5)}.field}}`)
+                              else if (v.startsWith('data:')) setProp('visibleWhen', `{{data.${v.slice(5)}}}`)
                               else if (v.startsWith('script:')) setProp('visibleWhen', `{{script.${v.slice(7)}}}`)
                               else if (v.startsWith('prop:')) setProp('visibleWhen', `{{prop.${v.slice(5)}}}`)
                               setBindingFor(null)
@@ -2031,13 +2187,12 @@ export function PropertyPanel({
                         </div>
                       )}
                       <div className="flex gap-1">
-                        <input
-                          type="text"
-                          value={String(props.visibleWhen ?? '')}
-                          onChange={(e) => setProp('visibleWhen', e.target.value || undefined)}
-                          placeholder="e.g. {{state.isLoggedIn}} or {{state.role}} === 'admin'"
-                          className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-                        />
+                        {renderExpressionEditor(
+                          String(props.visibleWhen ?? ''),
+                          (next) => setProp('visibleWhen', next || undefined),
+                          "e.g. {{state.isLoggedIn}} or {{state.role}} === 'admin'",
+                          'flex-1'
+                        )}
                         <button
                           type="button"
                           onClick={() => setPropExpressionKey('visibleWhen')}
@@ -2134,7 +2289,7 @@ export function PropertyPanel({
                                 onChange={(e) => {
                                   const v = e.target.value
                                   if (v.startsWith('state:')) setProp(entry.key, `{{state.${v.slice(6)}}}`)
-                                  else if (v.startsWith('data:')) setProp(entry.key, `{{data.${v.slice(5)}.field}}`)
+                                  else if (v.startsWith('data:')) setProp(entry.key, `{{data.${v.slice(5)}}}`)
                                   else if (v.startsWith('script:')) setProp(entry.key, `{{script.${v.slice(7)}}}`)
                                   else if (v.startsWith('prop:')) setProp(entry.key, `{{prop.${v.slice(5)}}}`)
                                   else if (v.startsWith('asset:')) setProp(entry.key, v.slice(6))
@@ -2253,23 +2408,11 @@ export function PropertyPanel({
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Duration</label>
-                    <input
-                      type="text"
-                      value={String(props.visibleWhenDuration ?? '0.25s')}
-                      onChange={(e) => setProp('visibleWhenDuration', e.target.value)}
-                      placeholder="0.25s"
-                      className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-                    />
+                    {renderExpressionEditor(String(props.visibleWhenDuration ?? '0.25s'), (next) => setProp('visibleWhenDuration', next), '0.25s')}
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Easing</label>
-                    <input
-                      type="text"
-                      value={String(props.visibleWhenEasing ?? 'ease')}
-                      onChange={(e) => setProp('visibleWhenEasing', e.target.value)}
-                      placeholder="ease"
-                      className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-                    />
+                    {renderExpressionEditor(String(props.visibleWhenEasing ?? 'ease'), (next) => setProp('visibleWhenEasing', next), 'ease')}
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Slide offset</label>
@@ -2315,13 +2458,7 @@ export function PropertyPanel({
 
               <div className="space-y-1">
                 <label className="block text-xs text-gray-500 dark:text-gray-400">Animation (shorthand)</label>
-                <input
-                  type="text"
-                  value={String(props.animation ?? '')}
-                  onChange={(e) => setProp('animation', e.target.value)}
-                  placeholder="e.g. fadeIn 0.5s ease both"
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono"
-                />
+                {renderExpressionEditor(String(props.animation ?? ''), (next) => setProp('animation', next), 'e.g. fadeIn 0.5s ease both')}
               </div>
 
               <div className="space-y-2">
@@ -2329,7 +2466,7 @@ export function PropertyPanel({
                 <div className="grid gap-2">
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Duration</label>
-                    <input type="text" value={String(props.animationDuration ?? '')} onChange={(e) => setProp('animationDuration', e.target.value)} placeholder="0.5s" className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono" />
+                    {renderExpressionEditor(String(props.animationDuration ?? ''), (next) => setProp('animationDuration', next), '0.5s')}
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Timing Function</label>
@@ -2339,7 +2476,7 @@ export function PropertyPanel({
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Delay</label>
-                    <input type="text" value={String(props.animationDelay ?? '')} onChange={(e) => setProp('animationDelay', e.target.value)} placeholder="0s" className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono" />
+                    {renderExpressionEditor(String(props.animationDelay ?? ''), (next) => setProp('animationDelay', next), '0s')}
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Iteration Count</label>
@@ -2355,11 +2492,11 @@ export function PropertyPanel({
                 <div className="grid gap-2">
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Transition</label>
-                    <input type="text" value={String(props.transition ?? '')} onChange={(e) => setProp('transition', e.target.value)} placeholder="all 0.3s ease" className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono" />
+                    {renderExpressionEditor(String(props.transition ?? ''), (next) => setProp('transition', next), 'all 0.3s ease')}
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Transform</label>
-                    <input type="text" value={String(props.transform ?? '')} onChange={(e) => setProp('transform', e.target.value)} placeholder="rotate(5deg) scale(1.1)" className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono" />
+                    {renderExpressionEditor(String(props.transform ?? ''), (next) => setProp('transform', next), 'rotate(5deg) scale(1.1)')}
                   </div>
                 </div>
               </div>
@@ -2440,13 +2577,7 @@ export function PropertyPanel({
                         {config.action === 'log' && (
                           <div>
                             <div className="flex gap-1">
-                              <input
-                                type="text"
-                                value={config.message ?? ''}
-                                onChange={(e) => updateStep(stepIdx, { ...config, message: e.target.value })}
-                                placeholder="{{state.x}}, {{data.posts}}, {{prop.item.name}}, literals…"
-                                className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                              />
+                              {renderExpressionEditor(config.message ?? '', (next) => updateStep(stepIdx, { ...config, message: next }), '{{state.x}}, {{data.posts}}, {{prop.item.name}}, literals…', 'flex-1')}
                               <button type="button" onClick={() => setExpressionModal({ ev, stepIdx, field: 'value' })} className="shrink-0 px-1.5 py-1 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]">Build</button>
                             </div>
                             <p className="text-[11px] text-gray-500 mt-1">Prints to browser console + debug panel. Supports any binding.</p>
@@ -2467,13 +2598,7 @@ export function PropertyPanel({
                               ))}
                             </select>
                             <div className="flex gap-1">
-                              <input
-                                type="text"
-                                value={config.value ?? ''}
-                                onChange={(e) => updateStep(stepIdx, { ...config, value: e.target.value })}
-                                placeholder="Value or {{state.x}} + 1"
-                                className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                              />
+                              {renderExpressionEditor(config.value ?? '', (next) => updateStep(stepIdx, { ...config, value: next }), 'Value or {{state.x}} + 1', 'flex-1')}
                               <button type="button" onClick={() => setExpressionModal({ ev, stepIdx, field: 'value' })} className="shrink-0 px-1.5 py-1 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]">Build</button>
                             </div>
                             <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
@@ -2490,13 +2615,7 @@ export function PropertyPanel({
 
                         {/* Alert */}
                         {config.action === 'alert' && (
-                          <input
-                            type="text"
-                            value={config.message ?? ''}
-                            onChange={(e) => updateStep(stepIdx, { ...config, message: e.target.value })}
-                            placeholder="Alert message or {{state.x}}"
-                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                          />
+                          renderExpressionEditor(config.message ?? '', (next) => updateStep(stepIdx, { ...config, message: next }), 'Alert message or {{state.x}}')
                         )}
 
                         {/* Navigate */}
@@ -2516,13 +2635,7 @@ export function PropertyPanel({
                                 <option key={s.id} value={s.id}>{s.name} ({s.presentation ?? 'page'})</option>
                               ))}
                             </select>
-                            <input
-                              type="text"
-                              value={config.url ?? ''}
-                              onChange={(e) => updateStep(stepIdx, { ...config, url: e.target.value })}
-                              placeholder="URL or {{state.redirectTo}}"
-                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                            />
+                            {renderExpressionEditor(config.url ?? '', (next) => updateStep(stepIdx, { ...config, url: next }), 'URL or {{state.redirectTo}}')}
                           </div>
                         )}
 
@@ -2541,13 +2654,25 @@ export function PropertyPanel({
                               <option value="__inline__">Inline script</option>
                             </select>
                             {(config.scriptName === '__inline__' || !config.scriptName) && (
-                              <textarea
-                                value={config.customScript ?? ''}
-                                onChange={(e) => updateStep(stepIdx, { ...config, customScript: e.target.value })}
-                                placeholder="Inline JS (access state, data, helpers)"
-                                rows={2}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                              />
+                              <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#161b22]">
+                                <MonacoEditor
+                                  language="javascript"
+                                  value={config.customScript ?? ''}
+                                  onChange={(value) => updateStep(stepIdx, { ...config, customScript: value ?? '' })}
+                                  height="88px"
+                                  loading={monacoLoading}
+                                  options={{
+                                    minimap: { enabled: false },
+                                    lineNumbers: 'off',
+                                    glyphMargin: false,
+                                    folding: false,
+                                    scrollBeyondLastLine: false,
+                                    wordWrap: 'on',
+                                    fontSize: 12,
+                                    padding: { top: 8, bottom: 8 },
+                                  }}
+                                />
+                              </div>
                             )}
                           </>
                         )}
@@ -2571,13 +2696,7 @@ export function PropertyPanel({
                             </select>
                             {config.hapticPreset === 'custom' && (
                               <div>
-                                <input
-                                  type="text"
-                                  value={config.hapticCustom ?? ''}
-                                  onChange={(e) => updateStep(stepIdx, { ...config, hapticCustom: e.target.value })}
-                                  placeholder='e.g. 100,50,100 or [{"duration":50},{"delay":50,"duration":50}]'
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                                />
+                                {renderExpressionEditor(config.hapticCustom ?? '', (next) => updateStep(stepIdx, { ...config, hapticCustom: next }), 'e.g. 100,50,100 or [{"duration":50},{"delay":50,"duration":50}]')}
                                 <p className="text-[10px] text-gray-400 mt-0.5">Number array (ms on/off) or Vibration object array with duration/delay/intensity.</p>
                               </div>
                             )}
@@ -2589,35 +2708,17 @@ export function PropertyPanel({
                         {config.action === 'speak' && (
                           <div className="space-y-1.5">
                             <div className="flex gap-1">
-                              <input
-                                type="text"
-                                value={config.speakText ?? ''}
-                                onChange={(e) => updateStep(stepIdx, { ...config, speakText: e.target.value })}
-                                placeholder="Text or {{state.x}}, {{data.weather.current.temperature_2m}}°C…"
-                                className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                              />
+                              {renderExpressionEditor(config.speakText ?? '', (next) => updateStep(stepIdx, { ...config, speakText: next }), 'Text or {{state.x}}, {{data.weather.current.temperature_2m}}°C…', 'flex-1')}
                               <button type="button" onClick={() => setExpressionModal({ ev, stepIdx, field: 'value' })} className="shrink-0 px-1.5 py-1 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]">Build</button>
                             </div>
                             <div className="grid grid-cols-2 gap-1.5">
                               <div>
                                 <label className="text-[10px] text-gray-500 mb-0.5 block">Rate (0.1–10, default 1)</label>
-                                <input
-                                  type="text"
-                                  value={config.speakRate ?? ''}
-                                  onChange={(e) => updateStep(stepIdx, { ...config, speakRate: e.target.value })}
-                                  placeholder="1"
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white"
-                                />
+                                {renderExpressionEditor(config.speakRate ?? '', (next) => updateStep(stepIdx, { ...config, speakRate: next }), '1')}
                               </div>
                               <div>
                                 <label className="text-[10px] text-gray-500 mb-0.5 block">Pitch (0–2, default 1)</label>
-                                <input
-                                  type="text"
-                                  value={config.speakPitch ?? ''}
-                                  onChange={(e) => updateStep(stepIdx, { ...config, speakPitch: e.target.value })}
-                                  placeholder="1"
-                                  className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white"
-                                />
+                                {renderExpressionEditor(config.speakPitch ?? '', (next) => updateStep(stepIdx, { ...config, speakPitch: next }), '1')}
                               </div>
                             </div>
                           </div>
@@ -2627,13 +2728,7 @@ export function PropertyPanel({
                         {config.action === 'playAudio' && (
                           <div className="space-y-1.5">
                             <div className="flex gap-1">
-                              <input
-                                type="text"
-                                value={config.audioUrl ?? ''}
-                                onChange={(e) => updateStep(stepIdx, { ...config, audioUrl: e.target.value })}
-                                placeholder="URL, /uploads/… or {{state.audioUrl}}"
-                                className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                              />
+                              {renderExpressionEditor(config.audioUrl ?? '', (next) => updateStep(stepIdx, { ...config, audioUrl: next }), 'URL, /uploads/… or {{state.audioUrl}}', 'flex-1')}
                               {projectId && (
                                 <button
                                   type="button"
@@ -2650,13 +2745,7 @@ export function PropertyPanel({
 
                         {(config.action === 'startAnimationSequence' || config.action === 'startAnimationStep' || config.action === 'stopAnimationSequence' || config.action === 'resetAnimationSequence') && (
                           <div className="space-y-1.5">
-                            <input
-                              type="text"
-                              value={config.animationTargetId ?? ''}
-                              onChange={(e) => updateStep(stepIdx, { ...config, animationTargetId: e.target.value })}
-                              placeholder="Target DOM id or node id (empty = this component)"
-                              className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                            />
+                            {renderExpressionEditor(config.animationTargetId ?? '', (next) => updateStep(stepIdx, { ...config, animationTargetId: next }), 'Target DOM id or node id (empty = this component)')}
                             {config.action === 'startAnimationStep' && (
                               <input
                                 type="number"
@@ -2675,13 +2764,25 @@ export function PropertyPanel({
 
                         {/* Custom JS */}
                         {config.action === 'custom' && (
-                          <textarea
-                            value={config.customScript ?? ''}
-                            onChange={(e) => updateStep(stepIdx, { ...config, customScript: e.target.value })}
-                            placeholder="JavaScript (state, data, DateTime, Math)"
-                            rows={2}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                          />
+                          <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#161b22]">
+                            <MonacoEditor
+                              language="javascript"
+                              value={config.customScript ?? ''}
+                              onChange={(value) => updateStep(stepIdx, { ...config, customScript: value ?? '' })}
+                              height="88px"
+                              loading={monacoLoading}
+                              options={{
+                                minimap: { enabled: false },
+                                lineNumbers: 'off',
+                                glyphMargin: false,
+                                folding: false,
+                                scrollBeyondLastLine: false,
+                                wordWrap: 'on',
+                                fontSize: 12,
+                                padding: { top: 8, bottom: 8 },
+                              }}
+                            />
+                          </div>
                         )}
 
                         {/* Per-step condition */}
@@ -2689,13 +2790,7 @@ export function PropertyPanel({
                           <div className="text-[10px] font-medium text-gray-400 dark:text-gray-500 mb-1">Run only when (optional)</div>
                           <div className="grid grid-cols-[1fr,auto,1fr] gap-1 items-center">
                             <div className="flex gap-1">
-                              <input
-                                type="text"
-                                value={config.condition?.left ?? ''}
-                                onChange={(e) => updateStep(stepIdx, { ...config, condition: { left: e.target.value, op: config.condition?.op ?? '==', right: config.condition?.right ?? '' } })}
-                                placeholder="{{state.x}}"
-                                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                              />
+                              {renderExpressionEditor(config.condition?.left ?? '', (next) => updateStep(stepIdx, { ...config, condition: { left: next, op: config.condition?.op ?? '==', right: config.condition?.right ?? '' } }), '{{state.x}}', 'flex-1 min-w-0')}
                               <button type="button" onClick={() => setExpressionModal({ ev, stepIdx, field: 'conditionLeft' })} className="shrink-0 px-1.5 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]">Build</button>
                             </div>
                             <select
@@ -2708,13 +2803,7 @@ export function PropertyPanel({
                               ))}
                             </select>
                             <div className="flex gap-1">
-                              <input
-                                type="text"
-                                value={config.condition?.right ?? ''}
-                                onChange={(e) => updateStep(stepIdx, { ...config, condition: { left: config.condition?.left ?? '', op: config.condition?.op ?? '==', right: e.target.value } })}
-                                placeholder="value"
-                                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white font-mono"
-                              />
+                              {renderExpressionEditor(config.condition?.right ?? '', (next) => updateStep(stepIdx, { ...config, condition: { left: config.condition?.left ?? '', op: config.condition?.op ?? '==', right: next } }), 'value', 'flex-1 min-w-0')}
                               <button type="button" onClick={() => setExpressionModal({ ev, stepIdx, field: 'conditionRight' })} className="shrink-0 px-1.5 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d]">Build</button>
                             </div>
                           </div>
@@ -2946,7 +3035,69 @@ export function PropertyPanel({
           const sourcesWithParams = dataSources.filter(d => (d as any).urlParamDefs?.length)
           return (
           <div className="space-y-3">
-            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.some.path&#125;&#125;</code> for nested fields, and repeater with array paths only.</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.some.path&#125;&#125;</code> for nested fields. Source names with spaces also work as <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">snake_case</code> or <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">kebab-case</code> when typing manually.</p>
+
+            <div className="border border-gray-200 dark:border-[#30363d] rounded p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Data Inspector</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Live keys from preview runtime. Click to copy. (Sources with spaces also work as snake_case/kebab-case when typing manually.)</p>
+                </div>
+                {runtimeSourceNames.length > 0 && (
+                  <select
+                    value={inspectorSource}
+                    onChange={(e) => setInspectorSource(e.target.value)}
+                    className="px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                  >
+                    {runtimeSourceNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {runtimeSourceNames.length > 0 && inspectorDumpToken && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { navigator.clipboard?.writeText(inspectorDumpToken).catch(() => {}) }}
+                    className="px-2 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
+                    title={`Copy ${inspectorDumpToken}`}
+                  >
+                    Copy full payload token
+                  </button>
+                  {inspectorSafeDumpToken && inspectorSafeDumpToken !== inspectorDumpToken && (
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard?.writeText(inspectorSafeDumpToken).catch(() => {}) }}
+                      className="px-2 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
+                      title={`Copy ${inspectorSafeDumpToken}`}
+                    >
+                      Copy safe alias token
+                    </button>
+                  )}
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">For a dump preview in Text, set Content to only this token (no extra text) while Preview is ON.</p>
+                </div>
+              )}
+              {runtimeSourceNames.length === 0 ? (
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">No live data detected yet. Turn Preview on to fetch runtime data for this screen.</p>
+              ) : inspectorTokens.length === 0 ? (
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">No inspectable keys for this source yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-auto">
+                  {inspectorTokens.map((token) => (
+                    <button
+                      key={token}
+                      type="button"
+                      onClick={() => { navigator.clipboard?.writeText(`{{${token}}}`).catch(() => {}) }}
+                      className="px-2 py-0.5 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
+                      title={`Copy {{${token}}}`}
+                    >
+                      {`{{${token}}}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {onDataSourcesChange && dataSources.length > 0 && (
               <div className="space-y-3">
