@@ -758,26 +758,40 @@ export function PropertyPanel({
     onChange: (next: string) => void,
     placeholder?: string,
     className = 'w-full'
-  ) => (
-    <div className={`${className} border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`} title={placeholder}>
-      <MonacoEditor
-        language="javascript"
-        value={value}
-        onChange={(next) => onChange(next ?? '')}
-        height="42px"
-        options={{
-          minimap: { enabled: false },
-          lineNumbers: 'off',
-          glyphMargin: false,
-          folding: false,
-          scrollBeyondLastLine: false,
-          wordWrap: 'off',
-          fontSize: 12,
-          padding: { top: 8, bottom: 8 },
-        }}
-      />
-    </div>
-  )
+  ) => {
+    const expressionLike = /\{\{[^}]*\}\}|\b(state|data|prop|script|navProp)\.|\?[^:]*:|&&|\|\||===|!==|>=|<=|==|!=/.test(value)
+    if (!expressionLike) {
+      return (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={`${className} px-2 py-1.5 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white font-mono`}
+        />
+      )
+    }
+    return (
+      <div className={`${className} border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`} title={placeholder}>
+        <MonacoEditor
+          language="javascript"
+          value={value}
+          onChange={(next) => onChange(next ?? '')}
+          height="42px"
+          options={{
+            minimap: { enabled: false },
+            lineNumbers: 'off',
+            glyphMargin: false,
+            folding: false,
+            scrollBeyondLastLine: false,
+            wordWrap: 'off',
+            fontSize: 12,
+            padding: { top: 8, bottom: 8 },
+          }}
+        />
+      </div>
+    )
+  }
 
   const renderLayoutField = (key: string) => {
     const val = props[key]
