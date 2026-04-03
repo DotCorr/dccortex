@@ -630,8 +630,9 @@ export function PropertyPanel({
       ...projectApiSourceNames,
       ...projectTableNames,
     ]
-    return Array.from(new Set(base.flatMap((name) => expandSourceAliases(name))))
-  }, [dataSources, projectApiSourceNames, projectTableNames, expandSourceAliases])
+    // Return only original names; aliases still work in binding resolution via setWithAliases() in runtime-data endpoint
+    return Array.from(new Set(base))
+  }, [dataSources, projectApiSourceNames, projectTableNames])
   const bindingDataSources = useMemo<DataSourceDef[]>(() => bindingDataSourceNames.map((name) => ({ id: `binding-${name}`, name })), [bindingDataSourceNames])
   const runtimeSourceNames = useMemo(
     () => bindingDataSourceNames.filter((name) => Object.prototype.hasOwnProperty.call(runtimeData, name)),
@@ -2999,13 +3000,13 @@ export function PropertyPanel({
           const sourcesWithParams = dataSources.filter(d => (d as any).urlParamDefs?.length)
           return (
           <div className="space-y-3">
-            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.some.path&#125;&#125;</code> for nested fields, and repeater with array paths only.</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.some.path&#125;&#125;</code> for nested fields. Source names with spaces also work as <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">snake_case</code> or <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">kebab-case</code> when typing manually.</p>
 
             <div className="border border-gray-200 dark:border-[#30363d] rounded p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Data Inspector</p>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Live keys from preview runtime. Click to copy binding.</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Live keys from preview runtime. Click to copy. (Sources with spaces also work as snake_case/kebab-case when typing manually.)</p>
                 </div>
                 {runtimeSourceNames.length > 0 && (
                   <select
