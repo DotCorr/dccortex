@@ -110,7 +110,7 @@ export function resolveBinding(raw: string, ctx: ResolveContext): string {
     if (e.startsWith('data.')) {
       const path = e.slice(5).trim()
       const v = ctx.data ? getByPath(ctx.data, path) : undefined
-      return v === undefined || v === null ? '[data]' : String(v)
+      return v === undefined || v === null ? '[data]' : typeof v === 'object' ? JSON.stringify(v) : String(v)
     }
     if (e.startsWith('event.')) {
       const path = e.slice(6).trim()
@@ -381,6 +381,23 @@ export function resolveExpression(raw: string, ctx: ResolveContext): string {
 
   // Quick path: no expression syntax, just token substitution
   if (!raw.includes('{{')) return raw
+
+  // For plain text templates like "data dump: {{data.source}}", avoid expression parsing.
+  // This guarantees object tokens are shown as JSON and avoids accidental operator parsing
+  // from characters inside token paths (e.g. hyphens in source names).
+  const stripped = raw.replace(BINDING_REGEX, '').trim()
+  const hasExpressionOperators = /\?|\|\||&&|\?\?|===|!==|>=|<=|==|!=|\+|\-|\*|\/|%|>|</.test(raw)
+  const isLikelyTemplateString = stripped.length > 0 && !hasExpressionOperators
+  if (isLikelyTemplateString) {
+    return raw.replace(BINDING_REGEX, (_, expr) => {
+      const v = resolveToken(expr, ctx)
+      if (v === undefined || v === null) return ''
+      if (typeof v === 'object') {
+        try { return JSON.stringify(v) } catch { return String(v) }
+      }
+      return String(v)
+    })
+  }
 
   // Helper: coerce a resolved value to string, serialising arrays/objects as JSON
   // so that dataRepeater, chart, and table nodes can JSON.parse them back
