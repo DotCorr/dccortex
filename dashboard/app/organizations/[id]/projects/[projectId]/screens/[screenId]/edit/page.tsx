@@ -3698,10 +3698,17 @@ export default function ScreenEditPage() {
                   const visualWidth = scaledWidth + framePadScaled * 2
                   const visualHeight = scaledHeight + framePadScaled * 2
                   const framedViewport = previewSize !== 'freeform' && effectiveDeviceFrameEnabled
+                  const previewUsesDarkBackdrop =
+                    previewTheme === 'dark' ||
+                    effectiveTheme.colorMode === 'dark' ||
+                    (effectiveTheme.colorMode === 'adaptive' && systemDark)
+                  const stageBackdropColor = previewMode
+                    ? (effectiveTheme.background?.trim() || (previewUsesDarkBackdrop ? '#0f172a' : '#f8fafc'))
+                    : canvasBgColor
                   return (
                     <div
                       className="relative w-full h-full min-w-0 overflow-auto"
-                      style={{ backgroundColor: canvasBgColor }}
+                      style={{ backgroundColor: stageBackdropColor }}
                     >
                       <div
                         className={`${framedViewport ? 'min-w-full justify-center' : 'w-full justify-start'} min-h-full flex items-start`}
