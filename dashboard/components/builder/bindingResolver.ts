@@ -365,6 +365,12 @@ function evalExpr(s: string, values: Map<string, unknown>): unknown {
  */
 export function resolveExpression(raw: string, ctx: ResolveContext): string {
   if (typeof raw !== 'string') return String(raw ?? '')
+  // Users often start from {{data.sourceName}} and then append .field via transform UI.
+  // Normalize that shape so both forms resolve the same.
+  raw = raw.replace(
+    /\{\{\s*data\.([^}]+?)\s*\}\}\.([a-zA-Z0-9_.$-]+)/g,
+    (_m, sourcePath: string, extraPath: string) => `{{data.${sourcePath.trim()}.${extraPath.trim()}}}`
+  )
   // Users sometimes wrap bindings in quotes inside expressions (e.g. '!\'{{prop.icon}}\' ? ...').
   // Normalize quoted tokens back to raw {{...}} so ternary/logic evaluation still works.
   raw = raw.replace(/(['"])\s*\{\{\s*([^}]+?)\s*\}\}\s*\1/g, '{{$2}}')
