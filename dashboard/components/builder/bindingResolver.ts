@@ -121,6 +121,20 @@ function findPathInObject(root: unknown, parts: string[], depth = 0): unknown {
   return undefined
 }
 
+function getPreferredNestedValue(sourceRoot: unknown, key: string): unknown {
+  if (sourceRoot == null || typeof sourceRoot !== 'object') return undefined
+  const obj = sourceRoot as Record<string, unknown>
+  const preferredContainers = ['current', 'latest', 'value', 'data']
+  for (const container of preferredContainers) {
+    const candidate = obj[container]
+    if (candidate && typeof candidate === 'object') {
+      const value = (candidate as Record<string, unknown>)[key]
+      if (value !== undefined) return value
+    }
+  }
+  return undefined
+}
+
 function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
   const direct = getByPath(data, path)
   if (direct !== undefined) return direct
@@ -167,6 +181,11 @@ function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
   }
 
   if (sourceRoot == null || typeof sourceRoot !== 'object') return direct
+
+  if (tail.length === 1) {
+    const preferred = getPreferredNestedValue(sourceRoot, tail[0])
+    if (preferred !== undefined) return preferred
+  }
 
   const exactPath = findPathInObject(sourceRoot, tail)
   if (exactPath !== undefined) return exactPath
