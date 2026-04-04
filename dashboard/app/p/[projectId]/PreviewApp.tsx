@@ -333,7 +333,8 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
   }, [namedScripts, runtimeState])
 
   const resolveBindingFn = useCallback(
-    (raw: string) => resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript }),
+    (raw: string, propsCtx?: Record<string, unknown>) =>
+      resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, props: propsCtx }),
     [runtimeState, runtimeData, runScript]
   )
 

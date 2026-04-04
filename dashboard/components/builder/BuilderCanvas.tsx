@@ -339,7 +339,17 @@ function ensureBunnyFontLoaded(family: string) {
 
 function resolveWithProps(raw: unknown, fn?: ResolveBindingFn, propsCtx?: Record<string, unknown>): string {
   if (!propsCtx) return resolve(raw, fn)
-  if (fn) return fn(typeof raw === 'string' ? raw : String(raw ?? ''), propsCtx)
+  if (fn) {
+    let resolved = fn(typeof raw === 'string' ? raw : String(raw ?? ''), propsCtx)
+    // Support chained bindings where a prop value itself contains bindings.
+    for (let i = 0; i < 3; i++) {
+      if (!resolved.includes('{{')) break
+      const next = fn(resolved, propsCtx)
+      if (next === resolved) break
+      resolved = next
+    }
+    return resolved
+  }
   const str = typeof raw === 'string' ? raw : String(raw ?? '')
   return str.replace(/\{\{\s*prop\.([a-zA-Z0-9_.$-]+)\s*\}\}/g, (_, keyPath) => {
     const keys = String(keyPath).split('.')
@@ -514,7 +524,7 @@ function NodeRenderer({
   }, [onDragEndNode])
 
   const semanticLayoutTypes = ['header', 'main', 'footer', 'nav', 'aside', 'article'] as const
-  const hasLayout = ['container', 'section', 'stackV', 'stackH', 'card', 'formWrapper', 'dataRepeater', 'tabs', 'tooltip', 'modal', ...semanticLayoutTypes].includes(node.type as any)
+  const hasLayout = ['container', 'suspense', 'section', 'stackV', 'stackH', 'card', 'formWrapper', 'dataRepeater', 'tabs', 'tooltip', 'modal', ...semanticLayoutTypes].includes(node.type as any)
   // Resolve all string props (e.g. {{state.direction}}) before computing styles so edit canvas matches preview layout.
   const resolvedNodeProps = resolveBindingFn
     ? Object.fromEntries(
@@ -868,7 +878,7 @@ function NodeRenderer({
     )
   }
 
-  if (node.type === 'container' || semanticLayoutTypes.includes(node.type as any)) {
+  if (node.type === 'container' || node.type === 'suspense' || semanticLayoutTypes.includes(node.type as any)) {
     // — Collapsible aside (preview + edit mode) —
     if (node.type === 'aside' && node.props?.collapsible) {
       const asideChildren = node.children.map((child) => (

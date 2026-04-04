@@ -94,6 +94,47 @@ export const COMPONENT_REGISTRY: ComponentDef[] = [
     },
   },
   {
+    id: 'suspense',
+    label: 'Suspense',
+    category: 'Layout',
+    defaultProps: {
+      ...LAYOUT_DEFAULTS,
+      suspenseEnabled: true,
+      suspenseSmart: true,
+      suspenseVariant: 'skeleton',
+      suspenseDirection: 'horizontal',
+      suspenseLabel: 'Loading...',
+      suspenseWhen: '',
+    },
+    bindableProps: ['suspenseWhen', 'suspenseLabel'],
+    allowsChildren: true,
+    events: ['onClick', 'onDoubleClick', 'onMouseEnter', 'onMouseLeave'],
+    options: {
+      display: [
+        { value: 'flex', label: 'Flex' },
+      ],
+      flexDirection: [
+        { value: 'row', label: 'Row' },
+        { value: 'column', label: 'Column' },
+        { value: 'row-reverse', label: 'Row reverse' },
+        { value: 'column-reverse', label: 'Column reverse' },
+      ],
+      alignItems: [
+        { value: 'flex-start', label: 'Start' },
+        { value: 'flex-end', label: 'End' },
+        { value: 'center', label: 'Center' },
+        { value: 'stretch', label: 'Stretch' },
+      ],
+      justifyContent: [
+        { value: 'flex-start', label: 'Start' },
+        { value: 'flex-end', label: 'End' },
+        { value: 'center', label: 'Center' },
+        { value: 'space-between', label: 'Space between' },
+        { value: 'space-around', label: 'Space around' },
+      ],
+    },
+  },
+  {
     id: 'section',
     label: 'Section',
     category: 'Layout',

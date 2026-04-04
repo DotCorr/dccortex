@@ -11,10 +11,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
+import type { EditorProps } from '@monaco-editor/react'
 import type { StateDefinition } from './PropertyPanel'
 import type { DataSourceDef } from './PropertyPanel'
 
-const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
+const MonacoEditorBase = dynamic(() => import('@monaco-editor/react'), { ssr: false })
+const MonacoEditor = (props: EditorProps) => <MonacoEditorBase keepCurrentModel {...props} />
 
 // ─── Props (unchanged — PropertyPanel compatibility) ──────────────────────────
 
