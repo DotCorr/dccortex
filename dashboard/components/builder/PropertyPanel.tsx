@@ -1365,7 +1365,7 @@ export function PropertyPanel({
       )
     }
     // --- Background image / gradient ---
-    if (key === 'backgroundImage' || key === 'background') {
+    if (key === 'backgroundImage' || key === 'background' || key === 'gradient') {
       return (
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
@@ -3413,8 +3413,16 @@ export function PropertyPanel({
           open={gradientBuilderFor !== null}
           initialValue={gradientBuilderFor ? String(props[gradientBuilderFor] ?? '') : undefined}
           onClose={() => setGradientBuilderFor(null)}
-          onApply={(css) => {
-            if (gradientBuilderFor) setProp(gradientBuilderFor, css)
+          onApply={(payload) => {
+            if (!gradientBuilderFor) return
+            setProp(gradientBuilderFor, payload.css)
+            if (payload.animation) {
+              if (payload.animation.backgroundSize) setProp('backgroundSize', payload.animation.backgroundSize)
+              setProp(
+                'animation',
+                `${payload.animation.name} ${payload.animation.durationSec}s ${payload.animation.timing} ${payload.animation.direction} infinite`
+              )
+            }
           }}
         />
       </div>

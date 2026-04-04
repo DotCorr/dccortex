@@ -294,6 +294,12 @@ function evaluateVisibleWhen(raw: unknown, fn?: ResolveBindingFn): boolean {
   return !(lower === 'false' || lower === '0' || lower === 'null' || lower === 'undefined' || lower === '')
 }
 
+function extractGradientColors(gradient: string): string[] {
+  const matches = gradient.match(/#[0-9a-fA-F]{3,8}|rgba?\([^\)]+\)|hsla?\([^\)]+\)/g)
+  if (!matches || matches.length === 0) return ['#22d3ee', '#6366f1']
+  return matches.slice(0, 6)
+}
+
 const GENERIC_FONT_FAMILIES = new Set([
   'serif',
   'sans-serif',
@@ -1100,6 +1106,88 @@ function NodeRenderer({
         style={style}
       >
         <span className={variantClass} style={style}>{resolveWithProps(node.props.content ?? 'Text', resolveBindingFn, reusablePropsCtx)}</span>
+      </div>
+    )
+  }
+
+  if (node.type === 'gradientText') {
+    const content = resolveWithProps(node.props.content ?? 'Gradient Text', resolveBindingFn, reusablePropsCtx)
+    const gradient = resolveWithProps(String(node.props.gradient ?? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'), resolveBindingFn, reusablePropsCtx)
+    const textStyle: React.CSSProperties = {
+      background: gradient,
+      WebkitBackgroundClip: 'text',
+      backgroundClip: 'text',
+      color: 'transparent',
+      WebkitTextFillColor: 'transparent',
+      fontSize: typeof node.props.fontSize === 'number' ? `${node.props.fontSize}px` : (node.props.fontSize as string | undefined),
+      fontWeight: node.props.fontWeight as React.CSSProperties['fontWeight'] ?? 700,
+      lineHeight: node.props.lineHeight as React.CSSProperties['lineHeight'] ?? 1.1,
+      backgroundSize: String(node.props.backgroundSize ?? '200% 200%'),
+      animation: String(node.props.animation ?? ''),
+      textAlign: (node.props.textAlign as React.CSSProperties['textAlign']) ?? 'left',
+      display: 'inline-block',
+      width: '100%',
+    }
+    return (
+      <div
+        id={domId}
+        data-node-id={node.id}
+        draggable={canDragNode ? 'true' : 'false'}
+        onDragStart={canDragNode ? handleDragStart : undefined}
+        onDragEnd={canDragNode ? handleDragEnd : undefined}
+        onClick={previewMode ? (e) => runConfiguredEvent('onClick', e) : (e) => { e.stopPropagation(); onSelect(node.id) }}
+        className={previewMode ? 'px-2 py-1 rounded' : `px-2 py-1 border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-transparent'} rounded`}
+        style={style}
+      >
+        <span style={textStyle}>{content}</span>
+      </div>
+    )
+  }
+
+  if (node.type === 'gradientSvg') {
+    const svgWidth = Number(node.props.width ?? 240)
+    const svgHeight = Number(node.props.height ?? 140)
+    const shape = String(node.props.shape ?? 'wave')
+    const gradient = resolveWithProps(String(node.props.gradient ?? 'linear-gradient(90deg, #22d3ee 0%, #6366f1 100%)'), resolveBindingFn, reusablePropsCtx)
+    const strokeColor = resolveWithProps(String(node.props.strokeColor ?? ''), resolveBindingFn, reusablePropsCtx)
+    const strokeWidth = Number(node.props.strokeWidth ?? 0)
+    const colors = extractGradientColors(gradient)
+    const gradId = `grad-${node.id}`
+
+    const pathByShape: Record<string, string> = {
+      wave: 'M 0 70 C 35 10 85 130 120 70 C 155 10 205 130 240 70 L 240 140 L 0 140 Z',
+      blob: 'M 120 14 C 156 14 196 28 212 58 C 228 88 220 132 192 156 C 164 180 116 184 76 172 C 36 160 4 132 6 98 C 8 64 44 24 82 16 C 94 14 106 14 120 14 Z',
+      ring: 'M 120 20 A 50 50 0 1 1 119.9 20 Z M 120 58 A 12 12 0 1 0 120.1 58 Z',
+      diamond: 'M 120 12 L 228 70 L 120 128 L 12 70 Z',
+    }
+
+    return (
+      <div
+        id={domId}
+        data-node-id={node.id}
+        draggable={canDragNode ? 'true' : 'false'}
+        onDragStart={canDragNode ? handleDragStart : undefined}
+        onDragEnd={canDragNode ? handleDragEnd : undefined}
+        onClick={previewMode ? (e) => runConfiguredEvent('onClick', e) : (e) => { e.stopPropagation(); onSelect(node.id) }}
+        className={previewMode ? 'inline-block rounded' : `inline-block border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-transparent'} rounded`}
+        style={style}
+      >
+        <svg width={svgWidth} height={svgHeight} viewBox="0 0 240 140" style={{ display: 'block', animation: String(node.props.animation ?? ''), opacity: Number(node.props.opacity ?? 1) }}>
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
+              {colors.map((c, idx) => (
+                <stop key={`${c}-${idx}`} offset={`${(idx / Math.max(1, colors.length - 1)) * 100}%`} stopColor={c} />
+              ))}
+            </linearGradient>
+          </defs>
+          <path
+            d={pathByShape[shape] ?? pathByShape.wave}
+            fill={`url(#${gradId})`}
+            stroke={strokeColor || 'none'}
+            strokeWidth={strokeWidth > 0 ? strokeWidth : undefined}
+            fillRule={shape === 'ring' ? 'evenodd' : undefined}
+          />
+        </svg>
       </div>
     )
   }
@@ -2389,6 +2477,10 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
         @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
         @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0 } }
         @keyframes float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-12px) } }
+        @keyframes dccGradientShiftX { 0% { background-position: 0% 50% } 50% { background-position: 100% 50% } 100% { background-position: 0% 50% } }
+        @keyframes dccGradientShiftY { 0% { background-position: 50% 0% } 50% { background-position: 50% 100% } 100% { background-position: 50% 0% } }
+        @keyframes dccGradientRotate { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+        @keyframes dccGradientHueShift { 0% { filter: hue-rotate(0deg) } 100% { filter: hue-rotate(360deg) } }
       `}</style>
     <div
       data-builder-canvas="true"

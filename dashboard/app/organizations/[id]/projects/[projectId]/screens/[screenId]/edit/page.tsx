@@ -491,6 +491,8 @@ type StoredPreviewSettings = Partial<{
   previewTheme: 'light' | 'dark'
   deviceFrameEnabled: boolean
   mobileAutoClosePalette: boolean
+  apiLiveRefreshEnabled: boolean
+  showLayoutInspector: boolean
   canvasBgColor: string
   showCanvasMesh: boolean
   frameConfigByCategory: Record<FrameCategory, FrameConfig>
@@ -517,6 +519,8 @@ function loadStoredPreviewSettings(projectId: string, screenId: string): StoredP
       if (typeof parsed.previewMode === 'boolean') state.previewMode = parsed.previewMode
       if (parsed.previewTheme === 'light' || parsed.previewTheme === 'dark') state.previewTheme = parsed.previewTheme
       if (typeof parsed.mobileAutoClosePalette === 'boolean') state.mobileAutoClosePalette = parsed.mobileAutoClosePalette
+      if (typeof parsed.apiLiveRefreshEnabled === 'boolean') state.apiLiveRefreshEnabled = parsed.apiLiveRefreshEnabled
+      if (typeof parsed.showLayoutInspector === 'boolean') state.showLayoutInspector = parsed.showLayoutInspector
       if (typeof parsed.canvasBgColor === 'string' && parsed.canvasBgColor.trim()) state.canvasBgColor = parsed.canvasBgColor
       if (typeof parsed.showCanvasMesh === 'boolean') state.showCanvasMesh = parsed.showCanvasMesh
       if (typeof parsed.deviceFrameEnabled === 'boolean') state.deviceFrameEnabled = parsed.deviceFrameEnabled
@@ -613,7 +617,8 @@ export default function ScreenEditPage() {
   const [deviceFrameEnabled, setDeviceFrameEnabled] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.deviceFrameEnabled ?? true)
   const [frameConfigByCategory, setFrameConfigByCategory] = useState<Record<FrameCategory, FrameConfig>>(() => loadStoredPreviewSettings(projectId, screenId)?.frameConfigByCategory ?? DEFAULT_FRAME_CONFIG_BY_CATEGORY)
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>(() => loadStoredPreviewSettings(projectId, screenId)?.previewTheme ?? 'light')
-  const [apiLiveRefreshEnabled, setApiLiveRefreshEnabled] = useState(true)
+  const [apiLiveRefreshEnabled, setApiLiveRefreshEnabled] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.apiLiveRefreshEnabled ?? true)
+  const [showLayoutInspector, setShowLayoutInspector] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.showLayoutInspector ?? true)
   const [theme, setTheme] = useState<ScreenTheme>(DEFAULT_THEME)
   const [script, setScript] = useState('')
   const [stateDefinitions, setStateDefinitions] = useState<StateDefinition[]>([])
@@ -667,6 +672,7 @@ export default function ScreenEditPage() {
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [layoutGuideRect, setLayoutGuideRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
   const [packageManagerOpen, setPackageManagerOpen] = useState(false)
   const [previewSettingsLoaded, setPreviewSettingsLoaded] = useState(false)
   const undoStackRef = useRef<Node[]>([])
@@ -700,6 +706,7 @@ export default function ScreenEditPage() {
   const paintedSelectionsRef = useRef<Array<{ el: HTMLElement; outline: string; outlineOffset: string; boxShadow: string }>>([])
   const canvasStageRef = useRef<HTMLDivElement | null>(null)
   const canvasViewportRef = useRef<HTMLDivElement | null>(null)
+  const layoutOverlayHostRef = useRef<HTMLDivElement | null>(null)
   const apiLogIdRef = useRef(0)
   const themeRef = useRef<ScreenTheme>(theme)
   themeRef.current = theme
@@ -715,6 +722,8 @@ export default function ScreenEditPage() {
   const canvasColorStorageKey = useMemo(() => `dccortex:canvas-color:${projectId}:${screenId}`, [projectId, screenId])
   const canvasMeshStorageKey = useMemo(() => `dccortex:canvas-mesh:${projectId}:${screenId}`, [projectId, screenId])
   const frameConfigStorageKey = useMemo(() => `dccortex:frame-config:${projectId}:${screenId}`, [projectId, screenId])
+  const apiLiveRefreshStorageKey = useMemo(() => `dccortex:api-live-refresh:${projectId}:${screenId}`, [projectId, screenId])
+  const layoutInspectorStorageKey = useMemo(() => `dccortex:layout-inspector:${projectId}:${screenId}`, [projectId, screenId])
   const panelWidthsStorageKey = useMemo(() => `dccortex:panel-widths:${projectId}:${screenId}`, [projectId, screenId])
   const propertyPanelTabStorageKey = useMemo(() => `dccortex:property-tab:${projectId}:${screenId}`, [projectId, screenId])
   const debugConsoleStorageKey = useMemo(() => `dccortex:debug-console:${projectId}:${screenId}`, [projectId, screenId])
@@ -924,6 +933,8 @@ export default function ScreenEditPage() {
           previewTheme?: 'light' | 'dark'
           deviceFrameEnabled?: boolean
           mobileAutoClosePalette?: boolean
+          apiLiveRefreshEnabled?: boolean
+          showLayoutInspector?: boolean
           canvasBgColor?: string
           showCanvasMesh?: boolean
           frameConfigByCategory?: Partial<Record<FrameCategory, Partial<FrameConfig>>>
@@ -931,6 +942,17 @@ export default function ScreenEditPage() {
         if (typeof parsed.previewMode === 'boolean') setPreviewMode(parsed.previewMode)
         if (parsed.previewTheme === 'light' || parsed.previewTheme === 'dark') setPreviewTheme(parsed.previewTheme)
         if (typeof parsed.mobileAutoClosePalette === 'boolean') setMobileAutoClosePalette(parsed.mobileAutoClosePalette)
+        if (typeof parsed.apiLiveRefreshEnabled === 'boolean') setApiLiveRefreshEnabled(parsed.apiLiveRefreshEnabled)
+        if (typeof parsed.showLayoutInspector === 'boolean') setShowLayoutInspector(parsed.showLayoutInspector)
+      }
+
+      const apiLiveRaw = window.localStorage.getItem(apiLiveRefreshStorageKey)
+      if (apiLiveRaw === 'true' || apiLiveRaw === 'false') {
+        setApiLiveRefreshEnabled(apiLiveRaw === 'true')
+      }
+      const layoutInspectorRaw = window.localStorage.getItem(layoutInspectorStorageKey)
+      if (layoutInspectorRaw === 'true' || layoutInspectorRaw === 'false') {
+        setShowLayoutInspector(layoutInspectorRaw === 'true')
       }
 
       const previewSizeRaw = window.localStorage.getItem(previewSizeStorageKey)
@@ -1014,7 +1036,7 @@ export default function ScreenEditPage() {
     } catch {}
     previewSettingsHydratedRef.current = true
     setPreviewSettingsLoaded(true)
-  }, [readPreviewCacheSnapshot, ZOOM_MAX, ZOOM_MIN])
+  }, [readPreviewCacheSnapshot, ZOOM_MAX, ZOOM_MIN, apiLiveRefreshStorageKey, layoutInspectorStorageKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1027,6 +1049,8 @@ export default function ScreenEditPage() {
       window.localStorage.setItem(canvasColorStorageKey, canvasBgColor)
       window.localStorage.setItem(canvasMeshStorageKey, showCanvasMesh ? 'true' : 'false')
       window.localStorage.setItem(frameConfigStorageKey, JSON.stringify(frameConfigByCategory))
+      window.localStorage.setItem(apiLiveRefreshStorageKey, apiLiveRefreshEnabled ? 'true' : 'false')
+      window.localStorage.setItem(layoutInspectorStorageKey, showLayoutInspector ? 'true' : 'false')
       window.localStorage.setItem(previewSettingsKey, JSON.stringify({
         previewMode,
         previewSize,
@@ -1035,12 +1059,14 @@ export default function ScreenEditPage() {
         previewTheme,
         deviceFrameEnabled,
         mobileAutoClosePalette,
+        apiLiveRefreshEnabled,
+        showLayoutInspector,
         canvasBgColor,
         showCanvasMesh,
         frameConfigByCategory,
       }))
     } catch {}
-  }, [readPreviewCacheSnapshot, previewSettingsKey, previewSizeStorageKey, canvasZoomStorageKey, canvasExpandedStorageKey, deviceFrameStorageKey, canvasColorStorageKey, canvasMeshStorageKey, frameConfigStorageKey, previewMode, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory])
+  }, [readPreviewCacheSnapshot, previewSettingsKey, previewSizeStorageKey, canvasZoomStorageKey, canvasExpandedStorageKey, deviceFrameStorageKey, canvasColorStorageKey, canvasMeshStorageKey, frameConfigStorageKey, apiLiveRefreshStorageKey, layoutInspectorStorageKey, previewMode, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, apiLiveRefreshEnabled, showLayoutInspector, canvasBgColor, showCanvasMesh, frameConfigByCategory])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1936,6 +1962,72 @@ export default function ScreenEditPage() {
   }, [])
 
   const selectedNode = activeSelectedId ? findNode(activeRoot, activeSelectedId) : null
+  const selectedLayoutSummary = useMemo(() => {
+    if (!selectedNode) return null
+    const p = selectedNode.props ?? {}
+    const format = (v: unknown, fallback = '-') => {
+      if (v == null) return fallback
+      const s = String(v).trim()
+      return s.length ? s : fallback
+    }
+    return {
+      display: format((p as any).display, selectedNode.type === 'container' ? 'flex' : '-'),
+      direction: format((p as any).flexDirection),
+      gap: format((p as any).gap),
+      padding: format((p as any).padding),
+      margin: format((p as any).margin),
+      width: format((p as any).width, 'auto'),
+      height: format((p as any).height, 'auto'),
+    }
+  }, [selectedNode])
+
+  useEffect(() => {
+    if (previewMode || !showLayoutInspector || !activeSelectedId) {
+      setLayoutGuideRect(null)
+      return
+    }
+    const host = layoutOverlayHostRef.current
+    if (!host) {
+      setLayoutGuideRect(null)
+      return
+    }
+
+    let raf = 0
+    const updateRect = () => {
+      const el = host.querySelector(`[data-node-id="${activeSelectedId}"]`) as HTMLElement | null
+      if (!el) {
+        setLayoutGuideRect(null)
+        return
+      }
+      const hostRect = host.getBoundingClientRect()
+      const rect = el.getBoundingClientRect()
+      setLayoutGuideRect({
+        left: rect.left - hostRect.left + host.scrollLeft,
+        top: rect.top - hostRect.top + host.scrollTop,
+        width: rect.width,
+        height: rect.height,
+      })
+    }
+    const requestUpdate = () => {
+      if (raf) cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(updateRect)
+    }
+
+    requestUpdate()
+    host.addEventListener('scroll', requestUpdate, { passive: true })
+    window.addEventListener('resize', requestUpdate)
+    const ro = new ResizeObserver(() => requestUpdate())
+    ro.observe(host)
+    const selectedEl = host.querySelector(`[data-node-id="${activeSelectedId}"]`) as HTMLElement | null
+    if (selectedEl) ro.observe(selectedEl)
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      host.removeEventListener('scroll', requestUpdate)
+      window.removeEventListener('resize', requestUpdate)
+      ro.disconnect()
+    }
+  }, [previewMode, showLayoutInspector, activeSelectedId, activeRoot, canvasZoom, previewSize])
   const parentPropSchema = useMemo((): { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[] => {
     const mergeByKey = (
       primary: { key: string; type: 'string' | 'number' | 'boolean'; required?: boolean }[],
@@ -3696,6 +3788,14 @@ export default function ScreenEditPage() {
                     >
                       Mesh {showCanvasMesh ? 'On' : 'Off'}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowLayoutInspector((v) => !v)}
+                      className={`px-2 py-1 text-xs rounded ${showLayoutInspector ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                      title="Toggle selected component layout inspector"
+                    >
+                      Layout {showLayoutInspector ? 'On' : 'Off'}
+                    </button>
                   </>
                 )}
                 {previewMode && (
@@ -3823,6 +3923,7 @@ export default function ScreenEditPage() {
                     : canvasBgColor
                   return (
                     <div
+                      ref={layoutOverlayHostRef}
                       className="relative w-full h-full min-w-0 overflow-auto"
                       style={{ backgroundColor: stageBackdropColor }}
                     >
@@ -3918,6 +4019,31 @@ export default function ScreenEditPage() {
                             </div>
                           )
                         })}
+
+                        {!previewMode && showLayoutInspector && layoutGuideRect && selectedLayoutSummary && (
+                          <>
+                            <div
+                              className="pointer-events-none absolute z-[121] px-2 py-1 rounded border border-indigo-200 dark:border-indigo-600 bg-white/90 dark:bg-[#0d1117]/90 text-[10px] text-indigo-700 dark:text-indigo-300 whitespace-nowrap"
+                              style={{
+                                left: Math.max(0, layoutGuideRect.left - 8),
+                                top: Math.max(0, layoutGuideRect.top + (layoutGuideRect.height / 2)),
+                                transform: 'translate(-100%, -50%)',
+                              }}
+                            >
+                              {Math.round(layoutGuideRect.width)} x {Math.round(layoutGuideRect.height)}
+                            </div>
+                            <div
+                              className="pointer-events-none absolute z-[121] px-2 py-1 rounded border border-emerald-200 dark:border-emerald-600 bg-white/90 dark:bg-[#0d1117]/90 text-[10px] text-emerald-700 dark:text-emerald-300 whitespace-nowrap"
+                              style={{
+                                left: layoutGuideRect.left + layoutGuideRect.width + 8,
+                                top: Math.max(0, layoutGuideRect.top + (layoutGuideRect.height / 2)),
+                                transform: 'translateY(-50%)',
+                              }}
+                            >
+                              d:{selectedLayoutSummary.display} fd:{selectedLayoutSummary.direction} gap:{selectedLayoutSummary.gap} p:{selectedLayoutSummary.padding} m:{selectedLayoutSummary.margin}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   )
