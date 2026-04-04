@@ -879,7 +879,7 @@ export function PropertyPanel({
     }
     if (!monacoReady) {
       return (
-        <div className={`${className} h-[42px] border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`}>
+        <div className={`${className} h-[60px] border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`}>
           {monacoLoading}
         </div>
       )
@@ -890,7 +890,7 @@ export function PropertyPanel({
           language="javascript"
           value={value}
           onChange={(next) => onChange(next ?? '')}
-          height="42px"
+          height="60px"
           loading={monacoLoading}
           options={{
             minimap: { enabled: false },

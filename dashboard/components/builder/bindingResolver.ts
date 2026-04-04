@@ -120,7 +120,18 @@ function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
 
   const source = parts[0]
   const tail = parts.slice(1)
-  const sourceRoot = data[source]
+  let sourceRoot = data[source]
+  
+  // If source not found and contains hyphens/spaces, try normalized version
+  if ((sourceRoot == null || typeof sourceRoot !== 'object') && source.match(/[-\s]/)) {
+    const normalizedSource = source
+      .trim()
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase()
+    sourceRoot = data[normalizedSource]
+  }
+  
   if (sourceRoot == null || typeof sourceRoot !== 'object') return direct
 
   return findPathInObject(sourceRoot, tail)
