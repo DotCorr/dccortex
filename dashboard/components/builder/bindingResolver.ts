@@ -120,10 +120,10 @@ function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
 
   const source = parts[0]
   const tail = parts.slice(1)
-  let sourceRoot = data[source]
+    let sourceRoot = data[source]
   
-  // If source not found and contains hyphens/spaces, try normalized version
-  if ((sourceRoot == null || typeof sourceRoot !== 'object') && source.match(/[-\s]/)) {
+    // If source not found and contains hyphens/spaces, try normalized version
+    if ((sourceRoot == null || typeof sourceRoot !== 'object') && source.match(/[-\s]/)) {
     const normalizedSource = source
       .trim()
       .replace(/[^a-zA-Z0-9]+/g, '_')
@@ -134,7 +134,24 @@ function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
   
   if (sourceRoot == null || typeof sourceRoot !== 'object') return direct
 
-  return findPathInObject(sourceRoot, tail)
+    // Try exact path first
+    const exactPath = findPathInObject(sourceRoot, tail)
+    if (exactPath !== undefined) return exactPath
+  
+    // If not found and any tail part contains non-alphanumeric chars, also try normalizing tail keys
+    const hasSpecialChars = tail.some(p => /[-\s]/.test(p))
+    if (hasSpecialChars) {
+      const normalizedTail = tail.map(p => 
+        p.trim()
+          .replace(/[^a-zA-Z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .toLowerCase()
+      )
+      const normalizedPath = findPathInObject(sourceRoot, normalizedTail)
+      if (normalizedPath !== undefined) return normalizedPath
+    }
+
+    return exactPath || direct
 }
 
 export function resolveBinding(raw: string, ctx: ResolveContext): string {
