@@ -469,7 +469,18 @@ function clamp01(v: number): number {
 
 function shouldTrackApiUrl(url: string): boolean {
   const lower = String(url ?? '').toLowerCase()
+  if (!lower) return false
+  if (lower.includes('/api/projects/') && (lower.includes('/presence') || lower.includes('/sync'))) return false
   return lower.includes('/api/') || lower.includes('openai') || lower.includes('anthropic') || lower.includes('/ai/')
+}
+
+function expandDataSourceAliases(name: string): string[] {
+  const trimmed = String(name ?? '').trim()
+  if (!trimmed) return []
+  const snake = trimmed.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase()
+  const kebab = trimmed.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+  const compact = trimmed.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()
+  return Array.from(new Set([trimmed, snake, kebab, compact].filter(Boolean)))
 }
 
 type StoredPreviewSettings = Partial<{
@@ -608,6 +619,7 @@ export default function ScreenEditPage() {
   const [globalStateDefinitions, setGlobalStateDefinitions] = useState<StateDefinition[]>([])
   const [dataSources, setDataSources] = useState<DataSourceDef[]>([])
   const [namedScripts, setNamedScripts] = useState<Record<string, string>>({})
+  const [scriptsHydrated, setScriptsHydrated] = useState(false)
   const [globalReusables, setGlobalReusables] = useState<ReusableDefinition[]>([])
   const [promotingReusableIds, setPromotingReusableIds] = useState<string[]>([])
   const [globalTheme, setGlobalTheme] = useState<ScreenTheme>({})
@@ -633,6 +645,7 @@ export default function ScreenEditPage() {
   dataSourcesRef.current = dataSources
   const namedScriptsRef = useRef<Record<string, string>>(namedScripts)
   namedScriptsRef.current = namedScripts
+  const scriptFnCacheRef = useRef<Record<string, ((state: Record<string, unknown>, data: Record<string, unknown>) => unknown) | null>>({})
   /** NavProps passed to the currently-previewed (non-modal) screen */
   const [previewNavProps, setPreviewNavProps] = useState<Record<string, unknown>>({})
   /** NavProps passed to the currently-open modal screen */
@@ -647,7 +660,7 @@ export default function ScreenEditPage() {
   const [inspection, setInspection] = useState<{ nodeId: string; html: string } | null>(null)
   const [apiLogs, setApiLogs] = useState<ApiLogEntry[]>([])
   const [collaboratorsDialogOpen, setCollaboratorsDialogOpen] = useState(false)
-  const [presenceMode, setPresenceMode] = useState<PresenceMode>('slow')
+  const [presenceMode, setPresenceMode] = useState<PresenceMode>('off')
   const [mobileAutoClosePalette, setMobileAutoClosePalette] = useState(false)
   const [panelWidthsVersion, setPanelWidthsVersion] = useState(0)
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
@@ -997,7 +1010,6 @@ export default function ScreenEditPage() {
         }
       }
 
-      console.info('[editor:persistence] hydrated', readPreviewCacheSnapshot())
     } catch {}
     previewSettingsHydratedRef.current = true
     setPreviewSettingsLoaded(true)
@@ -1026,18 +1038,6 @@ export default function ScreenEditPage() {
         showCanvasMesh,
         frameConfigByCategory,
       }))
-      console.info('[editor:persistence] saved', {
-        state: {
-          previewSize,
-          canvasZoom,
-          canvasExpanded,
-          deviceFrameEnabled,
-          canvasBgColor,
-          showCanvasMesh,
-          frameConfigByCategory,
-        },
-        cache: readPreviewCacheSnapshot(),
-      })
     } catch {}
   }, [readPreviewCacheSnapshot, previewSettingsKey, previewSizeStorageKey, canvasZoomStorageKey, canvasExpandedStorageKey, deviceFrameStorageKey, canvasColorStorageKey, canvasMeshStorageKey, frameConfigStorageKey, previewMode, previewSize, canvasZoom, canvasExpanded, previewTheme, deviceFrameEnabled, mobileAutoClosePalette, canvasBgColor, showCanvasMesh, frameConfigByCategory])
 
@@ -1221,6 +1221,10 @@ export default function ScreenEditPage() {
 
   const screen = data?.screen
   useEffect(() => {
+    setScriptsHydrated(false)
+  }, [screenId])
+
+  useEffect(() => {
     const raw = screen?.layout as Node | ScreenLayoutPayload | undefined
     if (!raw) return
     // client-side sanitize (same logic as server) to avoid crashing in preview
@@ -1258,6 +1262,7 @@ export default function ScreenEditPage() {
       setStateDefinitions(Array.isArray(payload.stateDefinitions) ? payload.stateDefinitions : [])
       setDataSources(Array.isArray(payload.dataSources) ? payload.dataSources : [])
       setNamedScripts(payload.namedScripts && typeof payload.namedScripts === 'object' ? payload.namedScripts : {})
+      setScriptsHydrated(true)
       if (payload.theme && typeof payload.theme === 'object') {
         setTheme({ ...DEFAULT_THEME, ...payload.theme })
       }
@@ -1286,6 +1291,7 @@ export default function ScreenEditPage() {
       undoStackRef.current = []
       redoStackRef.current = []
       setUndoRedoVersion((v) => v + 1)
+      setScriptsHydrated(true)
     }
   }, [screen?.id])
   useEffect(() => {
@@ -1353,6 +1359,7 @@ export default function ScreenEditPage() {
           setStateDefinitions(Array.isArray(payload.stateDefinitions) ? payload.stateDefinitions : [])
           setDataSources(Array.isArray(payload.dataSources) ? payload.dataSources : [])
           setNamedScripts(payload.namedScripts && typeof payload.namedScripts === 'object' ? payload.namedScripts : {})
+          setScriptsHydrated(true)
           if (payload.theme && typeof payload.theme === 'object') setTheme((t) => ({ ...t, ...payload.theme }))
           if (payload.seoSettings && typeof payload.seoSettings === 'object') setSeoSettings(payload.seoSettings as SeoSettings)
         })
@@ -1364,6 +1371,7 @@ export default function ScreenEditPage() {
         undoStackRef.current = []
         redoStackRef.current = []
         setUndoRedoVersion((v) => v + 1)
+        setScriptsHydrated(true)
       }
       if (screen?.script != null) setScript(String(screen.script))
       // Also refresh globals from server
@@ -1775,16 +1783,6 @@ export default function ScreenEditPage() {
     lastAppliedRemoteViewAtRef.current = sentAt
     applyingRemoteViewStateRef.current = true
 
-    console.info('[editor:persistence] applying remote collaborator view state', {
-      clientId: selfPresence?.clientId,
-      userId: selfPresence?.userId,
-      sentAt,
-      previewSize: latest.previewSize,
-      deviceFrameEnabled: latest.deviceFrameEnabled,
-      frameConfigByCategory: latest.frameConfigByCategory,
-      cacheBeforeApply: readPreviewCacheSnapshot(),
-    })
-
     if (nextPreviewSize != null) {
       setPreviewSize(nextPreviewSize)
     }
@@ -1974,6 +1972,47 @@ export default function ScreenEditPage() {
     },
     [activeSelectedId, editingReusableId, persistEditingReusableRoot, commitLayoutChange]
   )
+
+  const handleWrapSelectedWithSuspense = useCallback(() => {
+    if (!activeSelectedId) return
+    const currentRoot = editingReusableId ? (editingReusableRootRef.current ?? rootRef.current) : rootRef.current
+    const targetNode = findNode(currentRoot, activeSelectedId)
+    if (!targetNode) return
+
+    if (targetNode.type === 'suspense') {
+      const nextRoot = updateNodeInTree(currentRoot, targetNode.id, (n) => ({
+        ...n,
+        props: {
+          ...n.props,
+          suspenseEnabled: true,
+          suspenseSmart: n.props.suspenseSmart ?? true,
+          suspenseVariant: n.props.suspenseVariant ?? 'skeleton',
+        },
+      }))
+      if (editingReusableId) persistEditingReusableRoot(nextRoot)
+      else commitLayoutChange(nextRoot, true)
+      return
+    }
+
+    const suspenseNode = createNode('suspense')
+    suspenseNode.props = {
+      ...suspenseNode.props,
+      suspenseEnabled: true,
+      suspenseSmart: true,
+      suspenseVariant: 'skeleton',
+    }
+    suspenseNode.children = [targetNode]
+
+    const nextRoot = replaceNodeInTree(currentRoot, activeSelectedId, suspenseNode)
+    if (editingReusableId) {
+      persistEditingReusableRoot(nextRoot)
+      setReusableSelectedId(suspenseNode.id)
+    } else {
+      commitLayoutChange(nextRoot, true)
+      setSelectedId(suspenseNode.id)
+    }
+    pushEditorNotice('success', 'Wrapped component in Suspense.')
+  }, [activeSelectedId, editingReusableId, persistEditingReusableRoot, commitLayoutChange, pushEditorNotice])
 
   const handleDeleteNode = useCallback((id: string) => {
     const currentRoot = editingReusableId ? (editingReusableRootRef.current ?? rootRef.current) : rootRef.current
@@ -2588,6 +2627,19 @@ export default function ScreenEditPage() {
   }, [fitLogicalSize.height, fitLogicalSize.width])
 
   useEffect(() => {
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason as { name?: string; message?: string } | undefined
+      const name = String(reason?.name ?? '')
+      const message = String(reason?.message ?? reason ?? '')
+      if (name.toLowerCase().includes('canceled') || message.toLowerCase().includes('canceled')) {
+        event.preventDefault()
+      }
+    }
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+    return () => window.removeEventListener('unhandledrejection', onUnhandledRejection)
+  }, [])
+
+  useEffect(() => {
     const requestInterceptor = axios.interceptors.request.use((config) => {
       ;(config as any).__dccStart = performance.now()
       return config
@@ -2808,9 +2860,11 @@ export default function ScreenEditPage() {
         setRuntimeData((prev) => {
           const next: Record<string, unknown> = { ...prev }
           for (const [key, value] of Object.entries(incoming)) {
-            // Keep last known good snapshot when a source temporarily fails and returns null/undefined.
-            if ((value === null || value === undefined) && prev[key] !== undefined && prev[key] !== null) continue
-            next[key] = value
+            for (const alias of expandDataSourceAliases(key)) {
+              // Keep last known good snapshot when a source temporarily fails and returns null/undefined.
+              if ((value === null || value === undefined) && prev[alias] !== undefined && prev[alias] !== null) continue
+              next[alias] = value
+            }
           }
           return next
         })
@@ -2850,7 +2904,15 @@ export default function ScreenEditPage() {
     es.onmessage = (evt) => {
       try {
         const incoming = JSON.parse(evt.data) as Record<string, unknown>
-        setRuntimeData((prev) => ({ ...prev, ...incoming }))
+        setRuntimeData((prev) => {
+          const next = { ...prev }
+          for (const [key, value] of Object.entries(incoming)) {
+            for (const alias of expandDataSourceAliases(key)) {
+              next[alias] = value
+            }
+          }
+          return next
+        })
       } catch {}
     }
     es.onerror = () => {
@@ -2859,14 +2921,23 @@ export default function ScreenEditPage() {
     return () => es.close()
   }, [previewMode, projectId, realtimePollMs])
 
+  useEffect(() => {
+    scriptFnCacheRef.current = {}
+  }, [namedScripts])
+
   const runScript = useCallback(
     (scriptName: string): unknown => {
       const body = namedScripts[scriptName]
       if (!body || typeof body !== 'string') return undefined
       try {
-        const fn = new Function('state', 'data', 'return (' + body.trim() + ')')
+        let fn = scriptFnCacheRef.current[scriptName]
+        if (!fn) {
+          fn = new Function('state', 'data', 'return (' + body.trim() + ')') as (state: Record<string, unknown>, data: Record<string, unknown>) => unknown
+          scriptFnCacheRef.current[scriptName] = fn
+        }
         return fn(runtimeState, runtimeData)
       } catch {
+        scriptFnCacheRef.current[scriptName] = null
         return undefined
       }
     },
@@ -3913,6 +3984,7 @@ export default function ScreenEditPage() {
               runtimeData={runtimeData}
               onDataSourcesChange={setDataSources}
               namedScripts={namedScripts}
+              scriptsLoading={!scriptsHydrated}
               onNamedScriptsChange={setNamedScripts}
               theme={theme}
               onThemeChange={handleThemeChange}
@@ -3933,6 +4005,7 @@ export default function ScreenEditPage() {
               projectAssets={projectAssets}
               seoSettings={seoSettings}
               onSeoChange={handleSeoChange}
+              onWrapSelectedWithSuspense={handleWrapSelectedWithSuspense}
               onEditReusable={startEditingReusable}
               customTypes={customTypes}
               onCustomTypesChange={handleCustomTypesChange}

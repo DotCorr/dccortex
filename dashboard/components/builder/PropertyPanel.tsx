@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
+import type { EditorProps } from '@monaco-editor/react'
 import { Zap } from 'lucide-react'
 import type { Node } from './registry'
 import { getComponentDef, STYLE_PROP_KEYS } from './registry'
@@ -29,7 +30,8 @@ import { AssetPickerModal } from './AssetPickerModal'
 import { AnimationSequenceBuilder, type AnimationSequenceConfig } from './AnimationSequenceBuilder'
 import type { ReusableDefinition, ReusablePropSchema } from './globals'
 
-const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
+const MonacoEditorBase = dynamic(() => import('@monaco-editor/react'), { ssr: false })
+const MonacoEditor = (props: EditorProps) => <MonacoEditorBase keepCurrentModel {...props} />
 
 export type StateDefinition = { id: string; name: string; initialValue: string; type?: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date' }
 export type CustomTypeField = { name: string; type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date'; defaultValue?: string }
@@ -81,6 +83,7 @@ type Props = {
   /** Live runtime data payload for Data Inspector path discovery. */
   runtimeData?: Record<string, unknown>
   namedScripts?: Record<string, string>
+  scriptsLoading?: boolean
   onNamedScriptsChange?: (scripts: Record<string, string>) => void
   theme?: ScreenTheme
   onThemeChange?: (updates: Partial<ScreenTheme>) => void
@@ -485,6 +488,7 @@ export function PropertyPanel({
   onDataSourcesChange,
   runtimeData = {},
   namedScripts = {},
+  scriptsLoading = false,
   onNamedScriptsChange,
   theme = {},
   onThemeChange,
@@ -687,13 +691,24 @@ export function PropertyPanel({
       ...projectApiSourceNames,
       ...projectTableNames,
     ]
-    // Return only original names; aliases still work in binding resolution via setWithAliases() in runtime-data endpoint
-    return Array.from(new Set(base))
+    return Array.from(new Set(
+      base
+        .map((name) => expandSourceAliases(name).find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? name)
+        .filter(Boolean)
+    ))
   }, [dataSources, projectApiSourceNames, projectTableNames])
   const bindingDataSources = useMemo<DataSourceDef[]>(() => bindingDataSourceNames.map((name) => ({ id: `binding-${name}`, name })), [bindingDataSourceNames])
+  const runtimeSourceLookup = useMemo(() => {
+    const lookup: Record<string, string> = {}
+    for (const key of Object.keys(runtimeData)) {
+      const canonical = expandSourceAliases(key).find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? key
+      if (!lookup[canonical]) lookup[canonical] = key
+    }
+    return lookup
+  }, [runtimeData, expandSourceAliases])
   const runtimeSourceNames = useMemo(
-    () => bindingDataSourceNames.filter((name) => Object.prototype.hasOwnProperty.call(runtimeData, name)),
-    [bindingDataSourceNames, runtimeData]
+    () => Object.keys(runtimeSourceLookup).sort((a, b) => a.localeCompare(b)),
+    [runtimeSourceLookup]
   )
   useEffect(() => {
     if (runtimeSourceNames.length === 0) {
@@ -707,7 +722,7 @@ export function PropertyPanel({
 
   const inspectorTokens = useMemo(() => {
     if (!inspectorSource) return [] as string[]
-    const sourceValue = runtimeData[inspectorSource]
+    const sourceValue = runtimeData[runtimeSourceLookup[inspectorSource] ?? inspectorSource]
     const out = new Set<string>()
 
     const walk = (value: unknown, path: string, depth: number) => {
@@ -739,7 +754,7 @@ export function PropertyPanel({
 
     walk(sourceValue, `data.${inspectorSource}`, 0)
     return Array.from(out)
-  }, [inspectorSource, runtimeData])
+  }, [inspectorSource, runtimeData, runtimeSourceLookup])
   const inspectorPreferredSource = useMemo(() => {
     if (!inspectorSource) return ''
     const aliases = expandSourceAliases(inspectorSource)
@@ -755,7 +770,7 @@ export function PropertyPanel({
   }, [inspectorPreferredSource])
   const inspectorPayloadPreview = useMemo(() => {
     if (!inspectorSource) return ''
-    const value = runtimeData[inspectorSource]
+    const value = runtimeData[runtimeSourceLookup[inspectorSource] ?? inspectorSource]
     if (value === undefined) return ''
     try {
       const raw = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
@@ -763,7 +778,7 @@ export function PropertyPanel({
     } catch {
       return String(value)
     }
-  }, [inspectorSource, runtimeData])
+  }, [inspectorSource, runtimeData, runtimeSourceLookup])
   const inspectorTokenValuePreview = useMemo(() => {
     const readByPath = (root: unknown, path: string): unknown => {
       const parts = path.split('.').filter(Boolean)
@@ -840,6 +855,7 @@ export function PropertyPanel({
     () => Object.values(props).some((v) => typeof v === 'string' && /\{\{\s*(data|state|script|prop|navProp)\./.test(v)),
     [props]
   )
+  const namedScriptNames = useMemo(() => Object.keys(namedScripts).filter(Boolean), [namedScripts])
   const loadingUxEnabled = Boolean(props.suspenseEnabled)
   /* Style only: typography, colors, borders, shadow, position, etc. No layout (width/height/padding/margin live in Layout tab). */
   const styleGroups: { title: string; keys: readonly string[] }[] = [
@@ -2816,17 +2832,27 @@ export function PropertyPanel({
                         {/* Run script */}
                         {config.action === 'runScript' && (
                           <>
+                            {scriptsLoading && (
+                              <div className="mb-1.5 flex items-center gap-2 rounded border border-emerald-300/60 bg-emerald-50/70 dark:bg-emerald-900/20 px-2 py-1 text-[11px] text-emerald-700 dark:text-emerald-300">
+                                <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="font-semibold">DCCortex</span>
+                                <span>loading scripts...</span>
+                              </div>
+                            )}
                             <select
                               value={config.scriptName ?? ''}
                               onChange={(e) => updateStep(stepIdx, { ...config, scriptName: e.target.value || undefined })}
                               className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white"
                             >
                               <option value="">Select named script</option>
-                              {Object.keys(namedScripts).filter(Boolean).map((name) => (
+                              {namedScriptNames.map((name) => (
                                 <option key={name} value={name}>{name}</option>
                               ))}
                               <option value="__inline__">Inline script</option>
                             </select>
+                            {!scriptsLoading && namedScriptNames.length === 0 && (
+                              <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">No named scripts found yet. Use Inline script or add scripts in the Data tab.</p>
+                            )}
                             {(config.scriptName === '__inline__' || !config.scriptName) && (
                               <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#161b22]">
                                 <MonacoEditor
@@ -3209,13 +3235,13 @@ export function PropertyPanel({
           const sourcesWithParams = dataSources.filter(d => (d as any).urlParamDefs?.length)
           return (
           <div className="space-y-3">
-            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.some.path&#125;&#125;</code> for nested fields. Source names with spaces also work as <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">snake_case</code> or <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">kebab-case</code> when typing manually.</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.source_name&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.source_name.some.path&#125;&#125;</code> for nested fields. Use snake_case source keys in bindings.</p>
 
             <div className="border border-gray-200 dark:border-[#30363d] rounded p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Data Inspector</p>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Live keys from preview runtime. Click to copy. (Sources with spaces also work as snake_case/kebab-case when typing manually.)</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Live keys from preview runtime. Click to copy. Source names are normalized to snake_case.</p>
                 </div>
                 {runtimeSourceNames.length > 0 && (
                   <select

@@ -93,6 +93,16 @@ function getByPath(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.trim().split('.')
   let current: unknown = obj
   for (const p of parts) {
+    if (typeof current === 'string') {
+      const raw = current.trim()
+      if (raw.startsWith('{') || raw.startsWith('[')) {
+        try {
+          current = JSON.parse(raw) as unknown
+        } catch {
+          return undefined
+        }
+      }
+    }
     if (current == null || typeof current !== 'object') return undefined
     current = (current as Record<string, unknown>)[p]
   }
@@ -120,38 +130,57 @@ function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
 
   const source = parts[0]
   const tail = parts.slice(1)
-    let sourceRoot = data[source]
-  
-    // If source not found and contains hyphens/spaces, try normalized version
-    if ((sourceRoot == null || typeof sourceRoot !== 'object') && source.match(/[-\s]/)) {
-    const normalizedSource = source
-      .trim()
+
+  const sourceAliases = Array.from(new Set([
+    source,
+    source.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase(),
+    source.trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase(),
+    source.trim().replace(/[^a-zA-Z0-9]+/g, '').toLowerCase(),
+  ].filter(Boolean)))
+
+  let sourceRoot: unknown = undefined
+  for (const alias of sourceAliases) {
+    if (Object.prototype.hasOwnProperty.call(data, alias)) {
+      sourceRoot = data[alias]
+      break
+    }
+  }
+
+  if ((sourceRoot == null || typeof sourceRoot !== 'object') && sourceRoot === undefined) {
+    const sourceCompact = sourceAliases[sourceAliases.length - 1]
+    const matchingKey = Object.keys(data).find((key) => {
+      const normalized = key.trim().replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()
+      return normalized && normalized === sourceCompact
+    })
+    if (matchingKey) sourceRoot = data[matchingKey]
+  }
+
+  if (typeof sourceRoot === 'string') {
+    const raw = sourceRoot.trim()
+    if (raw.startsWith('{') || raw.startsWith('[')) {
+      try {
+        sourceRoot = JSON.parse(raw) as unknown
+      } catch {
+        sourceRoot = undefined
+      }
+    }
+  }
+
+  if (sourceRoot == null || typeof sourceRoot !== 'object') return direct
+
+  const exactPath = findPathInObject(sourceRoot, tail)
+  if (exactPath !== undefined) return exactPath
+
+  const normalizedTail = tail.map((p) =>
+    p.trim()
       .replace(/[^a-zA-Z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '')
       .toLowerCase()
-    sourceRoot = data[normalizedSource]
-  }
-  
-  if (sourceRoot == null || typeof sourceRoot !== 'object') return direct
+  )
+  const normalizedPath = findPathInObject(sourceRoot, normalizedTail)
+  if (normalizedPath !== undefined) return normalizedPath
 
-    // Try exact path first
-    const exactPath = findPathInObject(sourceRoot, tail)
-    if (exactPath !== undefined) return exactPath
-  
-    // If not found and any tail part contains non-alphanumeric chars, also try normalizing tail keys
-    const hasSpecialChars = tail.some(p => /[-\s]/.test(p))
-    if (hasSpecialChars) {
-      const normalizedTail = tail.map(p => 
-        p.trim()
-          .replace(/[^a-zA-Z0-9]+/g, '_')
-          .replace(/^_+|_+$/g, '')
-          .toLowerCase()
-      )
-      const normalizedPath = findPathInObject(sourceRoot, normalizedTail)
-      if (normalizedPath !== undefined) return normalizedPath
-    }
-
-    return exactPath || direct
+  return direct
 }
 
 export function resolveBinding(raw: string, ctx: ResolveContext): string {
