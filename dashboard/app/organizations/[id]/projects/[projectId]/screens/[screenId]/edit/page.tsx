@@ -613,6 +613,7 @@ export default function ScreenEditPage() {
   const [deviceFrameEnabled, setDeviceFrameEnabled] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.deviceFrameEnabled ?? true)
   const [frameConfigByCategory, setFrameConfigByCategory] = useState<Record<FrameCategory, FrameConfig>>(() => loadStoredPreviewSettings(projectId, screenId)?.frameConfigByCategory ?? DEFAULT_FRAME_CONFIG_BY_CATEGORY)
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>(() => loadStoredPreviewSettings(projectId, screenId)?.previewTheme ?? 'light')
+  const [apiLiveRefreshEnabled, setApiLiveRefreshEnabled] = useState(true)
   const [theme, setTheme] = useState<ScreenTheme>(DEFAULT_THEME)
   const [script, setScript] = useState('')
   const [stateDefinitions, setStateDefinitions] = useState<StateDefinition[]>([])
@@ -2886,12 +2887,12 @@ export default function ScreenEditPage() {
 
   // External API polling: refresh runtime data periodically while preview is on.
   useEffect(() => {
-    if (!previewMode || !hasExternalApiSources) return
+    if (!previewMode || !hasExternalApiSources || !apiLiveRefreshEnabled) return
     const timer = setInterval(() => {
       fetchRuntimeData()
     }, 2000)
     return () => clearInterval(timer)
-  }, [previewMode, hasExternalApiSources, fetchRuntimeData])
+  }, [previewMode, hasExternalApiSources, apiLiveRefreshEnabled, fetchRuntimeData])
 
   // Real-time streaming: subscribe to SSE when datasource has realtimePollMs > 0.
   // Server pushes DB snapshots over a single persistent connection — no repeated HTTP
@@ -3700,6 +3701,14 @@ export default function ScreenEditPage() {
                 {previewMode && (
                   <>
                     <span className="text-gray-300 dark:text-gray-600">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setApiLiveRefreshEnabled((v) => !v)}
+                      className={`px-2 py-1 text-xs rounded ${apiLiveRefreshEnabled ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                      title={apiLiveRefreshEnabled ? 'Disable external API auto-refresh while in preview' : 'Enable external API auto-refresh while in preview'}
+                    >
+                      API Live {apiLiveRefreshEnabled ? 'On' : 'Off'}
+                    </button>
                     <div className="flex items-center gap-1">
                       <span className="text-xs text-gray-500">Theme:</span>
                       <button

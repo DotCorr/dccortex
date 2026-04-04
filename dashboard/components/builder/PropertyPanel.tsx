@@ -2389,7 +2389,22 @@ export function PropertyPanel({
                         </label>
                         <div>
                           <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Manual loading condition (optional)</label>
-                          {renderExpressionEditor(String(props.suspenseWhen ?? ''), (next) => setProp('suspenseWhen', next || undefined), '{{state.isLoading}}')}
+                          <div className="flex gap-1">
+                            {renderExpressionEditor(
+                              String(props.suspenseWhen ?? ''),
+                              (next) => setProp('suspenseWhen', next || undefined),
+                              '{{state.isLoading}}',
+                              'flex-1'
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setPropExpressionKey('suspenseWhen')}
+                              className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                              title="Open expression builder"
+                            >
+                              Build
+                            </button>
+                          </div>
                         </div>
                         <div>
                           <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Fallback label</label>
