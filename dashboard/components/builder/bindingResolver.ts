@@ -512,6 +512,17 @@ export function resolveExpression(raw: string, ctx: ResolveContext): string {
   // from characters inside token paths (e.g. hyphens in source names).
   const stripped = raw.replace(BINDING_REGEX, '').trim()
   const hasExpressionOperators = /\?|\|\||&&|\?\?|===|!==|>=|<=|==|!=|\+|\-|\*|\/|%|>|</.test(raw)
+  const isTokenOnlyTemplate = stripped.length === 0
+  if (isTokenOnlyTemplate) {
+    return raw.replace(BINDING_REGEX, (_, expr) => {
+      const v = resolveToken(expr, ctx)
+      if (v === undefined || v === null) return ''
+      if (typeof v === 'object') {
+        try { return JSON.stringify(v) } catch { return String(v) }
+      }
+      return String(v)
+    })
+  }
   const isLikelyTemplateString = stripped.length > 0 && !hasExpressionOperators
   if (isLikelyTemplateString) {
     return raw.replace(BINDING_REGEX, (_, expr) => {
