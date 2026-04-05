@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { logAuditEvent } from '@/lib/audit'
 import { z } from 'zod'
 import axios from 'axios'
 
@@ -90,7 +91,33 @@ export async function GET(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ organizations })
+    const platformApiUrl = process.env.PLATFORM_API_URL || 'http://localhost:3001'
+    let containerMap = new Map<string, any>()
+    try {
+      const { data } = await axios.get(`${platformApiUrl}/api/v1/apps/containers`, { timeout: 2000 })
+      const records = Array.isArray(data?.containers) ? data.containers : []
+      containerMap = new Map(records.map((record: any) => [record.orgId, record]))
+    } catch {
+      containerMap = new Map()
+    }
+
+    const organizationsWithContainerState = organizations.map((org) => {
+      const liveContainer = containerMap.get(org.id)
+      if (!liveContainer) return org
+      return {
+        ...org,
+        metadata: {
+          ...((org.metadata as Record<string, unknown> | null) ?? {}),
+          containerStatus: liveContainer.status,
+          containerBackend: liveContainer.backend,
+          containerProvisionedAt: liveContainer.provisionedAt,
+          containerRequestedAt: liveContainer.requestedAt,
+          containerLastError: liveContainer.lastError,
+        },
+      }
+    })
+
+    return NextResponse.json({ organizations: organizationsWithContainerState })
   } catch (error: any) {
     return NextResponse.json(
       { error: 'Failed to fetch organizations', message: error.message },
@@ -151,13 +178,20 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Create organization
+    const nowIso = new Date().toISOString()
+
+    // Create organization and mark provisioning as pending.
+    // The platform registry is async, so org creation should stay fast and not block on it.
     const organization = await prisma.organization.create({
       data: {
         name,
         slug,
         description,
         ownerId: userId,
+        metadata: {
+          containerStatus: 'provisioning',
+          containerRequestedAt: nowIso,
+        },
         members: {
           create: {
             userId: userId,
@@ -187,42 +221,57 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    // Create organization container immediately (BLOCKING - container is required for projects)
-    // Projects are physical folders in the container, so we MUST have the container first
     const platformApiUrl = process.env.PLATFORM_API_URL || 'http://localhost:3001'
-    
-    try {
-      const containerResponse = await axios.post(
-        `${platformApiUrl}/api/v1/apps/organizations/${organization.id}/container`,
-        { environment: 'development' },
-        { 
-          timeout: 300000, // 5 minute timeout (Docker build can take 1-2 minutes on first build)
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      )
-    } catch (err: any) {
-      // Container creation is REQUIRED - fail org creation if it fails
-      // Rollback: Delete the organization we just created
-      try {
-        await prisma.organization.delete({
-          where: { id: organization.id }
-        })
-      } catch (rollbackError) {
-        // Silent error handling
-      }
-      
-      return NextResponse.json(
-        { 
-          error: 'Failed to create organization container. Please try again.',
-          details: err.response?.data?.error || err.message
-        },
-        { status: 500 }
-      )
-    }
 
-    return NextResponse.json({ organization }, { status: 201 })
+    void axios.post(
+      `${platformApiUrl}/api/v1/apps/organizations/${organization.id}/container`,
+      { environment: 'development' },
+      {
+        timeout: 300000,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    ).then(async () => {
+      const currentMetadata = (organization.metadata as Record<string, unknown> | null) ?? {}
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          metadata: {
+            ...currentMetadata,
+            containerStatus: 'provisioned',
+            containerProvisionedAt: new Date().toISOString(),
+          },
+        },
+      })
+    }).catch((err: any) => {
+      console.warn('[Organizations API] Container provisioning is best-effort:', err?.message || err)
+    })
+
+    await logAuditEvent({
+      action: 'organization.create',
+      status: 'success',
+      actorUserId: userId,
+      organizationId: organization.id,
+      targetType: 'organization',
+      targetId: organization.id,
+      metadata: {
+        organizationName: organization.name,
+        containerStatus: 'provisioning',
+      },
+      request: req,
+    })
+
+    return NextResponse.json({
+      organization: {
+        ...organization,
+        metadata: {
+          ...((organization.metadata as Record<string, unknown> | null) ?? {}),
+          containerStatus: 'provisioning',
+          containerRequestedAt: nowIso,
+        },
+      },
+    }, { status: 201 })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -238,6 +287,15 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       )
     }
+
+    await logAuditEvent({
+      action: 'organization.create',
+      status: 'failure',
+      actorUserId: null,
+      targetType: 'organization',
+      reason: error?.message || 'unknown_error',
+      request: req,
+    })
 
     return NextResponse.json(
       { error: 'Failed to create organization', message: error.message },

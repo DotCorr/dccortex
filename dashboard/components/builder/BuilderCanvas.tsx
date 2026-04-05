@@ -346,7 +346,21 @@ function ensureBunnyFontLoaded(family: string) {
 function resolveWithProps(raw: unknown, fn?: ResolveBindingFn, propsCtx?: Record<string, unknown>): string {
   if (!propsCtx) return resolve(raw, fn)
   if (fn) {
-    let resolved = fn(typeof raw === 'string' ? raw : String(raw ?? ''), propsCtx)
+    let source = typeof raw === 'string' ? raw : String(raw ?? '')
+    // Flatten nested bindings like {{data.source.{{state.key}}}} before evaluating the full expression.
+    if (/\{\{[^{}]*\{\{[^{}]+\}\}[^{}]*\}\}/.test(source)) {
+      for (let i = 0; i < 6; i++) {
+        let changed = false
+        source = source.replace(/\{\{([^{}]+)\}\}/g, (match, inner) => {
+          const token = `{{${String(inner).trim()}}}`
+          const next = fn(token, propsCtx)
+          if (next !== match) changed = true
+          return next
+        })
+        if (!changed || !source.includes('{{')) break
+      }
+    }
+    let resolved = fn(source, propsCtx)
     // Support chained bindings where a prop value itself contains bindings.
     for (let i = 0; i < 3; i++) {
       if (!resolved.includes('{{')) break
@@ -437,12 +451,27 @@ const LoadingSignalContext = React.createContext<{ pending: Set<string>; resolve
   resolved: new Set<string>(),
 })
 
+const reusableCloneCache = new WeakMap<Node, Map<string, Node>>()
+
 function cloneForReusableInstance(node: Node, namespace: string): Node {
   return {
     ...node,
     id: `${namespace}-${node.id}`,
     children: (node.children ?? []).map((c) => cloneForReusableInstance(c, namespace)),
   }
+}
+
+function cloneForReusableInstanceCached(node: Node, namespace: string): Node {
+  let nsMap = reusableCloneCache.get(node)
+  if (!nsMap) {
+    nsMap = new Map<string, Node>()
+    reusableCloneCache.set(node, nsMap)
+  }
+  const cached = nsMap.get(namespace)
+  if (cached) return cached
+  const cloned = cloneForReusableInstance(node, namespace)
+  nsMap.set(namespace, cloned)
+  return cloned
 }
 
 function NodeRenderer({
@@ -581,7 +610,9 @@ function NodeRenderer({
     const explicitFlex = p.flex != null && String(p.flex).trim()
     const explicitWidth = p.width != null && String(p.width).trim()
     const inheritedWidth = reusableRootProps?.width != null && String(reusableRootProps.width).trim()
-    if (explicitFlex) (style as Record<string, unknown>).flex = String(p.flex).trim()
+    // Width must win over auto-grow: when explicit width exists, neutralize flex expansion.
+    if (explicitFlex && !explicitWidth) (style as Record<string, unknown>).flex = String(p.flex).trim()
+    if (explicitWidth) (style as Record<string, unknown>).flex = '0 0 auto'
     if (explicitWidth) (style as Record<string, unknown>).width = /^\d+$/.test(String(p.width).trim()) ? `${p.width}px` : String(p.width)
     else if (inheritedWidth) (style as Record<string, unknown>).width = /^\d+$/.test(String(reusableRootProps?.width).trim()) ? `${reusableRootProps?.width}px` : String(reusableRootProps?.width)
     else if (!explicitFlex) (style as Record<string, unknown>).width = '100%'
@@ -785,32 +816,65 @@ function NodeRenderer({
   const suspenseAutoActive = suspenseReferencedSources.some(
     (source) => loadingSignals.pending.has(source) && !loadingSignals.resolved.has(source)
   )
-  const showSuspenseFallback = Boolean(previewMode) && suspenseEnabled && (suspenseManualActive || suspenseAutoActive)
+  const showSuspenseFallback = suspenseEnabled && (
+    (Boolean(previewMode) && (suspenseManualActive || suspenseAutoActive))
+    || (!previewMode && suspenseManualActive)
+  )
 
   if (showSuspenseFallback) {
-    const shellCls = 'w-full h-full min-h-[36px] border border-dashed border-gray-300/70 dark:border-[#30363d] bg-white/70 dark:bg-[#0d1117]/80 text-gray-500 dark:text-gray-300'
+    const widthRaw = style?.width == null ? '' : String(style.width).trim()
+    const heightRaw = style?.height == null ? '' : String(style.height).trim()
+    const constrainedSize = (widthRaw && widthRaw !== 'auto') || (heightRaw && heightRaw !== 'auto')
+    const parsedWidth = Number.parseFloat(widthRaw)
+    const parsedHeight = Number.parseFloat(heightRaw)
+    const widthPx = Number.isFinite(parsedWidth) ? parsedWidth : null
+    const heightPx = Number.isFinite(parsedHeight) ? parsedHeight : null
+    const spinnerBoxSize = constrainedSize
+      ? Math.max(24, Math.floor(Math.min(widthPx ?? heightPx ?? 56, heightPx ?? widthPx ?? 56) * 0.72))
+      : 32
+    const showSpinnerLabel = !constrainedSize || Math.min(widthPx ?? 9999, heightPx ?? 9999) >= 72
+    const shellCls = `${constrainedSize ? 'w-full h-full' : 'inline-flex'} box-border min-w-0 min-h-0 text-gray-600 dark:text-gray-300`
+    const bodyFrameCls = constrainedSize ? 'w-full h-full min-w-0 min-h-0' : 'inline-flex'
+    const bodyPadCls = constrainedSize ? 'p-1.5' : 'p-2.5'
     const fallbackBody =
       suspenseVariant === 'spinner' ? (
-        <div className="flex items-center justify-center gap-2 w-full h-full">
-          <span className="w-4 h-4 border-2 border-gray-300 dark:border-[#30363d] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs">{suspenseLabel}</span>
+        <div className={`${bodyFrameCls} flex ${constrainedSize ? 'items-center justify-center' : 'flex-col items-center justify-center gap-1.5'} ${bodyPadCls} overflow-visible`}>
+          <svg
+            className="animate-spin"
+            style={{ width: spinnerBoxSize, height: spinnerBoxSize, color: '#2563eb', flexShrink: 0 }}
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            role="img"
+            aria-label="Loading"
+          >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          {showSpinnerLabel && (
+            <span className="text-[11px] font-medium tracking-wide uppercase text-gray-500 dark:text-gray-400 leading-tight max-w-full truncate">
+              {suspenseLabel}
+            </span>
+          )}
         </div>
       ) : suspenseVariant === 'line' ? (
-        <div className={`w-full h-full flex ${suspenseDirection === 'vertical' ? 'flex-col' : 'flex-row'} gap-2 p-2`}>
-          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded flex-1" />
-          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded flex-1" />
-          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded flex-1" />
+        <div className={`${bodyFrameCls} ${suspenseDirection === 'vertical' ? 'flex-col' : 'flex-row'} flex gap-1.5 ${bodyPadCls} overflow-hidden`}>
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded-md flex-1 min-w-0" />
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded-md flex-1 min-w-0" />
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded-md flex-1 min-w-0" />
         </div>
       ) : suspenseVariant === 'dots' ? (
-        <div className="w-full h-full flex items-center justify-center gap-1.5">
+        <div className={`${bodyFrameCls} flex items-center justify-center gap-1.5 ${bodyPadCls} overflow-hidden`}>
           <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse" />
           <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse [animation-delay:120ms]" />
           <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse [animation-delay:240ms]" />
         </div>
       ) : suspenseVariant === 'custom' ? (
-        <div className="w-full h-full flex items-center justify-center text-xs px-2 text-center">{suspenseLabel || 'Loading...'}</div>
+        <div className={`${bodyFrameCls} flex items-center justify-center text-xs px-2 text-center overflow-hidden`}>
+          <span className="max-w-full truncate">{suspenseLabel || 'Loading...'}</span>
+        </div>
       ) : (
-        <div className="w-full h-full p-2 space-y-2">
+        <div className={`${bodyFrameCls} flex flex-col ${bodyPadCls} space-y-1.5 overflow-hidden`}>
           <div className="h-3 w-3/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
           <div className="h-3 w-4/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
           <div className="h-3 w-2/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
@@ -821,8 +885,16 @@ function NodeRenderer({
       <div
         id={domId}
         data-node-id={node.id}
-        className={`${shellCls} overflow-hidden`}
-        style={style}
+        draggable={canDragNode ? 'true' : 'false'}
+        onDragStart={canDragNode ? handleDragStart : undefined}
+        onDragEnd={canDragNode ? handleDragEnd : undefined}
+        onClick={previewMode ? (e: React.MouseEvent) => runConfiguredEvent('onClick', e) : (e: React.MouseEvent) => { e.stopPropagation(); onSelect(node.id) }}
+          className={shellCls}
+        style={{
+          ...style,
+          backgroundColor: (style as React.CSSProperties).backgroundColor ?? 'transparent',
+          overflow: 'visible',
+        }}
       >
         {fallbackBody}
       </div>
@@ -844,7 +916,7 @@ function NodeRenderer({
     const runtimeProps = Object.fromEntries(
       Object.entries(propBindings).map(([k, v]) => [k, resolveWithProps(v, resolveBindingFn, reusablePropsCtx)])
     )
-    const namespacedRoot = cloneForReusableInstance(reusable.root, `ri-${node.id}`)
+    const namespacedRoot = cloneForReusableInstanceCached(reusable.root, `ri-${node.id}`)
     const handleReusableInternalSelect = (selectedNodeId: string | null) => {
       if (!previewMode) {
         onSelect(node.id)
@@ -958,6 +1030,14 @@ function NodeRenderer({
     const clearanceStyleTag = hasCollapsibleAside && hBpRaw !== 'always' && hBpRaw !== 'never'
       ? `@media (max-width: ${bpMaxPx}px) { #${domId} { padding-left: ${hamburgerClearance}px !important; } }`
       : null
+    const handleContainerEditSelect = (e: React.MouseEvent<HTMLElement>) => {
+      e.stopPropagation()
+      const target = e.target as HTMLElement | null
+      const hitNode = target?.closest?.('[data-node-id]') as HTMLElement | null
+      const hitNodeId = hitNode?.getAttribute('data-node-id')
+      if (hitNodeId && hitNodeId !== node.id) return
+      onSelect(node.id)
+    }
     return (
       <Tag
         id={domId}
@@ -965,7 +1045,7 @@ function NodeRenderer({
         draggable={canDragNode ? 'true' : 'false'}
         onDragStart={canDragNode ? handleDragStart : undefined}
         onDragEnd={canDragNode ? handleDragEnd : undefined}
-        onClick={previewMode ? (e: React.MouseEvent<HTMLElement>) => runConfiguredEvent('onClick', e) : (e: React.MouseEvent<HTMLElement>) => { e.stopPropagation(); onSelect(node.id) }}
+        onClick={previewMode ? (e: React.MouseEvent<HTMLElement>) => runConfiguredEvent('onClick', e) : handleContainerEditSelect}
         onDrop={previewMode ? undefined : handleDrop}
         onDragOver={previewMode ? undefined : handleDragOver}
         className={previewMode ? 'rounded box-border' : `relative ${isRoot ? 'rounded box-border' : `border-2 ${isSelected ? (hasCustomBg ? 'border-[var(--primary)]' : 'border-[var(--primary)] bg-[var(--primary)]/5') : 'border-gray-200 dark:border-[#30363d] border-dashed'} rounded box-border`}`}
@@ -1153,6 +1233,17 @@ function NodeRenderer({
     const strokeWidth = Number(node.props.strokeWidth ?? 0)
     const colors = extractGradientColors(gradient)
     const gradId = `grad-${node.id}`
+    const animationShorthand = String(node.props.animation ?? '')
+    const elementAnimation = animationShorthand
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part && !part.includes('dccGradientShiftX') && !part.includes('dccGradientShiftY') && !part.includes('dccGradientRotate'))
+      .join(', ')
+    const animationDurationSecMatch = animationShorthand.match(/(\d*\.?\d+)s/)
+    const gradientAnimDuration = `${animationDurationSecMatch ? Number(animationDurationSecMatch[1]) : 8}s`
+    const animatesShiftX = animationShorthand.includes('dccGradientShiftX')
+    const animatesShiftY = animationShorthand.includes('dccGradientShiftY')
+    const animatesRotate = animationShorthand.includes('dccGradientRotate')
 
     const pathByShape: Record<string, string> = {
       wave: 'M 0 70 C 35 10 85 130 120 70 C 155 10 205 130 240 70 L 240 140 L 0 140 Z',
@@ -1172,9 +1263,31 @@ function NodeRenderer({
         className={previewMode ? 'inline-block rounded' : `inline-block border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-transparent'} rounded`}
         style={style}
       >
-        <svg width={svgWidth} height={svgHeight} viewBox="0 0 240 140" style={{ display: 'block', animation: String(node.props.animation ?? ''), opacity: Number(node.props.opacity ?? 1) }}>
+        <svg width={svgWidth} height={svgHeight} viewBox="0 0 240 140" style={{ display: 'block', animation: elementAnimation, opacity: Number(node.props.opacity ?? 1) }}>
           <defs>
             <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
+              {animatesShiftX && (
+                <>
+                  <animate attributeName="x1" values="0%;100%;0%" dur={gradientAnimDuration} repeatCount="indefinite" />
+                  <animate attributeName="x2" values="100%;200%;100%" dur={gradientAnimDuration} repeatCount="indefinite" />
+                </>
+              )}
+              {animatesShiftY && (
+                <>
+                  <animate attributeName="y1" values="0%;100%;0%" dur={gradientAnimDuration} repeatCount="indefinite" />
+                  <animate attributeName="y2" values="100%;200%;100%" dur={gradientAnimDuration} repeatCount="indefinite" />
+                </>
+              )}
+              {animatesRotate && (
+                <animateTransform
+                  attributeName="gradientTransform"
+                  type="rotate"
+                  from="0 120 70"
+                  to="360 120 70"
+                  dur={gradientAnimDuration}
+                  repeatCount="indefinite"
+                />
+              )}
               {colors.map((c, idx) => (
                 <stop key={`${c}-${idx}`} offset={`${(idx / Math.max(1, colors.length - 1)) * 100}%`} stopColor={c} />
               ))}
@@ -1875,8 +1988,8 @@ function NodeRenderer({
             {showPercent && <span className="text-xs font-medium text-gray-600 dark:text-gray-300">{Math.round(pct)}%</span>}
           </div>
         )}
-        <div className="w-full bg-gray-200 dark:bg-[#30363d] overflow-hidden" style={{ height, borderRadius: height / 2 }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: height / 2, transition: 'width 0.4s ease' }}
+        <div className="w-full bg-gray-200 dark:bg-[#30363d] overflow-hidden" style={{ height, borderRadius: 'var(--border-radius-full, 9999px)' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 'var(--border-radius-full, 9999px)', transition: 'width 0.4s ease' }}
             className={animated ? 'animate-pulse' : ''} />
         </div>
       </div>
@@ -1907,7 +2020,7 @@ function NodeRenderer({
     const rounded = String(node.props.rounded ?? 'md')
     const bordered = node.props.bordered !== false
     const shadowMap: Record<string, string> = { none: '', sm: 'shadow-sm', md: 'shadow', lg: 'shadow-lg', xl: 'shadow-xl' }
-    const roundedMap: Record<string, string> = { none: '0', sm: 'var(--border-radius-sm, 0px)', md: 'var(--border-radius, 0px)', lg: 'var(--border-radius-lg, 0px)', full: '24px' }
+    const roundedMap: Record<string, string> = { none: '0', sm: 'var(--border-radius-sm, 0px)', md: 'var(--border-radius, 0px)', lg: 'var(--border-radius-lg, 0px)', full: 'var(--border-radius-full, 9999px)' }
     const childEls = (node.children ?? []).map((child) => (
       <NodeRenderer key={`${child.id}:${child.type}`} node={child} selectedId={selectedId} onSelect={onSelect}
         onUpdate={(up) => { const kids = node.children ?? []; const next = kids.map(c => c.id === up.id ? up : c); onUpdate({ ...node, children: next }) }}
@@ -2434,7 +2547,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
       // If the parent is a row-flex semantic/layout element and the child is a
       // layout container, auto-set flex:1 so it fills the available width
       const rowFlexParentTypes = ['header', 'footer', 'nav', 'stackH']
-      const expandableChildTypes = ['container', 'section', 'stackV', 'stackH', 'main', 'aside', 'article', 'reusableInstance']
+      const expandableChildTypes = ['container', 'section', 'stackV', 'stackH', 'main', 'aside', 'article']
       const parentFd = String((parent.props as Record<string, unknown>)?.flexDirection ?? '')
       const isRowParent = rowFlexParentTypes.includes(parent.type) || parentFd === 'row'
       if (isRowParent && expandableChildTypes.includes(type) && !child.props.flex && !child.props.width) {
@@ -2479,7 +2592,13 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
         @keyframes float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-12px) } }
         @keyframes dccGradientShiftX { 0% { background-position: 0% 50% } 50% { background-position: 100% 50% } 100% { background-position: 0% 50% } }
         @keyframes dccGradientShiftY { 0% { background-position: 50% 0% } 50% { background-position: 50% 100% } 100% { background-position: 50% 0% } }
-        @keyframes dccGradientRotate { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+        @keyframes dccGradientRotate {
+          0% { background-position: 50% 0% }
+          25% { background-position: 100% 50% }
+          50% { background-position: 50% 100% }
+          75% { background-position: 0% 50% }
+          100% { background-position: 50% 0% }
+        }
         @keyframes dccGradientHueShift { 0% { filter: hue-rotate(0deg) } 100% { filter: hue-rotate(360deg) } }
       `}</style>
     <div
@@ -2510,16 +2629,19 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
       }}
     >
       <style>{`
-        [data-builder-canvas="true"] .rounded,
-        [data-builder-canvas="true"] .rounded-md {
+        [data-builder-canvas=true] .rounded,
+        [data-builder-canvas=true] .rounded-md {
           border-radius: var(--border-radius, 0px);
         }
-        [data-builder-canvas="true"] .rounded-sm {
+        [data-builder-canvas=true] .rounded-sm {
           border-radius: var(--border-radius-sm, 0px);
         }
-        [data-builder-canvas="true"] .rounded-lg,
-        [data-builder-canvas="true"] .rounded-xl {
+        [data-builder-canvas=true] .rounded-lg,
+        [data-builder-canvas=true] .rounded-xl {
           border-radius: var(--border-radius-lg, 0px);
+        }
+        [data-builder-canvas=true] .rounded-full {
+          border-radius: var(--border-radius-full, 9999px);
         }
       `}</style>
       <div

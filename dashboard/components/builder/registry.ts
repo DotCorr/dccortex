@@ -884,6 +884,14 @@ function toCssMs(ms: number): string {
   return `${Math.max(0, Math.round(ms))}ms`
 }
 
+function normalizeAnimationTime(raw: unknown, fallback: string): string {
+  const s = String(raw ?? '').trim()
+  if (!s) return fallback
+  if (/^-?\d*\.?\d+$/.test(s)) return `${s}s`
+  if (/^-?\d*\.?\d+(ms|s)$/i.test(s)) return s
+  return fallback
+}
+
 /** Build inline style from CSS-like props (100% web-aligned for scripting and export) */
 export function stylePropsToStyle(props: Record<string, unknown>): Record<string, string | number> {
   const p = props as Record<string, unknown>
@@ -913,9 +921,9 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
     if (playMode === 'parallel') {
       const base = steps.map((step) => {
         const preset = step.preset || 'none'
-        const duration = step.duration || '0.5s'
+        const duration = normalizeAnimationTime(step.duration, '0.5s')
         const timing = step.timingFunction || 'ease'
-        const delay = step.delay || '0s'
+        const delay = normalizeAnimationTime(step.delay, '0s')
         const iteration = step.iterationCount || '1'
         return `${preset} ${duration} ${timing} ${delay} ${iteration} both`
       })
@@ -927,9 +935,10 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
       let cycleMs = 0
       for (const step of steps) {
         const preset = step.preset || 'none'
-        const durationRaw = step.duration || '0.5s'
+        const durationRaw = normalizeAnimationTime(step.duration, '0.5s')
         const timing = step.timingFunction || 'ease'
-        const delayMs = parseTimeMs(step.delay, 0)
+        const delayRaw = normalizeAnimationTime(step.delay, '0s')
+        const delayMs = parseTimeMs(delayRaw, 0)
         const durationMs = parseTimeMs(durationRaw, 500)
         const iterationRaw = String(step.iterationCount ?? '1').trim()
         const iterationCount = iterationRaw === 'infinite' ? Infinity : Math.max(1, Number(iterationRaw) || 1)
@@ -940,12 +949,11 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
         }
       }
 
-      if (seqIterations === Infinity) {
-        // Browser cannot natively loop an entire composed sequence forever as a single unit.
-        // Keep one cycle and runtime/event layer can retrigger when needed.
-        animations = base
-      } else {
-        for (let i = 0; i < seqIterations; i++) {
+      // Browser cannot natively loop an entire composed sequence forever as a single unit.
+      // For "infinite", expand to a long-running repeated timeline so live auto-play behaves as expected.
+      // This keeps CSS-only playback (no event trigger required) while avoiding unbounded CSS strings.
+      const effectiveCycles = seqIterations === Infinity ? 240 : seqIterations
+      for (let i = 0; i < effectiveCycles; i++) {
           const cycleOffsetMs = i * cycleMs
           for (const entry of base) {
             const parts = entry.split(' ')
@@ -959,7 +967,6 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
             const delayMs = parseTimeMs(delay, 0)
             animations.push(`${name} ${duration} ${timing} ${toCssMs(delayMs + cycleOffsetMs)} ${iteration} ${fill}`)
           }
-        }
       }
     }
 

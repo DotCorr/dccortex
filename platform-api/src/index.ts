@@ -29,10 +29,13 @@ import { v4 as uuidv4 } from 'uuid'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { ensureContainerWorkerStarted, getContainerRecord, listContainerRecords, requestContainerDeletion, requestContainerProvision } from './container-registry'
 
 const app = express()
 app.use(cors())
 app.use(express.json())
+
+ensureContainerWorkerStarted()
 
 const PORT = process.env.PORT || 3001
 const ARTIFACTS_DIR = process.env.ARTIFACTS_DIR || path.join(os.tmpdir(), 'dccortex-builds')
@@ -349,19 +352,31 @@ router.get('/health', (_req: Request, res: Response) => {
 })
 
 // ── Org container lifecycle ────────────────────────────────────────────────────
-// These are called by the dashboard at org create/delete time.
-// For now they're no-ops; in production you'd provision a Docker network/container here.
-
-router.post('/organizations/:orgId/container', (req: Request, res: Response) => {
+router.get('/organizations/:orgId/container', (req: Request, res: Response) => {
   const { orgId } = req.params
-  console.log(`[container] CREATE org=${orgId}`)
-  res.json({ orgId, status: 'created', message: 'Container provisioned (stub)' })
+  const record = getContainerRecord(orgId)
+  if (!record) {
+    return res.status(404).json({ error: 'Container not found' })
+  }
+  return res.json({ orgId, container: record })
 })
 
-router.delete('/organizations/:orgId/container', (req: Request, res: Response) => {
+router.get('/containers', (_req: Request, res: Response) => {
+  return res.json({ containers: listContainerRecords() })
+})
+
+router.post('/organizations/:orgId/container', async (req: Request, res: Response) => {
   const { orgId } = req.params
-  console.log(`[container] DELETE org=${orgId}`)
-  res.json({ orgId, status: 'deleted' })
+  const container = await requestContainerProvision(orgId)
+  console.log(`[container] CREATE org=${orgId} status=${container.status}`)
+  res.json({ orgId, status: container.status, container })
+})
+
+router.delete('/organizations/:orgId/container', async (req: Request, res: Response) => {
+  const { orgId } = req.params
+  const container = await requestContainerDeletion(orgId)
+  console.log(`[container] DELETE org=${orgId} status=${container?.status ?? 'missing'}`)
+  res.json({ orgId, status: container?.status ?? 'deleted', container })
 })
 
 // ── Build endpoints ────────────────────────────────────────────────────────────

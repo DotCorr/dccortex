@@ -7,16 +7,89 @@
 
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { Profiler, useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useWebHaptics } from 'web-haptics/react'
 import { BuilderCanvas } from '@/components/builder/BuilderCanvas'
 import { resolveBinding, resolveExpression, getDateNowMap } from '@/components/builder/bindingResolver'
+import type { PublicProjectPayload } from '@/lib/public-project-cache'
 import type { EventActionConfig, EventRuntimeContext } from '@/components/builder/eventHelpers'
 import type { Node } from '@/components/builder/registry'
 import type { ReusableDefinition } from '@/components/builder/globals'
 
 type ScreenRow = { id: string; name: string; slug: string; layout: unknown; script?: string | null; sortOrder: number }
 type StateDefinition = { id: string; name: string; initialValue: string; type?: string }
+const BOOTSTRAP_MAX_AGE_MS = 5 * 60 * 1000
+const SIGNATURE_CACHE_MAX_AGE_MS = 5 * 60 * 1000
+const SIGNATURE_CACHE_MAX_ENTRIES = 24
+
+function buildVarsParamForDataSources(
+  dataSources: Array<{ name: string; urlParamBindings?: Record<string, string> }>,
+  state: Record<string, unknown>
+): string {
+  const vars: Record<string, Record<string, string>> = {}
+  for (const ds of dataSources) {
+    if (!ds.urlParamBindings) continue
+    const resolved: Record<string, string> = {}
+    for (const [paramName, binding] of Object.entries(ds.urlParamBindings)) {
+      if (!binding) continue
+      const stateMatch = binding.match(/^\{\{state\.([^}]+)\}\}$/)
+      if (stateMatch) {
+        const val = state[stateMatch[1]]
+        if (val !== undefined && val !== null) resolved[paramName] = String(val)
+      } else {
+        resolved[paramName] = binding
+      }
+    }
+    if (Object.keys(resolved).length) vars[ds.name] = resolved
+  }
+  return Object.keys(vars).length ? `?vars=${encodeURIComponent(JSON.stringify(vars))}` : ''
+}
+
+type SignatureCacheMap = Record<string, { ts: number; data: Record<string, unknown> }>
+type LivePerfSnapshot = {
+  projectFetchMs: number
+  runtimeFetchMs: number
+  prefetchFetchMs: number
+  projectServerTotalMs: number
+  projectServerDbMs: number
+  runtimeServerTotalMs: number
+  runtimeServerDbMs: number
+  runtimeServerApiMs: number
+  resolveCallsPerSec: number
+  resolveAvgMs: number
+  resolveMaxMs: number
+  renderCommitsPerSec: number
+  renderAvgMs: number
+  renderMaxMs: number
+}
+
+function parseServerTimingHeader(headerValue: string | null): Record<string, number> {
+  if (!headerValue) return {}
+  const out: Record<string, number> = {}
+  for (const part of headerValue.split(',')) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const [metricNameRaw, ...params] = trimmed.split(';').map((x) => x.trim())
+    const metricName = metricNameRaw.toLowerCase()
+    for (const p of params) {
+      if (!p.startsWith('dur=')) continue
+      const n = Number(p.slice(4))
+      if (Number.isFinite(n)) out[metricName] = n
+    }
+  }
+  return out
+}
+
+function shallowEqualRecord(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  if (a === b) return true
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if (aKeys.length !== bKeys.length) return false
+  for (const k of aKeys) {
+    if (a[k] !== b[k]) return false
+  }
+  return true
+}
 
 function parseComparable(v: string): string | number | boolean {
   const s = String(v ?? '').trim()
@@ -51,18 +124,165 @@ function evaluateEventCondition(
   }
 }
 
-export default function PreviewApp({ projectId }: { projectId: string }) {
+export default function PreviewApp({ projectId, initialProject }: { projectId: string; initialProject?: PublicProjectPayload | null }) {
   const [isDesktopShell, setIsDesktopShell] = useState(false)
-  const [status, setStatus] = useState<'loading' | 'notPublished' | 'error' | 'ready'>('loading')
-  const [projectName, setProjectName] = useState('')
-  const [screens, setScreens] = useState<ScreenRow[]>([])
-  const [globals, setGlobals] = useState<Record<string, unknown>>({})
-  const [currentScreenId, setCurrentScreenId] = useState<string | null>(null)
+  const initialHomeScreenId = useMemo(() => {
+    const rows = initialProject?.screens ?? []
+    return rows.find((s) => s.slug === 'home')?.id ?? rows[0]?.id ?? null
+  }, [initialProject])
+  const [status, setStatus] = useState<'loading' | 'notPublished' | 'error' | 'ready'>(initialProject ? 'ready' : 'loading')
+  const [projectName, setProjectName] = useState(initialProject?.project.name ?? '')
+  const [screens, setScreens] = useState<ScreenRow[]>(initialProject?.screens ?? [])
+  const [globals, setGlobals] = useState<Record<string, unknown>>(initialProject?.globals ?? {})
+  const [currentScreenId, setCurrentScreenId] = useState<string | null>(initialHomeScreenId)
   const screenHistoryRef = useRef<string[]>([])
   const [runtimeState, setRuntimeState] = useState<Record<string, unknown>>({})
   const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>({})
+  const runtimeDataCacheKey = useMemo(() => `dccortex:runtime-data:${projectId}`, [projectId])
+  const runtimeDataSignatureCacheKey = useMemo(() => `dccortex:runtime-data-signatures:${projectId}`, [projectId])
+  const previewBootstrapCacheKey = useMemo(() => `dccortex:preview-bootstrap:${projectId}`, [projectId])
+  const stateCacheKey = useMemo(() => `dccortex:state-cache:${projectId}`, [projectId])
+  const runtimeDataRequestIdRef = useRef(0)
+  const lastRuntimeVarsSignatureRef = useRef<string | null>(null)
+  const hasFetchedRuntimeDataRef = useRef(false)
+  const runtimeDataMemoryCacheRef = useRef<Map<string, Record<string, unknown>>>(new Map())
+  const prefetchedSignaturesRef = useRef<Set<string>>(new Set())
+  const resolvePerfRef = useRef({ calls: 0, totalMs: 0, maxMs: 0 })
+  const renderPerfRef = useRef({ commits: 0, totalMs: 0, maxMs: 0 })
+  const networkPerfRef = useRef({
+    projectFetchMs: 0,
+    runtimeFetchMs: 0,
+    prefetchFetchMs: 0,
+    projectServerTotalMs: 0,
+    projectServerDbMs: 0,
+    runtimeServerTotalMs: 0,
+    runtimeServerDbMs: 0,
+    runtimeServerApiMs: 0,
+  })
+  const [showPerfHud, setShowPerfHud] = useState(false)
+  const [livePerf, setLivePerf] = useState<LivePerfSnapshot>({
+    projectFetchMs: 0,
+    runtimeFetchMs: 0,
+    prefetchFetchMs: 0,
+    projectServerTotalMs: 0,
+    projectServerDbMs: 0,
+    runtimeServerTotalMs: 0,
+    runtimeServerDbMs: 0,
+    runtimeServerApiMs: 0,
+    resolveCallsPerSec: 0,
+    resolveAvgMs: 0,
+    resolveMaxMs: 0,
+    renderCommitsPerSec: 0,
+    renderAvgMs: 0,
+    renderMaxMs: 0,
+  })
   const { trigger: triggerHaptic } = useWebHaptics()
   const [systemDark, setSystemDark] = useState(false)
+
+  const readSignatureCache = useCallback((): SignatureCacheMap => {
+    try {
+      const raw = localStorage.getItem(runtimeDataSignatureCacheKey)
+      if (!raw) return {}
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === 'object' ? (parsed as SignatureCacheMap) : {}
+    } catch {
+      return {}
+    }
+  }, [runtimeDataSignatureCacheKey])
+
+  const writeSignatureCacheEntry = useCallback((signature: string, data: Record<string, unknown>) => {
+    if (!signature) return
+    try {
+      const now = Date.now()
+      const existing = readSignatureCache()
+      const pruned: SignatureCacheMap = {}
+      for (const [sig, entry] of Object.entries(existing)) {
+        if (!entry || typeof entry !== 'object') continue
+        if (now - Number(entry.ts ?? 0) <= SIGNATURE_CACHE_MAX_AGE_MS) pruned[sig] = entry
+      }
+      pruned[signature] = { ts: now, data }
+      const keys = Object.keys(pruned)
+      if (keys.length > SIGNATURE_CACHE_MAX_ENTRIES) {
+        keys.sort((a, b) => Number(pruned[b].ts) - Number(pruned[a].ts))
+        const trimmed: SignatureCacheMap = {}
+        for (const k of keys.slice(0, SIGNATURE_CACHE_MAX_ENTRIES)) trimmed[k] = pruned[k]
+        localStorage.setItem(runtimeDataSignatureCacheKey, JSON.stringify(trimmed))
+        return
+      }
+      localStorage.setItem(runtimeDataSignatureCacheKey, JSON.stringify(pruned))
+    } catch {}
+  }, [readSignatureCache, runtimeDataSignatureCacheKey])
+
+  const readSignatureCacheEntry = useCallback((signature: string): Record<string, unknown> | null => {
+    if (!signature) return null
+    const cache = readSignatureCache()
+    const entry = cache[signature]
+    if (!entry) return null
+    if (Date.now() - Number(entry.ts ?? 0) > SIGNATURE_CACHE_MAX_AGE_MS) return null
+    return entry.data && typeof entry.data === 'object' ? entry.data : null
+  }, [readSignatureCache])
+
+  useEffect(() => {
+    try {
+      const qsPerf = new URLSearchParams(window.location.search).get('perf')
+      const lsPerf = localStorage.getItem('dccortex:live-perf')
+      setShowPerfHud(qsPerf === '1' || lsPerf === '1')
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const resolveCalls = resolvePerfRef.current.calls
+      const resolveTotal = resolvePerfRef.current.totalMs
+      const resolveMax = resolvePerfRef.current.maxMs
+      const renderCommits = renderPerfRef.current.commits
+      const renderTotal = renderPerfRef.current.totalMs
+      const renderMax = renderPerfRef.current.maxMs
+
+      setLivePerf({
+        projectFetchMs: Number(networkPerfRef.current.projectFetchMs.toFixed(1)),
+        runtimeFetchMs: Number(networkPerfRef.current.runtimeFetchMs.toFixed(1)),
+        prefetchFetchMs: Number(networkPerfRef.current.prefetchFetchMs.toFixed(1)),
+        projectServerTotalMs: Number(networkPerfRef.current.projectServerTotalMs.toFixed(1)),
+        projectServerDbMs: Number(networkPerfRef.current.projectServerDbMs.toFixed(1)),
+        runtimeServerTotalMs: Number(networkPerfRef.current.runtimeServerTotalMs.toFixed(1)),
+        runtimeServerDbMs: Number(networkPerfRef.current.runtimeServerDbMs.toFixed(1)),
+        runtimeServerApiMs: Number(networkPerfRef.current.runtimeServerApiMs.toFixed(1)),
+        resolveCallsPerSec: resolveCalls,
+        resolveAvgMs: Number((resolveCalls > 0 ? resolveTotal / resolveCalls : 0).toFixed(3)),
+        resolveMaxMs: Number(resolveMax.toFixed(3)),
+        renderCommitsPerSec: renderCommits,
+        renderAvgMs: Number((renderCommits > 0 ? renderTotal / renderCommits : 0).toFixed(3)),
+        renderMaxMs: Number(renderMax.toFixed(3)),
+      })
+
+      resolvePerfRef.current = { calls: 0, totalMs: 0, maxMs: 0 }
+      renderPerfRef.current = { commits: 0, totalMs: 0, maxMs: 0 }
+    }, 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  const applyRuntimeData = useCallback((payload: unknown, varsSignature = '') => {
+    if (!payload || typeof payload !== 'object') return
+    const next = payload as Record<string, unknown>
+    if (varsSignature) runtimeDataMemoryCacheRef.current.set(varsSignature, next)
+    if (varsSignature) writeSignatureCacheEntry(varsSignature, next)
+    setRuntimeData((prev) => (shallowEqualRecord(prev, next) ? prev : next))
+    hasFetchedRuntimeDataRef.current = true
+    try { localStorage.setItem(runtimeDataCacheKey, JSON.stringify(next)) } catch {}
+  }, [runtimeDataCacheKey, writeSignatureCacheEntry])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(runtimeDataCacheKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        setRuntimeData(parsed as Record<string, unknown>)
+      }
+    } catch {}
+  }, [runtimeDataCacheKey])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const w = window as unknown as { __TAURI__?: unknown; electronAPI?: { isElectron?: boolean } }
@@ -78,9 +298,69 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
   }, [])
 
   useEffect(() => {
+    if (initialProject) return
+    // Warm-start from recent cached payload so refresh paints immediately.
+    try {
+      const bootRaw = localStorage.getItem(previewBootstrapCacheKey)
+      if (bootRaw) {
+        const boot = JSON.parse(bootRaw) as {
+          ts?: number
+          projectName?: string
+          screens?: ScreenRow[]
+          globals?: Record<string, unknown>
+          currentScreenId?: string
+        }
+        const ageMs = Date.now() - Number(boot.ts ?? 0)
+        if (Array.isArray(boot.screens) && boot.screens.length > 0 && Number.isFinite(ageMs) && ageMs <= BOOTSTRAP_MAX_AGE_MS) {
+          setProjectName(String(boot.projectName ?? ''))
+          setScreens(boot.screens)
+          setGlobals((boot.globals ?? {}) as Record<string, unknown>)
+          const fallbackScreenId = boot.screens.find((s) => s.slug === 'home')?.id ?? boot.screens[0]?.id ?? null
+          setCurrentScreenId(boot.currentScreenId && boot.screens.some((s) => s.id === boot.currentScreenId) ? boot.currentScreenId : fallbackScreenId)
+          setStatus('ready')
+        }
+      }
+    } catch {}
+
+    // Warm-start state from cache before network resolves.
+    try {
+      const stateRaw = localStorage.getItem(stateCacheKey)
+      if (stateRaw) {
+        const parsed = JSON.parse(stateRaw)
+        if (parsed && typeof parsed === 'object') {
+          setRuntimeState(parsed as Record<string, unknown>)
+        }
+      }
+    } catch {}
+
     const ac = new AbortController()
+
+    // Start runtime data fetch in parallel with project metadata fetch.
+    const preloadRequestId = ++runtimeDataRequestIdRef.current
+    const preloadStart = performance.now()
+    fetch(`/api/p/${projectId}/data`, { signal: ac.signal, cache: 'no-store' })
+      .then(async (r) => {
+        const st = parseServerTimingHeader(r.headers.get('server-timing'))
+        if (st.total !== undefined) networkPerfRef.current.runtimeServerTotalMs = st.total
+        if (st.db !== undefined) networkPerfRef.current.runtimeServerDbMs = st.db
+        if (st.api !== undefined) networkPerfRef.current.runtimeServerApiMs = st.api
+        if (!r.ok) return null
+        return r.json()
+      })
+      .then((d) => {
+        networkPerfRef.current.runtimeFetchMs = performance.now() - preloadStart
+        if (preloadRequestId !== runtimeDataRequestIdRef.current) return
+        if (d?.data) applyRuntimeData(d.data, '__startup__')
+      })
+      .catch(() => {})
+
+    const projectFetchStart = performance.now()
     fetch(`/api/p/${projectId}`, { signal: ac.signal })
       .then(async (r) => {
+        networkPerfRef.current.projectFetchMs = performance.now() - projectFetchStart
+        const st = parseServerTimingHeader(r.headers.get('server-timing'))
+        if (st.total !== undefined) networkPerfRef.current.projectServerTotalMs = st.total
+        if (st.db !== undefined) networkPerfRef.current.projectServerDbMs = st.db
         if (r.status === 404) { setStatus('notPublished'); return }
         if (!r.ok) { setStatus('error'); return }
         const data = await r.json()
@@ -112,6 +392,15 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
         // Pick home or first screen
         const home = rows.find((s) => s.slug === 'home') ?? rows[0]
         setCurrentScreenId(home?.id ?? null)
+        try {
+          localStorage.setItem(previewBootstrapCacheKey, JSON.stringify({
+            ts: Date.now(),
+            projectName: data.project?.name ?? '',
+            screens: rows,
+            globals: resolvedGlobals,
+            currentScreenId: home?.id ?? null,
+          }))
+        } catch {}
         // Init runtime state from all screen layouts + globals
         const rawGlobalDefs = resolvedGlobals?.globalStateDefinitions
         const stateDefs: StateDefinition[] = [
@@ -172,8 +461,7 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
         }
         // Try to restore cached state from previous session
         try {
-          const cacheKey = `dccortex:state-cache:${projectId}`
-          const cached = localStorage.getItem(cacheKey)
+          const cached = localStorage.getItem(stateCacheKey)
           if (cached) {
             const parsed = JSON.parse(cached)
             // Merge cached values (only for keys that exist in current definitions)
@@ -192,14 +480,25 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
         }
         setStatus('ready')
         // Fetch runtime data (API sources + internal DB tables) in background
-        fetch(`/api/p/${projectId}/data`, { signal: ac.signal })
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => { if (d?.data) setRuntimeData(d.data) })
+        const requestId = ++runtimeDataRequestIdRef.current
+        fetch(`/api/p/${projectId}/data`, { signal: ac.signal, cache: 'no-store' })
+          .then(async (r) => {
+            const st = parseServerTimingHeader(r.headers.get('server-timing'))
+            if (st.total !== undefined) networkPerfRef.current.runtimeServerTotalMs = st.total
+            if (st.db !== undefined) networkPerfRef.current.runtimeServerDbMs = st.db
+            if (st.api !== undefined) networkPerfRef.current.runtimeServerApiMs = st.api
+            if (!r.ok) return null
+            return r.json()
+          })
+          .then((d) => {
+            if (requestId !== runtimeDataRequestIdRef.current) return
+            if (d?.data) applyRuntimeData(d.data)
+          })
           .catch(() => {/* data fetch failure is non-fatal */})
       })
       .catch((e) => { if (e?.name !== 'AbortError') setStatus('error') })
     return () => ac.abort()
-  }, [projectId])
+  }, [projectId, applyRuntimeData, previewBootstrapCacheKey, stateCacheKey, initialProject])
 
   const currentScreen = useMemo(() => screens.find((s) => s.id === currentScreenId) ?? null, [screens, currentScreenId])
 
@@ -209,36 +508,131 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
     return (Array.isArray(lay?.dataSources) ? lay.dataSources : []) as Array<{ id: string; name: string; urlParamBindings?: Record<string, string> }>
   }, [currentScreen])
 
-  // Re-fetch runtime data when screen or state changes (debounced 400ms)
-  // Builds a vars param so {{param}} templates resolve against live state
+  const runtimeVarsParam = useMemo(() => {
+    return buildVarsParamForDataSources(screenDataSources, runtimeState)
+  }, [screenDataSources, runtimeState])
+
+  // Re-fetch runtime data only when the resolved vars signature changes.
+  // First fetch is immediate; subsequent state-driven refreshes are lightly debounced.
+  // This avoids work for unrelated state updates.
   useEffect(() => {
     if (status !== 'ready') return
-    const vars: Record<string, Record<string, string>> = {}
-    for (const ds of screenDataSources) {
-      if (!ds.urlParamBindings) continue
-      const resolved: Record<string, string> = {}
-      for (const [paramName, binding] of Object.entries(ds.urlParamBindings)) {
-        if (!binding) continue
-        const stateMatch = binding.match(/^\{\{state\.([^}]+)\}\}$/)
-        if (stateMatch) {
-          const val = runtimeState[stateMatch[1]]
-          if (val !== undefined && val !== null) resolved[paramName] = String(val)
-        } else {
-          resolved[paramName] = binding
+    const varsParam = runtimeVarsParam
+    const varsSignature = runtimeVarsParam || ''
+    if (hasFetchedRuntimeDataRef.current && lastRuntimeVarsSignatureRef.current === varsSignature) return
+
+    const cached = runtimeDataMemoryCacheRef.current.get(varsSignature)
+    if (cached) {
+      setRuntimeData((prev) => (shallowEqualRecord(prev, cached) ? prev : cached))
+    } else {
+      const persisted = readSignatureCacheEntry(varsSignature)
+      if (persisted) {
+        runtimeDataMemoryCacheRef.current.set(varsSignature, persisted)
+        setRuntimeData((prev) => (shallowEqualRecord(prev, persisted) ? prev : persisted))
+      }
+    }
+
+    const ac = new AbortController()
+    const requestId = ++runtimeDataRequestIdRef.current
+    const delayMs = hasFetchedRuntimeDataRef.current ? 120 : 0
+    const timer = setTimeout(() => {
+      const fetchStart = performance.now()
+      fetch(`/api/p/${projectId}/data${varsParam}`, { signal: ac.signal, cache: 'no-store' })
+        .then(async (r) => {
+          const st = parseServerTimingHeader(r.headers.get('server-timing'))
+          if (st.total !== undefined) networkPerfRef.current.runtimeServerTotalMs = st.total
+          if (st.db !== undefined) networkPerfRef.current.runtimeServerDbMs = st.db
+          if (st.api !== undefined) networkPerfRef.current.runtimeServerApiMs = st.api
+          if (!r.ok) return null
+          return r.json()
+        })
+        .then((d) => {
+          networkPerfRef.current.runtimeFetchMs = performance.now() - fetchStart
+          if (requestId !== runtimeDataRequestIdRef.current) return
+          if (!d?.data) return
+          lastRuntimeVarsSignatureRef.current = varsSignature
+          applyRuntimeData(d.data, varsSignature)
+        })
+        .catch(() => {})
+    }, delayMs)
+    return () => { clearTimeout(timer); ac.abort() }
+  }, [status, projectId, runtimeVarsParam, applyRuntimeData, readSignatureCacheEntry])
+
+  useEffect(() => {
+    if (status !== 'ready' || screens.length <= 1 || !currentScreenId) return
+
+    const ordered = [...screens].sort((a, b) => a.sortOrder - b.sortOrder)
+    const idx = ordered.findIndex((s) => s.id === currentScreenId)
+    const candidateIds: string[] = []
+    if (idx >= 0) {
+      if (ordered[idx + 1]) candidateIds.push(ordered[idx + 1].id)
+      if (ordered[idx - 1]) candidateIds.push(ordered[idx - 1].id)
+    }
+    for (const sc of ordered) {
+      if (sc.id !== currentScreenId && !candidateIds.includes(sc.id)) candidateIds.push(sc.id)
+      if (candidateIds.length >= 3) break
+    }
+
+    const signatures: Array<{ signature: string; varsParam: string }> = []
+    for (const id of candidateIds) {
+      const sc = ordered.find((s) => s.id === id)
+      if (!sc) continue
+      const lay = sc.layout as any
+      const ds = (Array.isArray(lay?.dataSources) ? lay.dataSources : []) as Array<{ name: string; urlParamBindings?: Record<string, string> }>
+      const varsParam = buildVarsParamForDataSources(ds, runtimeState)
+      const signature = varsParam || ''
+      if (prefetchedSignaturesRef.current.has(signature)) continue
+      prefetchedSignaturesRef.current.add(signature)
+      signatures.push({ signature, varsParam })
+    }
+    if (signatures.length === 0) return
+
+    let cancelled = false
+    const runPrefetch = async () => {
+      for (const item of signatures) {
+        if (cancelled) return
+
+        if (runtimeDataMemoryCacheRef.current.has(item.signature)) continue
+        const persisted = readSignatureCacheEntry(item.signature)
+        if (persisted) {
+          runtimeDataMemoryCacheRef.current.set(item.signature, persisted)
+          continue
+        }
+
+        const prefetchStart = performance.now()
+        try {
+          const res = await fetch(`/api/p/${projectId}/data${item.varsParam}`, { cache: 'no-store' })
+          if (!res.ok) continue
+          const st = parseServerTimingHeader(res.headers.get('server-timing'))
+          if (st.total !== undefined) networkPerfRef.current.prefetchFetchMs = st.total
+          const json = await res.json()
+          if (!json?.data || cancelled) continue
+          networkPerfRef.current.prefetchFetchMs = Math.max(networkPerfRef.current.prefetchFetchMs, performance.now() - prefetchStart)
+          const next = json.data as Record<string, unknown>
+          runtimeDataMemoryCacheRef.current.set(item.signature, next)
+          writeSignatureCacheEntry(item.signature, next)
+        } catch {
+          // Non-blocking prefetch
         }
       }
-      if (Object.keys(resolved).length) vars[ds.name] = resolved
     }
-    const varsParam = Object.keys(vars).length ? `?vars=${encodeURIComponent(JSON.stringify(vars))}` : ''
-    const ac = new AbortController()
-    const timer = setTimeout(() => {
-      fetch(`/api/p/${projectId}/data${varsParam}`, { signal: ac.signal })
-        .then((r) => r.ok ? r.json() : null)
-        .then((d) => { if (d?.data) setRuntimeData(d.data) })
-        .catch(() => {})
-    }, 400)
-    return () => { clearTimeout(timer); ac.abort() }
-  }, [status, projectId, screenDataSources, runtimeState])
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const idleId = (window as Window & { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(() => { void runPrefetch() })
+      return () => {
+        cancelled = true
+        if ('cancelIdleCallback' in window) {
+          ;(window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(idleId)
+        }
+      }
+    }
+
+    const timer = setTimeout(() => { void runPrefetch() }, 80)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [status, screens, currentScreenId, runtimeState, projectId, readSignatureCacheEntry, writeSignatureCacheEntry])
 
   // Realtime polling for data sources that have realtime: true
   useEffect(() => {
@@ -248,13 +642,24 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
     const interval = Math.max(500, Math.min(...realtimeSources.map((ds: any) => ds.realtimeInterval ?? 3000)))
     const ac = new AbortController()
     const poll = setInterval(() => {
-      fetch(`/api/p/${projectId}/data`, { signal: ac.signal })
-        .then((r) => r.ok ? r.json() : null)
-        .then((d) => { if (d?.data) setRuntimeData(d.data) })
+      const requestId = ++runtimeDataRequestIdRef.current
+      fetch(`/api/p/${projectId}/data`, { signal: ac.signal, cache: 'no-store' })
+        .then(async (r) => {
+          const st = parseServerTimingHeader(r.headers.get('server-timing'))
+          if (st.total !== undefined) networkPerfRef.current.runtimeServerTotalMs = st.total
+          if (st.db !== undefined) networkPerfRef.current.runtimeServerDbMs = st.db
+          if (st.api !== undefined) networkPerfRef.current.runtimeServerApiMs = st.api
+          if (!r.ok) return null
+          return r.json()
+        })
+        .then((d) => {
+          if (requestId !== runtimeDataRequestIdRef.current) return
+          if (d?.data) applyRuntimeData(d.data)
+        })
         .catch(() => {})
     }, interval)
     return () => { clearInterval(poll); ac.abort() }
-  }, [status, projectId, screenDataSources])
+  }, [status, projectId, screenDataSources, applyRuntimeData])
 
   // SEO: update document.title and meta tags when screen changes
   const projectSeoDefaults = useMemo(() => {
@@ -333,10 +738,27 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
   }, [namedScripts, runtimeState])
 
   const resolveBindingFn = useCallback(
-    (raw: string, propsCtx?: Record<string, unknown>) =>
-      resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, props: propsCtx }),
+    (raw: string, propsCtx?: Record<string, unknown>) => {
+      const t0 = performance.now()
+      const out = resolveExpression(raw, { state: runtimeState, data: runtimeData, runScript, props: propsCtx })
+      const dt = performance.now() - t0
+      resolvePerfRef.current.calls += 1
+      resolvePerfRef.current.totalMs += dt
+      if (dt > resolvePerfRef.current.maxMs) resolvePerfRef.current.maxMs = dt
+      return out
+    },
     [runtimeState, runtimeData, runScript]
   )
+
+  const handleCanvasProfilerRender = useCallback((
+    _id: string,
+    _phase: 'mount' | 'update' | 'nested-update',
+    actualDuration: number
+  ) => {
+    renderPerfRef.current.commits += 1
+    renderPerfRef.current.totalMs += actualDuration
+    if (actualDuration > renderPerfRef.current.maxMs) renderPerfRef.current.maxMs = actualDuration
+  }, [])
 
   const stateTypeByKey = useMemo(() => {
     const m: Record<string, 'string' | 'number' | 'boolean'> = {}
@@ -594,9 +1016,13 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
             setRuntimeState((prev) => ({ ...prev, [config.refreshStateKey!]: (Number(prev[config.refreshStateKey!]) || 0) + 1 }))
           }
           // Always trigger a data re-fetch so bindings update
-          fetch(`/api/p/${projectId}/data`)
+          const requestId = ++runtimeDataRequestIdRef.current
+          fetch(`/api/p/${projectId}/data`, { cache: 'no-store' })
             .then((r) => r.ok ? r.json() : null)
-            .then((d) => { if (d?.data) setRuntimeData(d.data) })
+            .then((d) => {
+              if (requestId !== runtimeDataRequestIdRef.current) return
+              if (d?.data) applyRuntimeData(d.data)
+            })
             .catch(() => {})
         } catch (err) {
           console.error(`[CRUD ${action}] Error:`, err)
@@ -608,9 +1034,20 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
     if (action) {
       console.warn('[PreviewApp] Unsupported event action:', action, config)
     }
-  }, [stateTypeByKey, runScript, runtimeState, runtimeData, triggerHaptic, currentScreenId, projectId, screens])
+  }, [stateTypeByKey, runScript, runtimeState, runtimeData, triggerHaptic, currentScreenId, projectId, screens, applyRuntimeData])
 
-  const theme = useMemo(() => (globals.globalTheme ?? {}) as Record<string, string> & { colorMode?: string; customCss?: string }, [globals])
+  const theme = useMemo(() => {
+    const globalTheme = (globals.globalTheme ?? {}) as Record<string, string> & { colorMode?: string; customCss?: string }
+    const screenTheme = ((currentScreen?.layout as any)?.theme ?? {}) as Record<string, string> & { colorMode?: string; customCss?: string }
+    return { ...globalTheme, ...screenTheme }
+  }, [globals, currentScreen])
+
+  const fullRadius = useMemo(() => {
+    const raw = String(theme.borderRadius ?? '').trim().toLowerCase()
+    if (raw === '0' || raw === '0px' || raw === '0rem' || raw === '0em' || raw === '0%') return '0px'
+    const parsed = Number.parseFloat(raw)
+    return Number.isFinite(parsed) && parsed === 0 ? '0px' : '9999px'
+  }, [theme.borderRadius])
 
   const canvasRoot = useMemo((): Node | null => {
     if (!currentScreen) return null
@@ -673,23 +1110,55 @@ export default function PreviewApp({ projectId }: { projectId: string }) {
         '--border-radius': theme.borderRadius ?? '8px',
         '--border-radius-sm': theme.borderRadiusSm ?? '4px',
         '--border-radius-lg': theme.borderRadiusLg ?? '12px',
+        '--border-radius-full': fullRadius,
         backgroundColor: theme.background ?? '#ffffff',
         color: theme.text ?? '#1f2937',
       } as React.CSSProperties}
     >
       {theme.customCss && <style dangerouslySetInnerHTML={{ __html: theme.customCss }} />}
-      <BuilderCanvas
-        root={canvasRoot}
-        selectedId={null}
-        onSelect={() => {}}
-        onUpdate={() => {}}
-        previewMode={true}
-        resolveBinding={resolveBindingFn}
-        theme={theme as any}
-        onMove={() => {}}
-        onRunEvent={handleRunEvent}
-        reusables={Array.from(reusablesById.values())}
-      />
+      <Profiler id="live-canvas" onRender={handleCanvasProfilerRender}>
+        <BuilderCanvas
+          root={canvasRoot}
+          selectedId={null}
+          onSelect={() => {}}
+          onUpdate={() => {}}
+          previewMode={true}
+          resolveBinding={resolveBindingFn}
+          theme={theme as any}
+          onMove={() => {}}
+          onRunEvent={handleRunEvent}
+          reusables={Array.from(reusablesById.values())}
+        />
+      </Profiler>
+      {showPerfHud && (
+        <div
+          style={{
+            position: 'fixed',
+            right: 8,
+            bottom: 8,
+            zIndex: 9999,
+            background: 'rgba(17, 24, 39, 0.88)',
+            color: '#f9fafb',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 11,
+            lineHeight: 1.35,
+            padding: '8px 10px',
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.18)',
+            minWidth: 240,
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Live Perf</div>
+          <div>project fetch: {livePerf.projectFetchMs}ms</div>
+          <div>project server total/db: {livePerf.projectServerTotalMs}ms / {livePerf.projectServerDbMs}ms</div>
+          <div>runtime fetch: {livePerf.runtimeFetchMs}ms</div>
+          <div>runtime server total/db/api: {livePerf.runtimeServerTotalMs}ms / {livePerf.runtimeServerDbMs}ms / {livePerf.runtimeServerApiMs}ms</div>
+          <div>prefetch fetch: {livePerf.prefetchFetchMs}ms</div>
+          <div>resolve: {livePerf.resolveCallsPerSec}/s avg {livePerf.resolveAvgMs}ms max {livePerf.resolveMaxMs}ms</div>
+          <div>render: {livePerf.renderCommitsPerSec}/s avg {livePerf.renderAvgMs}ms max {livePerf.renderMaxMs}ms</div>
+        </div>
+      )}
     </div>
   )
 }

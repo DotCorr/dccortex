@@ -15,7 +15,7 @@ import axios from 'axios'
 import { useState, useCallback, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { flushSync } from 'react-dom'
 import { useWebHaptics } from 'web-haptics/react'
-import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, ExternalLink } from 'lucide-react'
+import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, ExternalLink, SlidersHorizontal } from 'lucide-react'
 import { DeviceFrameset, DeviceOptions } from 'react-device-frameset'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -78,6 +78,14 @@ function normalizeFrameConfig(category: FrameCategory, candidate?: Partial<Frame
     : defaultColor
   const landscape = option.hasLandscape ? Boolean(candidate?.landscape ?? fallback.landscape ?? false) : undefined
   return { device, color, landscape }
+}
+
+function isZeroBorderRadius(value: unknown): boolean {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw) return false
+  if (raw === '0' || raw === '0px' || raw === '0rem' || raw === '0em' || raw === '0%') return true
+  const parsed = Number.parseFloat(raw)
+  return Number.isFinite(parsed) && parsed === 0
 }
 
 type ScreenLayoutPayload = {
@@ -614,6 +622,7 @@ export default function ScreenEditPage() {
   const [canvasBgColor, setCanvasBgColor] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.canvasBgColor ?? '#f3f4f6')
   const [showCanvasMesh, setShowCanvasMesh] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.showCanvasMesh ?? false)
   const [canvasExpanded, setCanvasExpanded] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.canvasExpanded ?? false)
+  const [devSettingsOpen, setDevSettingsOpen] = useState(false)
   const [deviceFrameEnabled, setDeviceFrameEnabled] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.deviceFrameEnabled ?? true)
   const [frameConfigByCategory, setFrameConfigByCategory] = useState<Record<FrameCategory, FrameConfig>>(() => loadStoredPreviewSettings(projectId, screenId)?.frameConfigByCategory ?? DEFAULT_FRAME_CONFIG_BY_CATEGORY)
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>(() => loadStoredPreviewSettings(projectId, screenId)?.previewTheme ?? 'light')
@@ -3643,109 +3652,19 @@ export default function ScreenEditPage() {
                   <Redo2 className="w-4 h-4" />
                 </button>
                 <span className="text-gray-300 dark:text-gray-600">|</span>
-                <span className="text-xs text-gray-500">Canvas / viewport:</span>
-                {(['mobile', 'tablet', 'desktop', 'freeform'] as const).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setPreviewSize(s)}
-                    className={`px-2 py-1 text-xs rounded ${previewSize === s ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
-                  >
-                    {s === 'mobile' ? '375px (portrait)' : s === 'tablet' ? '768px (landscape)' : s === 'desktop' ? 'Desktop (16:9)' : 'Freeform (fill)'}
-                  </button>
-                ))}
-                {previewSize !== 'freeform' && (
-                  <>
-                    <span className="text-gray-300 dark:text-gray-600">|</span>
-                    <span className="text-xs text-gray-500">Frame:</span>
-                    <select
-                      value={activeFrameConfig.device}
-                      onChange={(e) => {
-                        const nextDevice = e.target.value as DeviceName
-                        const option = DeviceOptions[nextDevice]
-                        setFrameConfigByCategory((prev) => ({
-                          ...prev,
-                          [frameCategory]: normalizeFrameConfig(frameCategory, {
-                            device: nextDevice,
-                            color: option.colors[0],
-                            landscape: option.hasLandscape ? prev[frameCategory]?.landscape : undefined,
-                          }),
-                        }))
-                      }}
-                      className="text-xs border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white px-1.5 py-1 rounded"
-                    >
-                      {availableDevices.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
-                    {activeFrameOption.colors.length > 0 && (
-                      <select
-                        value={activeFrameConfig.color ?? activeFrameOption.colors[0]}
-                        onChange={(e) => {
-                          const nextColor = e.target.value
-                          setFrameConfigByCategory((prev) => ({
-                            ...prev,
-                            [frameCategory]: normalizeFrameConfig(frameCategory, {
-                              ...prev[frameCategory],
-                              color: nextColor,
-                            }),
-                          }))
-                        }}
-                        className="text-xs border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white px-1.5 py-1 rounded"
-                      >
-                        {activeFrameOption.colors.map((c: string) => (
-                          <option key={c} value={c}>{String(c)}</option>
-                        ))}
-                      </select>
-                    )}
-                    {activeFrameOption.hasLandscape && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFrameConfigByCategory((prev) => ({
-                            ...prev,
-                            [frameCategory]: normalizeFrameConfig(frameCategory, {
-                              ...prev[frameCategory],
-                              landscape: !prev[frameCategory]?.landscape,
-                            }),
-                          }))
-                        }}
-                        className={`px-2 py-1 text-xs rounded ${activeFrameConfig.landscape ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
-                      >
-                        {activeFrameConfig.landscape ? 'Landscape' : 'Portrait'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setDeviceFrameEnabled((v) => !v)}
-                      disabled={!framesAllowed}
-                      className={`px-2 py-1 text-xs rounded ${effectiveDeviceFrameEnabled ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'} ${!framesAllowed ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : ''}`}
-                      title={framesAllowed ? 'Toggle visual device frame' : 'Device frames are disabled in Edit source mode'}
-                    >
-                      {effectiveDeviceFrameEnabled ? 'Frame On' : 'Frame Off'}
-                    </button>
-                  </>
-                )}
-                {!previewMode && (
-                  <>
-                    <span className="text-gray-300 dark:text-gray-600">|</span>
-                    <button
-                      type="button"
-                      onClick={() => setCanvasExpanded((v) => !v)}
-                      className={`inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded ${canvasExpanded ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
-                      title={canvasExpanded ? 'Collapse canvas' : 'Expand canvas'}
-                    >
-                      {canvasExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                      {canvasExpanded ? 'Collapse' : 'Expand'}
-                    </button>
-                  </>
-                )}
-                <span className="text-gray-300 dark:text-gray-600">|</span>
+                <button
+                  type="button"
+                  onClick={() => setDevSettingsOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]"
+                  title="Open developer canvas settings"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  Dev Settings
+                </button>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setCanvasZoom(z => Math.max(ZOOM_MIN, parseFloat((z - ZOOM_STEP).toFixed(2))))
-                    }
+                    onClick={() => setCanvasZoom(z => Math.max(ZOOM_MIN, parseFloat((z - ZOOM_STEP).toFixed(2))))}
                     className="p-1.5 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]"
                     title="Zoom out"
                   >
@@ -3768,68 +3687,9 @@ export default function ScreenEditPage() {
                     <ZoomIn className="w-4 h-4" />
                   </button>
                 </div>
-                {!previewMode && (
-                  <>
-                    <span className="text-gray-300 dark:text-gray-600">|</span>
-                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400" title="Canvas background color">
-                      <span>Canvas</span>
-                      <input
-                        type="color"
-                        value={canvasBgColor}
-                        onChange={(e) => setCanvasBgColor(e.target.value)}
-                        className="h-6 w-7 cursor-pointer rounded border border-gray-300 dark:border-[#30363d] bg-transparent p-0"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowCanvasMesh((v) => !v)}
-                      className={`px-2 py-1 text-xs rounded ${showCanvasMesh ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
-                      title="Toggle measurement mesh"
-                    >
-                      Mesh {showCanvasMesh ? 'On' : 'Off'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowLayoutInspector((v) => !v)}
-                      className={`px-2 py-1 text-xs rounded ${showLayoutInspector ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
-                      title="Toggle selected component layout inspector"
-                    >
-                      Layout {showLayoutInspector ? 'On' : 'Off'}
-                    </button>
-                  </>
-                )}
-                {previewMode && (
-                  <>
-                    <span className="text-gray-300 dark:text-gray-600">|</span>
-                    <button
-                      type="button"
-                      onClick={() => setApiLiveRefreshEnabled((v) => !v)}
-                      className={`px-2 py-1 text-xs rounded ${apiLiveRefreshEnabled ? 'bg-black dark:bg-white text-white dark:text-black' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
-                      title={apiLiveRefreshEnabled ? 'Disable external API auto-refresh while in preview' : 'Enable external API auto-refresh while in preview'}
-                    >
-                      API Live {apiLiveRefreshEnabled ? 'On' : 'Off'}
-                    </button>
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-gray-500">Theme:</span>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewTheme('light')}
-                        className={`p-1.5 rounded ${previewTheme === 'light' ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
-                        title="Light"
-                      >
-                        <Sun className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewTheme('dark')}
-                        className={`p-1.5 rounded ${previewTheme === 'dark' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
-                        title="Dark"
-                      >
-                        <Moon className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </>
-                )}
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {previewSize} • {Math.round(canvasZoom * 100)}% • {effectiveDeviceFrameEnabled ? 'frame on' : 'frame off'}
+                </span>
               </div>
               <div ref={canvasStageRef} className="flex-1 min-w-0 min-h-0 overflow-auto flex flex-col items-start justify-start">
                 {(() => {
@@ -3869,6 +3729,7 @@ export default function ScreenEditPage() {
                         ['--border-radius' as string]: effectiveTheme.borderRadius ?? DEFAULT_THEME.borderRadius,
                         ['--border-radius-sm' as string]: effectiveTheme.borderRadiusSm ?? DEFAULT_THEME.borderRadiusSm,
                         ['--border-radius-lg' as string]: effectiveTheme.borderRadiusLg ?? DEFAULT_THEME.borderRadiusLg,
+                        ['--border-radius-full' as string]: isZeroBorderRadius(effectiveTheme.borderRadius) ? '0px' : '9999px',
                         ['--primary' as string]: effectiveTheme.primary ?? DEFAULT_THEME.primary,
                         ['--background' as string]: effectiveTheme.background ?? DEFAULT_THEME.background,
                         ['--text' as string]: effectiveTheme.text ?? DEFAULT_THEME.text,
@@ -4152,6 +4013,219 @@ export default function ScreenEditPage() {
           }
         />
       </div>
+
+      {devSettingsOpen && (
+        <div className="fixed inset-0 z-[142] flex items-center justify-center bg-black/60" onClick={(e) => { if (e.target === e.currentTarget) setDevSettingsOpen(false) }}>
+          <div className="w-[980px] max-w-[calc(100vw-1.5rem)] max-h-[86vh] overflow-hidden rounded-lg border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#0d1117] shadow-2xl flex flex-col">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Dev Settings</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Canvas diagnostics and viewport controls with live visual previews.</div>
+              </div>
+              <button type="button" onClick={() => setDevSettingsOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                  <h3 className="text-sm font-semibold mb-1 text-gray-900 dark:text-gray-100">Viewport</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">Control frame target and canvas scaling behavior.</p>
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    {(['mobile', 'tablet', 'desktop', 'freeform'] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setPreviewSize(s)}
+                        className={`px-2 py-1.5 text-xs rounded border ${previewSize === s ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                      >
+                        {s === 'mobile' ? 'Mobile 375' : s === 'tablet' ? 'Tablet 768' : s === 'desktop' ? 'Desktop 16:9' : 'Freeform'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">Use header zoom for quick in/out while editing.</div>
+                </section>
+
+                <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                  <h3 className="text-sm font-semibold mb-1 text-gray-900 dark:text-gray-100">Device Frame</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">Preview with physical shell framing for mobile/tablet/desktop.</p>
+                  {previewSize !== 'freeform' ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={activeFrameConfig.device}
+                          onChange={(e) => {
+                            const nextDevice = e.target.value as DeviceName
+                            const option = DeviceOptions[nextDevice]
+                            setFrameConfigByCategory((prev) => ({
+                              ...prev,
+                              [frameCategory]: normalizeFrameConfig(frameCategory, {
+                                device: nextDevice,
+                                color: option.colors[0],
+                                landscape: option.hasLandscape ? prev[frameCategory]?.landscape : undefined,
+                              }),
+                            }))
+                          }}
+                          className="flex-1 text-xs border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white px-1.5 py-1 rounded"
+                        >
+                          {availableDevices.map((name) => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setDeviceFrameEnabled((v) => !v)}
+                          disabled={!framesAllowed}
+                          className={`px-2 py-1 text-xs rounded border ${effectiveDeviceFrameEnabled ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]'} ${!framesAllowed ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : ''}`}
+                        >
+                          {effectiveDeviceFrameEnabled ? 'Frame On' : 'Frame Off'}
+                        </button>
+                      </div>
+                      {activeFrameOption.colors.length > 0 && (
+                        <select
+                          value={activeFrameConfig.color ?? activeFrameOption.colors[0]}
+                          onChange={(e) => {
+                            const nextColor = e.target.value
+                            setFrameConfigByCategory((prev) => ({
+                              ...prev,
+                              [frameCategory]: normalizeFrameConfig(frameCategory, {
+                                ...prev[frameCategory],
+                                color: nextColor,
+                              }),
+                            }))
+                          }}
+                          className="w-full text-xs border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white px-1.5 py-1 rounded"
+                        >
+                          {activeFrameOption.colors.map((c: string) => (
+                            <option key={c} value={c}>{String(c)}</option>
+                          ))}
+                        </select>
+                      )}
+                      {activeFrameOption.hasLandscape && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFrameConfigByCategory((prev) => ({
+                              ...prev,
+                              [frameCategory]: normalizeFrameConfig(frameCategory, {
+                                ...prev[frameCategory],
+                                landscape: !prev[frameCategory]?.landscape,
+                              }),
+                            }))
+                          }}
+                          className={`px-2 py-1 text-xs rounded border ${activeFrameConfig.landscape ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                        >
+                          {activeFrameConfig.landscape ? 'Landscape' : 'Portrait'}
+                        </button>
+                      )}
+                      <div className="h-16 rounded border border-dashed border-gray-300 dark:border-[#30363d] flex items-center justify-center">
+                        <div className={`transition-all ${effectiveDeviceFrameEnabled ? 'w-20 h-10' : 'w-16 h-8'} border ${effectiveDeviceFrameEnabled ? 'border-gray-900 dark:border-gray-100' : 'border-gray-400'} bg-gradient-to-br from-gray-100 to-gray-200 dark:from-[#161b22] dark:to-[#1f2937]`} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Frame controls are hidden in freeform mode because the viewport fills available space.</div>
+                  )}
+                </section>
+
+                <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                  <h3 className="text-sm font-semibold mb-1 text-gray-900 dark:text-gray-100">Canvas FX</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">Debug visual helpers for alignment and spacing checks.</p>
+                  {!previewMode && (
+                    <div className="space-y-2">
+                      <label className="inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                        <span>Canvas color</span>
+                        <input
+                          type="color"
+                          value={canvasBgColor}
+                          onChange={(e) => setCanvasBgColor(e.target.value)}
+                          className="h-6 w-8 cursor-pointer rounded border border-gray-300 dark:border-[#30363d] bg-transparent p-0"
+                        />
+                      </label>
+                      <div className="h-14 rounded border border-gray-200 dark:border-[#30363d] overflow-hidden" style={{ backgroundColor: canvasBgColor }} />
+                      <button
+                        type="button"
+                        onClick={() => setShowCanvasMesh((v) => !v)}
+                        className={`px-2 py-1 text-xs rounded border ${showCanvasMesh ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                      >
+                        Mesh {showCanvasMesh ? 'On' : 'Off'}
+                      </button>
+                      <div
+                        className="h-14 rounded border border-gray-200 dark:border-[#30363d]"
+                        style={{
+                          backgroundImage: showCanvasMesh
+                            ? 'radial-gradient(circle, rgba(0,0,0,0.14) 1px, transparent 1.1px), radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1.1px)'
+                            : 'linear-gradient(135deg, rgba(148,163,184,0.15), rgba(148,163,184,0.02))',
+                          backgroundSize: showCanvasMesh ? '20px 20px, 80px 80px' : 'auto',
+                          backgroundPosition: showCanvasMesh ? '0 0, 10px 10px' : 'center',
+                        }}
+                      />
+                    </div>
+                  )}
+                  {previewMode && <div className="text-xs text-gray-500 dark:text-gray-400">Mesh and canvas-color overlays are editor-only so exported preview remains clean.</div>}
+                </section>
+
+                <section className="rounded border border-gray-200 dark:border-[#30363d] p-3">
+                  <h3 className="text-sm font-semibold mb-1 text-gray-900 dark:text-gray-100">Preview Runtime</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">Theme and API behavior for runtime simulation.</p>
+                  <div className="space-y-2">
+                    {!previewMode && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setCanvasExpanded((v) => !v)}
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded border ${canvasExpanded ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                        >
+                          {canvasExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                          {canvasExpanded ? 'Collapse canvas' : 'Expand canvas'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowLayoutInspector((v) => !v)}
+                          className={`ml-2 px-2 py-1 text-xs rounded border ${showLayoutInspector ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                        >
+                          Layout {showLayoutInspector ? 'On' : 'Off'}
+                        </button>
+                      </>
+                    )}
+                    {previewMode && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setApiLiveRefreshEnabled((v) => !v)}
+                          className={`px-2 py-1 text-xs rounded border ${apiLiveRefreshEnabled ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' : 'border-gray-200 dark:border-[#30363d] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                          title={apiLiveRefreshEnabled ? 'Disable external API auto-refresh while in preview' : 'Enable external API auto-refresh while in preview'}
+                        >
+                          API Live {apiLiveRefreshEnabled ? 'On' : 'Off'}
+                        </button>
+                        <div className="flex items-center gap-1 pt-1">
+                          <span className="text-xs text-gray-500">Theme:</span>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewTheme('light')}
+                            className={`p-1.5 rounded border ${previewTheme === 'light' ? 'bg-gray-200 dark:bg-gray-600 text-gray-900 dark:text-white border-gray-300 dark:border-gray-500' : 'border-gray-200 dark:border-[#30363d] text-gray-500 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                            title="Light"
+                          >
+                            <Sun className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewTheme('dark')}
+                            className={`p-1.5 rounded border ${previewTheme === 'dark' ? 'bg-gray-700 text-white border-gray-700' : 'border-gray-200 dark:border-[#30363d] text-gray-500 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                            title="Dark"
+                          >
+                            <Moon className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {orgResourceBrowserOpen && (
         <div className="fixed inset-0 z-[145] flex items-center justify-center bg-black/55" onClick={(e) => { if (e.target === e.currentTarget) setOrgResourceBrowserOpen(false) }}>
@@ -4504,6 +4578,7 @@ export default function ScreenEditPage() {
           ['--border-radius' as string]: modalTheme.borderRadius ?? '0px',
           ['--border-radius-sm' as string]: modalTheme.borderRadiusSm ?? '0px',
           ['--border-radius-lg' as string]: modalTheme.borderRadiusLg ?? '0px',
+          ['--border-radius-full' as string]: isZeroBorderRadius(modalTheme.borderRadius) ? '0px' : '9999px',
         } : {}
         return (
           <div

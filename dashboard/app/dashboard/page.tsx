@@ -167,6 +167,21 @@ export default function DashboardPage() {
                   key={org.id}
                   className="bg-white dark:bg-[#161b22] p-8 hover:bg-gray-50 dark:hover:bg-[#1c2128] transition-colors relative group"
                 >
+                  {(() => {
+                    const status = String(org?.metadata?.containerStatus ?? 'unknown')
+                    const statusClasses = status === 'ready'
+                      ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
+                      : status === 'provisioning' || status === 'queued'
+                        ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                        : status === 'failed'
+                          ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800'
+                          : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+                    return (
+                      <span className={`absolute top-6 left-6 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] border ${statusClasses}`}>
+                        {status}
+                      </span>
+                    )
+                  })()}
                   {editingOrg === org.id ? (
                     <div className="space-y-4">
                       <input
@@ -207,7 +222,7 @@ export default function DashboardPage() {
                         href={`/organizations/${org.id}`}
                         className="block mb-6 group/link"
                       >
-                        <h3 className="text-2xl font-medium mb-3 text-black dark:text-white tracking-tight group-hover/link:text-gray-600 dark:group-hover/link:text-gray-400 transition-colors">
+                        <h3 className="text-2xl font-medium mb-3 text-black dark:text-white tracking-tight group-hover/link:text-gray-600 dark:group-hover/link:text-gray-400 transition-colors mt-8">
                           {org.name}
                         </h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 font-light leading-relaxed min-h-[3rem]">
@@ -271,7 +286,7 @@ export default function DashboardPage() {
               <ul className="text-sm text-red-800 dark:text-red-300 space-y-1 list-disc list-inside">
                 <li>All projects and their code</li>
                 <li>All builds and generated files</li>
-                <li>The organization container (your "computer")</li>
+                <li>The organization workspace</li>
                 <li>All team members and invitations</li>
                 <li>All deployment data</li>
               </ul>

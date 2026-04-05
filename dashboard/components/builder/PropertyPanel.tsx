@@ -362,6 +362,8 @@ const GRADIENT_PRESETS: { label: string; value: string }[] = [
   { label: 'Black → White', value: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)' },
   { label: 'Transparent → Black (overlay)', value: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.7) 100%)' },
 ]
+
+const GRADIENT_BUILDER_KEYS = new Set(['gradient', 'background', 'backgroundImage'])
 /** Quick-pick pill values for fields that have a small set of well-known options but also support free text / interpolation */
 const STYLE_QUICK_PICKS: Record<string, string[]> = {
   fontStyle: ['normal', 'italic', 'oblique'],
@@ -863,7 +865,6 @@ export function PropertyPanel({
     { title: 'Background', keys: ['backgroundColor', 'background', 'backgroundImage', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode', 'opacity'] },
     { title: 'Border', keys: ['border', 'borderTop', 'borderRight', 'borderBottom', 'borderLeft', 'borderWidth', 'borderStyle', 'borderColor', 'borderRadius', 'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius'] },
     { title: 'Shadow & outline', keys: ['boxShadow', 'outline', 'outlineOffset'] },
-    { title: 'Animation & FX', keys: ['animation', 'animationDuration', 'animationTimingFunction', 'animationDelay', 'animationIterationCount', 'animationDirection', 'animationFillMode', 'transition', 'transform', 'willChange'] },
     { title: 'Filters & Blend', keys: ['filter', 'backdropFilter', 'mixBlendMode'] },
     { title: 'Position', keys: ['position', 'top', 'right', 'bottom', 'left', 'zIndex'] },
     { title: 'Other', keys: ['cursor', 'pointerEvents', 'userSelect', 'aspectRatio', 'overflow', 'overflowX', 'overflowY', 'objectFit', 'objectPosition', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight'] },
@@ -1543,6 +1544,45 @@ export function PropertyPanel({
     const rawVal = typeof val === 'string' ? val : typeof val === 'number' ? String(val) : ''
     const isBound = rawVal.startsWith('{{') && rawVal.endsWith('}}')
 
+    if (GRADIENT_BUILDER_KEYS.has(key)) {
+      return (
+        <div key={key}>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <div className="flex gap-1 mb-1.5">
+            {renderExpressionEditor(rawVal, (next) => setProp(key, next), 'linear-gradient(135deg, #f00, #00f)', 'flex-1')}
+            <button
+              type="button"
+              onClick={() => setGradientBuilderFor(key)}
+              className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] text-gray-600 dark:text-gray-400 hover:border-black dark:hover:border-white hover:text-black dark:hover:text-white shrink-0 font-medium"
+              title="Open gradient builder"
+            >
+              Build
+            </button>
+          </div>
+          {rawVal && (
+            <div
+              className="w-full h-8 border border-gray-200 dark:border-[#30363d] mb-1.5"
+              style={{ background: rawVal }}
+            />
+          )}
+          <div className="flex flex-wrap gap-1">
+            {GRADIENT_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => setProp(key, p.value)}
+                className="relative overflow-hidden px-2 py-1 text-[10px] border border-gray-200 dark:border-[#30363d] font-medium text-gray-700 dark:text-gray-300 hover:border-black dark:hover:border-white"
+                title={p.value}
+              >
+                <span className="absolute inset-0 opacity-30" style={{ background: p.value }} />
+                <span className="relative">{p.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
     // ── Hamburger color fields — text input + colour swatch picker ───────────
     if (key === 'hamburgerBg' || key === 'hamburgerColor') {
       const isHexLike = /^#[0-9A-Fa-f]{3,8}$/.test(rawVal)
@@ -1713,7 +1753,13 @@ export function PropertyPanel({
             )}
             <button
               type="button"
-              onClick={() => setPropExpressionKey(key)}
+              onClick={() => {
+                if (GRADIENT_BUILDER_KEYS.has(key)) {
+                  setGradientBuilderFor(key)
+                  return
+                }
+                setPropExpressionKey(key)
+              }}
               className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
             >
               Build
@@ -2352,23 +2398,23 @@ export function PropertyPanel({
                     )}
                     {loadingUxEnabled && (
                       <div className="mt-2 space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Fallback style</label>
+                          <select
+                            value={String(props.suspenseVariant ?? 'skeleton')}
+                            onChange={(e) => setProp('suspenseVariant', e.target.value)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                          >
+                            <option value="skeleton">Skeleton blocks</option>
+                            <option value="spinner">Spinner + label</option>
+                            <option value="line">Line loader</option>
+                            <option value="dots">Pulsing dots</option>
+                            <option value="custom">Label only</option>
+                          </select>
+                        </div>
+                        {String(props.suspenseVariant ?? 'skeleton') === 'line' && (
                           <div>
-                            <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Style</label>
-                            <select
-                              value={String(props.suspenseVariant ?? 'skeleton')}
-                              onChange={(e) => setProp('suspenseVariant', e.target.value)}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
-                            >
-                              <option value="skeleton">Skeleton</option>
-                              <option value="spinner">Spinner</option>
-                              <option value="line">Line loader</option>
-                              <option value="dots">Dots</option>
-                              <option value="custom">Custom label</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Direction</label>
+                            <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Line direction</label>
                             <select
                               value={String(props.suspenseDirection ?? 'horizontal')}
                               onChange={(e) => setProp('suspenseDirection', e.target.value)}
@@ -2378,7 +2424,7 @@ export function PropertyPanel({
                               <option value="vertical">Vertical</option>
                             </select>
                           </div>
-                        </div>
+                        )}
                         <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                           <input
                             type="checkbox"
@@ -2387,13 +2433,56 @@ export function PropertyPanel({
                           />
                           Auto-detect bound data sources still loading
                         </label>
-                        <div>
-                          <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Manual loading condition (optional)</label>
+                        <div className="relative">
+                          <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">
+                            Show fallback when (optional)
+                            <button
+                              type="button"
+                              onClick={() => setBindingFor(bindingFor === 'suspenseWhen' ? null : 'suspenseWhen')}
+                              className={`ml-1.5 p-0.5 rounded ${String(props.suspenseWhen ?? '').startsWith('{{') ? 'text-amber-500' : 'text-gray-400 hover:text-[var(--primary)]'}`}
+                              title="Bind to state, data, or expression"
+                            >
+                              <Zap className="w-3.5 h-3.5" />
+                            </button>
+                          </label>
+                          {bindingFor === 'suspenseWhen' && (
+                            <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
+                              <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
+                              <select
+                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  if (v.startsWith('state:')) setProp('suspenseWhen', `{{state.${v.slice(6)}}}`)
+                                  else if (v.startsWith('data:')) setProp('suspenseWhen', `{{data.${v.slice(5)}}}`)
+                                  else if (v.startsWith('script:')) setProp('suspenseWhen', `{{script.${v.slice(7)}}}`)
+                                  else if (v.startsWith('prop:')) setProp('suspenseWhen', `{{prop.${v.slice(5)}}}`)
+                                  else if (v === 'expr') setProp('suspenseWhen', '{{ }}')
+                                  setBindingFor(null)
+                                }}
+                              >
+                                <option value="">Select…</option>
+                                {parentPropSchema.length > 0 && parentPropSchema.map((p) => (
+                                  <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>
+                                ))}
+                                {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => (
+                                  <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>
+                                ))}
+                                {bindingDataSourceNames.map((name) => (
+                                  <option key={name} value={`data:${name}`}>Data: {name}</option>
+                                ))}
+                                {Object.keys(namedScripts).filter(Boolean).map((name) => (
+                                  <option key={name} value={`script:${name}`}>Script: {name}</option>
+                                ))}
+                                <option value="expr">Expression</option>
+                              </select>
+                              <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
+                            </div>
+                          )}
                           <div className="flex gap-1">
                             {renderExpressionEditor(
                               String(props.suspenseWhen ?? ''),
                               (next) => setProp('suspenseWhen', next || undefined),
-                              '{{state.isLoading}}',
+                              '{{state.isLoading}} || {{data.users.loading}}',
                               'flex-1'
                             )}
                             <button
@@ -2405,6 +2494,15 @@ export function PropertyPanel({
                               Build
                             </button>
                           </div>
+                          {!!props.suspenseWhen && (
+                            <button
+                              type="button"
+                              onClick={() => setProp('suspenseWhen', undefined)}
+                              className="mt-1 text-[10px] text-red-400 hover:text-red-600"
+                            >
+                              Clear condition
+                            </button>
+                          )}
                         </div>
                         <div>
                           <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Fallback label</label>
@@ -2585,7 +2683,51 @@ export function PropertyPanel({
         {activeTab === 'animation' && (
           node ? (
             <div className="space-y-4">
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Add entrance animations, transitions, transforms, and sequential effects.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Centralized motion controls: gradient movement, color FX, transitions, and sequence playback.</p>
+
+              <div className="space-y-2 p-2 border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50 dark:bg-indigo-950/10">
+                <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">Gradient + Color Motion</div>
+                <p className="text-[11px] text-indigo-700/85 dark:text-indigo-300/85">Apply gradient colors in Style, then animate them here. Every field supports expressions.</p>
+                <div className="grid gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Gradient source (background or backgroundImage)</label>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.background ?? props.backgroundImage ?? ''), (next) => {
+                        if (String(props.background ?? '').trim()) setProp('background', next)
+                        else setProp('backgroundImage', next)
+                      }, 'linear-gradient(...) or {{state.dynamicGradient}}', 'flex-1')}
+                      <button
+                        type="button"
+                        onClick={() => setPropExpressionKey(String(props.background ?? '').trim() ? 'background' : 'backgroundImage')}
+                        className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                        title="Open expression builder"
+                      >
+                        Build
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Background size (for shift animations)</label>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.backgroundSize ?? ''), (next) => setProp('backgroundSize', next), '200% 200%', 'flex-1')}
+                      <button
+                        type="button"
+                        onClick={() => setPropExpressionKey('backgroundSize')}
+                        className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                        title="Open expression builder"
+                      >
+                        Build
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  <button type="button" onClick={() => { setProp('backgroundSize', '200% 200%'); setProp('animation', 'dccGradientShiftX 8s ease infinite') }} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Shift X</button>
+                  <button type="button" onClick={() => { setProp('backgroundSize', '200% 200%'); setProp('animation', 'dccGradientShiftY 8s ease alternate infinite') }} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Shift Y</button>
+                  <button type="button" onClick={() => setProp('animation', 'dccGradientRotate 10s linear infinite')} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Rotate</button>
+                  <button type="button" onClick={() => setProp('animation', 'dccGradientHueShift 6s linear infinite')} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Hue Shift</button>
+                </div>
+              </div>
 
               <div className="border border-blue-200 dark:border-blue-900/40 p-3 bg-blue-50 dark:bg-blue-950/10">
                 <AnimationSequenceBuilder
@@ -2594,45 +2736,45 @@ export function PropertyPanel({
                 />
               </div>
 
-              <div className="space-y-2 p-2 border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Visibility + Sequence</div>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                  Use this when your element has <code className="font-mono">visibleWhen</code> and you want it to appear/disappear smoothly.
-                </p>
-                <div>
-                  <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">When visibleWhen changes</label>
-                  <select
-                    value={String(props.visibleWhenMode ?? 'remove')}
-                    onChange={(e) => setProp('visibleWhenMode', e.target.value)}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
-                  >
-                    <option value="remove">Instant (remove from layout)</option>
-                    <option value="animate">Animate (fade + slide)</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
+              <details className="border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]" open={false}>
+                <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Advanced: Visibility Transitions</summary>
+                <div className="space-y-2 p-2 pt-0">
                   <div>
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Duration</label>
-                    {renderExpressionEditor(String(props.visibleWhenDuration ?? '0.25s'), (next) => setProp('visibleWhenDuration', next), '0.25s')}
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Easing</label>
-                    {renderExpressionEditor(String(props.visibleWhenEasing ?? 'ease'), (next) => setProp('visibleWhenEasing', next), 'ease')}
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Slide offset</label>
-                    <input
-                      type="number"
-                      value={Number(props.visibleWhenOffset ?? 8)}
-                      onChange={(e) => setProp('visibleWhenOffset', Number(e.target.value || 0))}
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">When visibleWhen changes</label>
+                    <select
+                      value={String(props.visibleWhenMode ?? 'remove')}
+                      onChange={(e) => setProp('visibleWhenMode', e.target.value)}
                       className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
-                    />
+                    >
+                      <option value="remove">Instant (remove from layout)</option>
+                      <option value="animate">Animate (fade + slide)</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Duration</label>
+                      <div className="flex gap-1">
+                        {renderExpressionEditor(String(props.visibleWhenDuration ?? '0.25s'), (next) => setProp('visibleWhenDuration', next), '0.25s', 'flex-1')}
+                        <button type="button" onClick={() => setPropExpressionKey('visibleWhenDuration')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Easing</label>
+                      <div className="flex gap-1">
+                        {renderExpressionEditor(String(props.visibleWhenEasing ?? 'ease'), (next) => setProp('visibleWhenEasing', next), 'ease', 'flex-1')}
+                        <button type="button" onClick={() => setPropExpressionKey('visibleWhenEasing')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Slide offset</label>
+                      <div className="flex gap-1">
+                        {renderExpressionEditor(String(props.visibleWhenOffset ?? 8), (next) => setProp('visibleWhenOffset', next), '8', 'flex-1')}
+                        <button type="button" onClick={() => setPropExpressionKey('visibleWhenOffset')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                  Tip: Keep your sequence for motion style and set this to <strong>Animate</strong> so visibleWhen does not pop in/out instantly.
-                </p>
-              </div>
+              </details>
 
               <div className="space-y-2">
                 <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Quick Presets</div>
@@ -2663,48 +2805,86 @@ export function PropertyPanel({
 
               <div className="space-y-1">
                 <label className="block text-xs text-gray-500 dark:text-gray-400">Animation (shorthand)</label>
-                {renderExpressionEditor(String(props.animation ?? ''), (next) => setProp('animation', next), 'e.g. fadeIn 0.5s ease both')}
+                <div className="flex gap-1">
+                  {renderExpressionEditor(String(props.animation ?? ''), (next) => setProp('animation', next), 'e.g. fadeIn 0.5s ease both', 'flex-1')}
+                  <button
+                    type="button"
+                    onClick={() => setPropExpressionKey('animation')}
+                    className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                    title="Open expression builder"
+                  >
+                    Build
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Fine-tune</div>
-                <div className="grid gap-2">
+              <details className="border border-gray-200 dark:border-[#30363d]" open={false}>
+                <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Advanced: Fine-tune Motion</summary>
+                <div className="grid gap-2 p-2 pt-0">
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Duration</label>
-                    {renderExpressionEditor(String(props.animationDuration ?? ''), (next) => setProp('animationDuration', next), '0.5s')}
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationDuration ?? ''), (next) => setProp('animationDuration', next), '0.5s', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationDuration')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Timing Function</label>
-                    <select value={String(props.animationTimingFunction ?? 'ease')} onChange={(e) => setProp('animationTimingFunction', e.target.value)} className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white">
-                      {ANIMATION_TIMING_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationTimingFunction ?? 'ease'), (next) => setProp('animationTimingFunction', next), 'ease | linear | cubic-bezier(...)', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationTimingFunction')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Delay</label>
-                    {renderExpressionEditor(String(props.animationDelay ?? ''), (next) => setProp('animationDelay', next), '0s')}
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationDelay ?? ''), (next) => setProp('animationDelay', next), '0s', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationDelay')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Iteration Count</label>
-                    <select value={String(props.animationIterationCount ?? '1')} onChange={(e) => setProp('animationIterationCount', e.target.value)} className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white">
-                      {ANIMATION_ITERATION_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationIterationCount ?? '1'), (next) => setProp('animationIterationCount', next), '1 | infinite', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationIterationCount')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Direction</label>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationDirection ?? 'normal'), (next) => setProp('animationDirection', next), 'normal | alternate | reverse', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationDirection')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Fill Mode</label>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationFillMode ?? 'none'), (next) => setProp('animationFillMode', next), 'none | both | forwards', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationFillMode')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
 
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Transition & Transform</div>
-                <div className="grid gap-2">
+              <details className="border border-gray-200 dark:border-[#30363d]" open={false}>
+                <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Advanced: Transition & Transform</summary>
+                <div className="grid gap-2 p-2 pt-0">
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Transition</label>
-                    {renderExpressionEditor(String(props.transition ?? ''), (next) => setProp('transition', next), 'all 0.3s ease')}
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.transition ?? ''), (next) => setProp('transition', next), 'all 0.3s ease', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('transition')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Transform</label>
-                    {renderExpressionEditor(String(props.transform ?? ''), (next) => setProp('transform', next), 'rotate(5deg) scale(1.1)')}
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.transform ?? ''), (next) => setProp('transform', next), 'rotate(5deg) scale(1.1)', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('transform')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
             </div>
           ) : (
             <div className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
@@ -3416,13 +3596,6 @@ export function PropertyPanel({
           onApply={(payload) => {
             if (!gradientBuilderFor) return
             setProp(gradientBuilderFor, payload.css)
-            if (payload.animation) {
-              if (payload.animation.backgroundSize) setProp('backgroundSize', payload.animation.backgroundSize)
-              setProp(
-                'animation',
-                `${payload.animation.name} ${payload.animation.durationSec}s ${payload.animation.timing} ${payload.animation.direction} infinite`
-              )
-            }
           }}
         />
       </div>

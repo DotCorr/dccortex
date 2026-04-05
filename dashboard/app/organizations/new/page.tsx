@@ -30,9 +30,8 @@ export default function NewOrganizationPage() {
     setLoading(true)
 
     try {
-      // Container creation can take 2–5 min (Docker build); use 5 min timeout so client doesn't drop
       const response = await axios.post('/api/organizations', formData, {
-        timeout: 300000, // 5 minutes
+        timeout: 15000,
       })
       router.push(`/organizations/${response.data.organization.id}`)
     } catch (err: any) {
@@ -59,7 +58,7 @@ export default function NewOrganizationPage() {
               Create Organization
             </h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">
-              Start a new organization to collaborate with your team. First-time setup can take 2–3 minutes.
+              Start a new organization to collaborate with your team. It should appear immediately, while background provisioning finishes in parallel.
             </p>
 
             {error && (

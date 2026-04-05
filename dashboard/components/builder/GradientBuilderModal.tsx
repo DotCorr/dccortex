@@ -96,7 +96,7 @@ interface Props {
   open: boolean
   initialValue?: string
   onClose: () => void
-  onApply: (payload: { css: string; animation?: { name: string; durationSec: number; timing: string; direction: string; backgroundSize?: string } }) => void
+  onApply: (payload: { css: string }) => void
 }
 
 const DEFAULT_STOPS: ColorStop[] = [
@@ -110,10 +110,6 @@ export function GradientBuilderModal({ open, initialValue, onClose, onApply }: P
   const [stops, setStops] = useState<ColorStop[]>(DEFAULT_STOPS)
   const [dragging, setDragging] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const [animateGradient, setAnimateGradient] = useState(false)
-  const [animationMode, setAnimationMode] = useState<'x' | 'y' | 'rotate' | 'hue'>('x')
-  const [animationDurationSec, setAnimationDurationSec] = useState(8)
-  const [animationTiming, setAnimationTiming] = useState('ease')
 
   const css = buildCSS(type, angle, stops)
 
@@ -330,59 +326,8 @@ export function GradientBuilderModal({ open, initialValue, onClose, onApply }: P
             </div>
           </div>
 
-          <div className="border border-gray-200 dark:border-[#30363d] p-2.5 space-y-2">
-            <label className="inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-              <input
-                type="checkbox"
-                checked={animateGradient}
-                onChange={(e) => setAnimateGradient(e.target.checked)}
-              />
-              Animate gradient on apply
-            </label>
-            {animateGradient && (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1 uppercase tracking-wide">Mode</label>
-                    <select
-                      value={animationMode}
-                      onChange={(e) => setAnimationMode(e.target.value as 'x' | 'y' | 'rotate' | 'hue')}
-                      className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
-                    >
-                      <option value="x">Pan X</option>
-                      <option value="y">Pan Y</option>
-                      <option value="rotate">Rotate gradient</option>
-                      <option value="hue">Hue shift</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1 uppercase tracking-wide">Duration (s)</label>
-                    <input
-                      type="number"
-                      min={0.5}
-                      max={60}
-                      step={0.5}
-                      value={animationDurationSec}
-                      onChange={(e) => setAnimationDurationSec(Math.min(60, Math.max(0.5, Number(e.target.value) || 8)))}
-                      className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1 uppercase tracking-wide">Timing</label>
-                  <select
-                    value={animationTiming}
-                    onChange={(e) => setAnimationTiming(e.target.value)}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
-                  >
-                    <option value="linear">linear</option>
-                    <option value="ease">ease</option>
-                    <option value="ease-in-out">ease-in-out</option>
-                    <option value="cubic-bezier(0.22, 1, 0.36, 1)">smooth spring</option>
-                  </select>
-                </div>
-              </>
-            )}
+          <div className="border border-gray-200 dark:border-[#30363d] p-2.5 text-[11px] text-gray-500 dark:text-gray-400">
+            Gradient motion has been centralized in the Animation tab. Apply colors here, then configure movement and expression bindings in Animate.
           </div>
         </div>
 
@@ -394,23 +339,7 @@ export function GradientBuilderModal({ open, initialValue, onClose, onApply }: P
           <button
             type="button"
             onClick={() => {
-              const animationPayload = animateGradient
-                ? {
-                    name:
-                      animationMode === 'x'
-                        ? 'dccGradientShiftX'
-                        : animationMode === 'y'
-                          ? 'dccGradientShiftY'
-                          : animationMode === 'rotate'
-                            ? 'dccGradientRotate'
-                            : 'dccGradientHueShift',
-                    durationSec: animationDurationSec,
-                    timing: animationTiming,
-                    direction: animationMode === 'y' ? 'alternate' : 'normal',
-                    backgroundSize: animationMode === 'x' || animationMode === 'y' ? '200% 200%' : undefined,
-                  }
-                : undefined
-              onApply({ css, animation: animationPayload })
+              onApply({ css })
               onClose()
             }}
             className="flex-1 py-1.5 text-sm bg-black dark:bg-white text-white dark:text-black font-medium hover:bg-gray-800 dark:hover:bg-gray-200"
