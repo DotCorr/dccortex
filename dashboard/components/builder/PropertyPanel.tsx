@@ -10,7 +10,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import type { EditorProps } from '@monaco-editor/react'
-import { Zap } from 'lucide-react'
+import {
+  Braces,
+  CircleDot,
+  Eye,
+  FileText,
+  Gauge,
+  Globe,
+  Image,
+  LayoutGrid,
+  Link2,
+  MoveHorizontal,
+  Palette,
+  Rows3,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  TextCursorInput,
+  TimerReset,
+  ToggleLeft,
+  Type,
+  Zap,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { Node } from './registry'
 import { getComponentDef, STYLE_PROP_KEYS } from './registry'
 import { FONT_FAMILIES } from './fonts'
@@ -299,10 +321,124 @@ const PROP_LABELS: Record<string, string> = {
   thickness: 'Thickness',
 }
 
+const FIELD_ICONS: Record<string, LucideIcon> = {
+  display: LayoutGrid,
+  flex: Rows3,
+  flexDirection: MoveHorizontal,
+  flexWrap: Rows3,
+  alignItems: SlidersHorizontal,
+  alignContent: SlidersHorizontal,
+  justifyContent: SlidersHorizontal,
+  gap: Rows3,
+  rowGap: Rows3,
+  columnGap: Rows3,
+  padding: LayoutGrid,
+  margin: LayoutGrid,
+  width: LayoutGrid,
+  height: LayoutGrid,
+  minHeight: LayoutGrid,
+  maxHeight: LayoutGrid,
+  minWidth: LayoutGrid,
+  maxWidth: LayoutGrid,
+  flexGrow: Rows3,
+  flexShrink: Rows3,
+  flexBasis: Rows3,
+  order: Rows3,
+  gridTemplateColumns: LayoutGrid,
+  gridTemplateRows: LayoutGrid,
+  gridColumn: LayoutGrid,
+  gridRow: LayoutGrid,
+  content: FileText,
+  title: Type,
+  label: Type,
+  url: Link2,
+  href: Link2,
+  alt: Image,
+  icon: Sparkles,
+  placeholder: TextCursorInput,
+  options: ToggleLeft,
+  columns: LayoutGrid,
+  rows: LayoutGrid,
+  data: CircleDot,
+  checked: ToggleLeft,
+  visibleWhen: Eye,
+  backgroundColor: Palette,
+  color: Palette,
+  fontSize: Type,
+  fontWeight: Type,
+  fontFamily: Type,
+  fontStyle: Type,
+  lineHeight: Type,
+  letterSpacing: Type,
+  textAlign: Type,
+  textDecoration: Type,
+  textTransform: Type,
+  border: Palette,
+  borderWidth: Palette,
+  borderStyle: Palette,
+  borderColor: Palette,
+  borderRadius: Palette,
+  boxShadow: Palette,
+  opacity: Gauge,
+  outline: Palette,
+  cursor: CircleDot,
+  transition: TimerReset,
+  transform: Sparkles,
+  overflow: CircleDot,
+  position: LayoutGrid,
+  background: Palette,
+  backgroundImage: Palette,
+  backgroundSize: Palette,
+  backgroundPosition: Palette,
+  backgroundRepeat: Palette,
+  backgroundBlendMode: Palette,
+  animation: Sparkles,
+  animationDuration: TimerReset,
+  animationTimingFunction: Sparkles,
+  animationDelay: TimerReset,
+  animationIterationCount: Sparkles,
+  animationDirection: Sparkles,
+  animationFillMode: Sparkles,
+  willChange: Sparkles,
+  filter: Sparkles,
+  customId: Globe,
+  suspenseEnabled: Eye,
+  suspenseVariant: Eye,
+  suspenseDirection: Eye,
+  suspenseLabel: Eye,
+  suspenseWhen: Eye,
+  suspenseSmart: Eye,
+  reusableProps: Braces,
+  visibleWhenMode: Eye,
+  visibleWhenDuration: TimerReset,
+  visibleWhenEasing: Sparkles,
+  visibleWhenOffset: Sparkles,
+  animationSequence: Sparkles,
+  customHead: FileText,
+  canonical: Globe,
+  robots: Search,
+  ogTitle: Globe,
+  ogDescription: FileText,
+  ogImage: Image,
+}
+
+const renderFieldLabel = (key: string, label: string) => {
+  const Icon = FIELD_ICONS[key] ?? CircleDot
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-[var(--primary)]/10 text-[var(--primary)]">
+        <Icon className="h-2.5 w-2.5" />
+      </span>
+      <span>{label}</span>
+    </span>
+  )
+}
+
 import { BUILDER_EVENT_KEYS } from './registry'
 
 const EVENT_LABELS: Record<string, string> = {
   onLoad: 'onLoad',
+  onRender: 'onRender',
   onClick: 'onClick',
   onDoubleClick: 'onDoubleClick',
   onChange: 'onChange',
@@ -830,7 +966,11 @@ export function PropertyPanel({
   const boxKeys = ['width', 'height', 'padding', 'margin'] as const
   const flexKeys = layoutKeys.filter((k) => !boxKeys.includes(k as any))
   const styleKeys = [...STYLE_PROP_KEYS]
-  const eventKeys = (def?.events ?? BUILDER_EVENT_KEYS) as readonly string[]
+  const eventKeys = Array.from(new Set([
+    'onLoad',
+    'onRender',
+    ...((def?.events ?? BUILDER_EVENT_KEYS) as readonly string[]),
+  ])) as readonly string[]
   const availableStateDefinitions = [...globalStateDefinitions, ...stateDefinitions.filter((s) => !globalStateDefinitions.some((g) => g.name === s.name))]
   const contentKeysAll = uniqueKeys.filter((k) => k !== 'customId' && k !== 'script' && k !== '__propContract' && k !== 'visibleWhen' && k !== 'suspenseEnabled' && k !== 'suspenseVariant' && k !== 'suspenseDirection' && k !== 'suspenseLabel' && k !== 'suspenseWhen' && k !== 'suspenseSmart' && !k.startsWith('__') && !LAYOUT_KEYS.includes(k) && !STYLE_PROP_KEYS.includes(k as any) && !eventKeys.includes(k))
   const selectedReusable = node?.type === 'reusableInstance' && node?.props?.reusableId
@@ -936,7 +1076,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button type="button" onClick={() => setBindingFor(bindingFor === key ? null : key)} className={`ml-1.5 p-0.5 rounded ${isBound ? 'text-amber-500' : 'text-gray-400 hover:text-[var(--primary)]'}`} title="Bind to state, data, or expression"><Zap className="w-3.5 h-3.5" /></button>
           </label>
           {bindingFor === key && (
@@ -967,7 +1107,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button type="button" onClick={() => setBindingFor(bindingFor === key ? null : key)} className={`ml-1.5 p-0.5 rounded ${isBound ? 'text-amber-500' : 'text-gray-400 hover:text-[var(--primary)]'}`} title="Bind to state, data, or expression"><Zap className="w-3.5 h-3.5" /></button>
           </label>
           {bindingFor === key && (
@@ -1016,7 +1156,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button type="button" onClick={() => setBindingFor(bindingFor === key ? null : key)} className={`ml-1.5 p-0.5 rounded ${rawVal.startsWith('{{') ? 'text-amber-500' : 'text-gray-400 hover:text-[var(--primary)]'}`} title="Bind to state, data, or expression"><Zap className="w-3.5 h-3.5" /></button>
           </label>
           {bindingFor === key && (
@@ -1045,7 +1185,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button type="button" onClick={() => setBindingFor(bindingFor === key ? null : key)} className="ml-1.5 p-0.5 rounded text-amber-500" title="Bind to state, data, or expression"><Zap className="w-3.5 h-3.5" /></button>
           </label>
           {bindingFor === key && (
@@ -1073,7 +1213,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button
               type="button"
               onClick={() => setBindingFor(bindingFor === key ? null : key)}
@@ -1124,7 +1264,7 @@ export function PropertyPanel({
     }
     return (
       <div key={key}>
-        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
         <input
           type={isNumber ? 'number' : 'text'}
           value={rawVal}
@@ -1159,7 +1299,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button
               type="button"
               onClick={() => setBindingFor(bindingFor === key ? null : key)}
@@ -1205,7 +1345,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button
               type="button"
               onClick={() => setBindingFor(bindingFor === key ? null : key)}
@@ -1287,7 +1427,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button
               type="button"
               onClick={() => setBindingFor(bindingFor === key ? null : key)}
@@ -1332,7 +1472,7 @@ export function PropertyPanel({
     if (key === 'animation') {
       return (
         <div key={key}>
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
           <div className="mb-1.5">
             {renderExpressionEditor(strVal, (next) => setProp(key, next), 'e.g. fadeIn 0.5s ease both')}
           </div>
@@ -1369,7 +1509,7 @@ export function PropertyPanel({
     if (key === 'backgroundImage' || key === 'background' || key === 'gradient') {
       return (
         <div key={key}>
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
           <div className="flex gap-1 mb-1.5">
             {renderExpressionEditor(strVal, (next) => setProp(key, next), 'linear-gradient(135deg, #f00, #00f) or url(…)', 'flex-1')}
             <button
@@ -1415,7 +1555,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button
               type="button"
               onClick={() => setBindingFor(bindingFor === key ? null : key)}
@@ -1476,7 +1616,7 @@ export function PropertyPanel({
     }
     return (
       <div key={key}>
-        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
         <div className="flex gap-1">
           {isColor && (
             <input
@@ -1512,7 +1652,7 @@ export function PropertyPanel({
       })()
       return (
         <div key={key}>
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
           <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
             <MonacoEditor
               language="json"
@@ -1547,7 +1687,7 @@ export function PropertyPanel({
     if (GRADIENT_BUILDER_KEYS.has(key)) {
       return (
         <div key={key}>
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
           <div className="flex gap-1 mb-1.5">
             {renderExpressionEditor(rawVal, (next) => setProp(key, next), 'linear-gradient(135deg, #f00, #00f)', 'flex-1')}
             <button
@@ -1589,7 +1729,7 @@ export function PropertyPanel({
       const swatchColor = isHexLike ? rawVal : key === 'hamburgerColor' ? '#000000' : '#ffffff'
       return (
         <div key={key}>
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
           <div className="flex gap-1">
             <input
               type="color"
@@ -1618,7 +1758,7 @@ export function PropertyPanel({
         : null
       return (
         <div key={key}>
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
           <div className="flex gap-1">
             {previewUrl && (
               <img src={previewUrl} alt="" width={28} height={28} className="shrink-0 border border-gray-200 dark:border-[#30363d] p-0.5 bg-gray-50 dark:bg-[#0d1117] dark:invert" />
@@ -1658,7 +1798,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             <button
               type="button"
               onClick={() => setBindingFor(bindingFor === key ? null : key)}
@@ -1772,7 +1912,7 @@ export function PropertyPanel({
       return (
         <div key={key} className="relative">
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {label}
+            {renderFieldLabel(key, label)}
             {isBindable && (
               <button type="button" onClick={() => setBindingFor(bindingFor === key ? null : key)} className={`ml-1.5 p-0.5 rounded ${isBound ? 'text-amber-500' : 'text-gray-400 hover:text-[var(--primary)]'}`} title="Bind to state, data, or expression"><Zap className="w-3.5 h-3.5" /></button>
             )}
@@ -1813,7 +1953,7 @@ export function PropertyPanel({
               onChange={(e) => setProp(key, e.target.checked)}
               className="rounded border-gray-300 dark:border-[#30363d]"
             />
-            <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{renderFieldLabel(key, label)}</span>
           </label>
         </div>
       )
@@ -1821,7 +1961,7 @@ export function PropertyPanel({
     if (key === 'rows' && node?.type === 'table') {
       return (
         <div key={key}>
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
           <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]">
             <MonacoEditor
               language="json"
@@ -1843,7 +1983,7 @@ export function PropertyPanel({
     }
     return (
       <div key={key}>
-        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
         <input
           type={isNumber ? 'number' : 'text'}
           value={typeof val === 'string' || typeof val === 'number' ? String(val) : ''}
@@ -1922,7 +2062,7 @@ export function PropertyPanel({
             const isHex = /^#[0-9A-Fa-f]{3,8}$/.test(val)
             return (
               <div className="flex items-center gap-2">
-                <label className="w-28 shrink-0 text-xs text-gray-500 dark:text-gray-400">{label}</label>
+                <label className="w-28 shrink-0 text-xs text-gray-500 dark:text-gray-400">{renderFieldLabel(themeKey as string, label)}</label>
                 <input type="color" value={isHex ? val : '#000000'}
                   onChange={(e) => onThemeChange({ [themeKey]: e.target.value } as Partial<ScreenTheme>)}
                   className="w-7 h-7 border border-gray-300 dark:border-[#30363d] cursor-pointer shrink-0 p-0" />
@@ -1938,7 +2078,7 @@ export function PropertyPanel({
             const isHex = /^#[0-9A-Fa-f]{3,8}$/.test(val)
             return (
               <div className="flex items-center gap-2">
-                <label className="w-28 shrink-0 text-xs text-gray-500 dark:text-gray-400">{label}</label>
+                <label className="w-28 shrink-0 text-xs text-gray-500 dark:text-gray-400">{renderFieldLabel(themeKey as string, label)}</label>
                 <input type="color" value={isHex ? val : '#000000'}
                   onChange={(e) => onGlobalThemeChange?.({ [themeKey]: e.target.value } as Partial<ScreenTheme>)}
                   className="w-7 h-7 border border-gray-300 dark:border-[#30363d] cursor-pointer shrink-0 p-0" />
@@ -2084,7 +2224,7 @@ export function PropertyPanel({
           const s = seoSettings as SeoSettings
           const SeoField = ({ label, field, placeholder, textarea, hint }: { label: string; field: keyof SeoSettings; placeholder?: string; textarea?: boolean; hint?: string }) => (
             <div className="space-y-1">
-              <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">{label}</label>
+              <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">{renderFieldLabel(field as string, label)}</label>
               {textarea ? (
                 field === 'customHead' ? (
                   <div className="border border-[var(--border)] rounded overflow-hidden bg-[var(--background)]">
