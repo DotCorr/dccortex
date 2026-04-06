@@ -524,11 +524,17 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
   const runtimeSourceStatus = useMemo(() => {
     const pending: string[] = []
     const resolved: string[] = []
+    // Track sources listed in the screen layout
     for (const source of screenDataSources) {
       const name = String(source?.name ?? '').trim()
       if (!name) continue
       if (Object.prototype.hasOwnProperty.call(runtimeData, name)) resolved.push(name)
       else pending.push(name)
+    }
+    // Also include all runtimeData keys as resolved so suspense loading
+    // signals work even when the screen layout has an empty dataSources array.
+    for (const key of Object.keys(runtimeData)) {
+      if (!resolved.includes(key)) resolved.push(key)
     }
     return { pending, resolved }
   }, [screenDataSources, runtimeData])

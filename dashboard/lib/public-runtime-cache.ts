@@ -34,6 +34,21 @@ function resolveEnvPlaceholders(input: string): string {
   return input.replace(/\{\{env\.([A-Za-z0-9_]+)\}\}/g, (_m, key: string) => process.env[key] ?? '')
 }
 
+function sourceNameAliases(name: string): string[] {
+  const trimmed = String(name ?? '').trim()
+  if (!trimmed) return []
+  const snake = trimmed.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase()
+  const kebab = trimmed.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+  const compact = trimmed.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()
+  return Array.from(new Set([trimmed, snake, kebab, compact].filter(Boolean)))
+}
+
+function setWithAliases(target: Record<string, unknown>, sourceName: string, value: unknown) {
+  for (const alias of sourceNameAliases(sourceName)) {
+    if (!(alias in target)) target[alias] = value
+  }
+}
+
 function normalizeVarsMap(varsMap: VarsMap): VarsMap {
   const out: VarsMap = {}
   for (const sourceName of Object.keys(varsMap).sort()) {
@@ -137,9 +152,7 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
         ...(r.data as Record<string, unknown>),
         created_at: r.createdAt,
       }))
-      result[table.name] = mapped
-      const lower = table.name.toLowerCase()
-      if (lower !== table.name) result[lower] = mapped
+      setWithAliases(result, table.name, mapped)
     }
   }
 
@@ -189,10 +202,10 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
         const text = await resp.text()
         let data: unknown
         try { data = JSON.parse(text) } catch { data = text }
-        result[src.name] = data
+        setWithAliases(result, src.name, data)
       } catch (err) {
         hasSourceErrors = true
-        result[src.name] = null
+        setWithAliases(result, src.name, null)
         console.warn(`[Public data] Failed to fetch source "${src.name}":`, (err as Error).message)
       }
     })
