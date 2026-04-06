@@ -231,6 +231,7 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
   }, [])
 
   useEffect(() => {
+    if (!showPerfHud) return
     const t = setInterval(() => {
       const resolveCalls = resolvePerfRef.current.calls
       const resolveTotal = resolvePerfRef.current.totalMs
@@ -260,7 +261,7 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
       renderPerfRef.current = { commits: 0, totalMs: 0, maxMs: 0 }
     }, 1000)
     return () => clearInterval(t)
-  }, [])
+  }, [showPerfHud])
 
   const applyRuntimeData = useCallback((payload: unknown, varsSignature = '') => {
     if (!payload || typeof payload !== 'object') return
@@ -350,7 +351,10 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
       .then((d) => {
         networkPerfRef.current.runtimeFetchMs = performance.now() - preloadStart
         if (preloadRequestId !== runtimeDataRequestIdRef.current) return
-        if (d?.data) applyRuntimeData(d.data, '__startup__')
+        if (d?.data) {
+          lastRuntimeVarsSignatureRef.current = ''
+          applyRuntimeData(d.data, '')
+        }
       })
       .catch(() => {})
 
@@ -479,22 +483,6 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
           setRuntimeState(initial)
         }
         setStatus('ready')
-        // Fetch runtime data (API sources + internal DB tables) in background
-        const requestId = ++runtimeDataRequestIdRef.current
-        fetch(`/api/p/${projectId}/data`, { signal: ac.signal, cache: 'no-store' })
-          .then(async (r) => {
-            const st = parseServerTimingHeader(r.headers.get('server-timing'))
-            if (st.total !== undefined) networkPerfRef.current.runtimeServerTotalMs = st.total
-            if (st.db !== undefined) networkPerfRef.current.runtimeServerDbMs = st.db
-            if (st.api !== undefined) networkPerfRef.current.runtimeServerApiMs = st.api
-            if (!r.ok) return null
-            return r.json()
-          })
-          .then((d) => {
-            if (requestId !== runtimeDataRequestIdRef.current) return
-            if (d?.data) applyRuntimeData(d.data)
-          })
-          .catch(() => {/* data fetch failure is non-fatal */})
       })
       .catch((e) => { if (e?.name !== 'AbortError') setStatus('error') })
     return () => ac.abort()
@@ -511,6 +499,17 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
   const runtimeVarsParam = useMemo(() => {
     return buildVarsParamForDataSources(screenDataSources, runtimeState)
   }, [screenDataSources, runtimeState])
+  const runtimeSourceStatus = useMemo(() => {
+    const pending: string[] = []
+    const resolved: string[] = []
+    for (const source of screenDataSources) {
+      const name = String(source?.name ?? '').trim()
+      if (!name) continue
+      if (Object.prototype.hasOwnProperty.call(runtimeData, name)) resolved.push(name)
+      else pending.push(name)
+    }
+    return { pending, resolved }
+  }, [screenDataSources, runtimeData])
 
   // Re-fetch runtime data only when the resolved vars signature changes.
   // First fetch is immediate; subsequent state-driven refreshes are lightly debounced.
@@ -557,82 +556,6 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
     }, delayMs)
     return () => { clearTimeout(timer); ac.abort() }
   }, [status, projectId, runtimeVarsParam, applyRuntimeData, readSignatureCacheEntry])
-
-  useEffect(() => {
-    if (status !== 'ready' || screens.length <= 1 || !currentScreenId) return
-
-    const ordered = [...screens].sort((a, b) => a.sortOrder - b.sortOrder)
-    const idx = ordered.findIndex((s) => s.id === currentScreenId)
-    const candidateIds: string[] = []
-    if (idx >= 0) {
-      if (ordered[idx + 1]) candidateIds.push(ordered[idx + 1].id)
-      if (ordered[idx - 1]) candidateIds.push(ordered[idx - 1].id)
-    }
-    for (const sc of ordered) {
-      if (sc.id !== currentScreenId && !candidateIds.includes(sc.id)) candidateIds.push(sc.id)
-      if (candidateIds.length >= 3) break
-    }
-
-    const signatures: Array<{ signature: string; varsParam: string }> = []
-    for (const id of candidateIds) {
-      const sc = ordered.find((s) => s.id === id)
-      if (!sc) continue
-      const lay = sc.layout as any
-      const ds = (Array.isArray(lay?.dataSources) ? lay.dataSources : []) as Array<{ name: string; urlParamBindings?: Record<string, string> }>
-      const varsParam = buildVarsParamForDataSources(ds, runtimeState)
-      const signature = varsParam || ''
-      if (prefetchedSignaturesRef.current.has(signature)) continue
-      prefetchedSignaturesRef.current.add(signature)
-      signatures.push({ signature, varsParam })
-    }
-    if (signatures.length === 0) return
-
-    let cancelled = false
-    const runPrefetch = async () => {
-      for (const item of signatures) {
-        if (cancelled) return
-
-        if (runtimeDataMemoryCacheRef.current.has(item.signature)) continue
-        const persisted = readSignatureCacheEntry(item.signature)
-        if (persisted) {
-          runtimeDataMemoryCacheRef.current.set(item.signature, persisted)
-          continue
-        }
-
-        const prefetchStart = performance.now()
-        try {
-          const res = await fetch(`/api/p/${projectId}/data${item.varsParam}`, { cache: 'no-store' })
-          if (!res.ok) continue
-          const st = parseServerTimingHeader(res.headers.get('server-timing'))
-          if (st.total !== undefined) networkPerfRef.current.prefetchFetchMs = st.total
-          const json = await res.json()
-          if (!json?.data || cancelled) continue
-          networkPerfRef.current.prefetchFetchMs = Math.max(networkPerfRef.current.prefetchFetchMs, performance.now() - prefetchStart)
-          const next = json.data as Record<string, unknown>
-          runtimeDataMemoryCacheRef.current.set(item.signature, next)
-          writeSignatureCacheEntry(item.signature, next)
-        } catch {
-          // Non-blocking prefetch
-        }
-      }
-    }
-
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      const idleId = (window as Window & { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(() => { void runPrefetch() })
-      return () => {
-        cancelled = true
-        if ('cancelIdleCallback' in window) {
-          ;(window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(idleId)
-        }
-      }
-    }
-
-    const timer = setTimeout(() => { void runPrefetch() }, 80)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [status, screens, currentScreenId, runtimeState, projectId, readSignatureCacheEntry, writeSignatureCacheEntry])
 
   // Realtime polling for data sources that have realtime: true
   useEffect(() => {
@@ -1128,6 +1051,8 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
           onMove={() => {}}
           onRunEvent={handleRunEvent}
           reusables={Array.from(reusablesById.values())}
+          runtimePendingSources={runtimeSourceStatus.pending}
+          runtimeResolvedSources={runtimeSourceStatus.resolved}
         />
       </Profiler>
       {showPerfHud && (
