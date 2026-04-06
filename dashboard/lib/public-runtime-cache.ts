@@ -8,7 +8,8 @@
 import { prisma } from '@/lib/prisma'
 
 const EXTERNAL_API_TIMEOUT_MS = 3500
-const RUNTIME_CACHE_TTL_MS = 5 * 60 * 1000
+const RUNTIME_CACHE_TTL_MS = 15 * 1000
+const RUNTIME_CACHE_TTL_ON_SOURCE_ERROR_MS = 3 * 1000
 const MAX_SIGNATURES_TO_WARM = 12
 
 type VarsMap = Record<string, Record<string, string>>
@@ -22,6 +23,7 @@ type RuntimeBuildTimings = {
 
 type RuntimeCacheEntry = {
   ts: number
+  ttlMs: number
   data: RuntimeDataMap
   timings: RuntimeBuildTimings
 }
@@ -105,7 +107,7 @@ export function parseVarsQuery(raw: string | null): VarsMap {
   }
 }
 
-export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Promise<{ data: RuntimeDataMap; timings: RuntimeBuildTimings }> {
+export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Promise<{ data: RuntimeDataMap; timings: RuntimeBuildTimings; hasSourceErrors: boolean }> {
   const totalStart = performance.now()
   const result: RuntimeDataMap = {}
 
@@ -144,6 +146,7 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
   const dbMs = performance.now() - dbStart
 
   const apiStart = performance.now()
+  let hasSourceErrors = false
   await Promise.all(
     apiSources.map(async (src) => {
       try {
@@ -188,6 +191,7 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
         try { data = JSON.parse(text) } catch { data = text }
         result[src.name] = data
       } catch (err) {
+        hasSourceErrors = true
         result[src.name] = null
         console.warn(`[Public data] Failed to fetch source "${src.name}":`, (err as Error).message)
       }
@@ -202,6 +206,7 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
       dbMs,
       apiMs,
     },
+    hasSourceErrors,
   }
 }
 
@@ -209,11 +214,12 @@ export async function getCachedRuntimeData(projectId: string, varsMap: VarsMap):
   const key = signatureFor(projectId, varsMap)
   const now = Date.now()
   const cached = runtimeCache.get(key)
-  if (cached && now - cached.ts <= RUNTIME_CACHE_TTL_MS) {
+  if (cached && now - cached.ts <= cached.ttlMs) {
     return { data: cached.data, timings: cached.timings, cacheHit: true }
   }
   const built = await buildRuntimeData(projectId, varsMap)
-  runtimeCache.set(key, { ts: now, data: built.data, timings: built.timings })
+  const ttlMs = built.hasSourceErrors ? RUNTIME_CACHE_TTL_ON_SOURCE_ERROR_MS : RUNTIME_CACHE_TTL_MS
+  runtimeCache.set(key, { ts: now, ttlMs, data: built.data, timings: built.timings })
   return { data: built.data, timings: built.timings, cacheHit: false }
 }
 

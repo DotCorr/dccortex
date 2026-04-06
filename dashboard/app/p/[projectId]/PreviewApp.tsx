@@ -9,6 +9,7 @@
 
 import { Profiler, useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useWebHaptics } from 'web-haptics/react'
+import { RefreshCw } from 'lucide-react'
 import { BuilderCanvas } from '@/components/builder/BuilderCanvas'
 import { resolveBinding, resolveExpression, getDateNowMap } from '@/components/builder/bindingResolver'
 import type { PublicProjectPayload } from '@/lib/public-project-cache'
@@ -272,6 +273,27 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
     hasFetchedRuntimeDataRef.current = true
     try { localStorage.setItem(runtimeDataCacheKey, JSON.stringify(next)) } catch {}
   }, [runtimeDataCacheKey, writeSignatureCacheEntry])
+
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const handleManualRefresh = useCallback(() => {
+    setIsRefreshing(true)
+    const requestId = ++runtimeDataRequestIdRef.current
+    const start = performance.now()
+    fetch(`/api/p/${projectId}/data`, { cache: 'no-store' })
+      .then((r) => {
+        networkPerfRef.current.runtimeFetchMs = performance.now() - start
+        return r.ok ? r.json() : null
+      })
+      .then((d) => {
+        if (requestId !== runtimeDataRequestIdRef.current) return
+        if (d?.data) {
+          lastRuntimeVarsSignatureRef.current = ''
+          applyRuntimeData(d.data, '')
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsRefreshing(false))
+  }, [projectId, applyRuntimeData])
 
   useEffect(() => {
     try {
@@ -1084,6 +1106,45 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
           <div>render: {livePerf.renderCommitsPerSec}/s avg {livePerf.renderAvgMs}ms max {livePerf.renderMaxMs}ms</div>
         </div>
       )}
+      <button
+        type="button"
+        onClick={handleManualRefresh}
+        disabled={isRefreshing}
+        title="Force refresh runtime data immediately (default cache: 15s)"
+        style={{
+          position: 'fixed',
+          right: 16,
+          bottom: 16,
+          zIndex: 9998,
+          width: 44,
+          height: 44,
+          padding: 10,
+          borderRadius: 8,
+          border: '1px solid rgba(0, 0, 0, 0.15)',
+          backgroundColor: '#ffffff',
+          color: '#1f2937',
+          cursor: isRefreshing ? 'not-allowed' : 'pointer',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: isRefreshing ? 0.6 : 1,
+          transition: 'all 0.2s ease',
+        }}
+        onMouseEnter={(e) => {
+          if (!isRefreshing) {
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'
+            e.currentTarget.style.backgroundColor = '#f3f4f6'
+          }
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.12)'
+          e.currentTarget.style.backgroundColor = '#ffffff'
+        }}
+      >
+        <RefreshCw size={20} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
+        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      </button>
     </div>
   )
 }

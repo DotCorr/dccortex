@@ -617,6 +617,25 @@ const STYLE_QUICK_PICKS: Record<string, string[]> = {
   ],
 }
 
+const AUTO_PX_KEYS = new Set([
+  'width', 'height', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight',
+  'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+  'gap', 'rowGap', 'columnGap',
+  'fontSize', 'textIndent',
+  'top', 'right', 'bottom', 'left',
+  'borderWidth', 'borderRadius', 'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius',
+  'outlineOffset',
+])
+
+const shouldAutoAppendPx = (key: string, value: string): boolean => {
+  if (!AUTO_PX_KEYS.has(key)) return false
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) return false
+  return /^-?\d+(\.\d+)?$/.test(trimmed)
+}
+
 type PanelTab = 'theme' | 'layout' | 'content' | 'style' | 'animation' | 'events' | 'state' | 'assets' | 'data' | 'seo'
 
 const APP_TABS: { id: PanelTab; label: string }[] = [
@@ -832,15 +851,20 @@ export function PropertyPanel({
       if (!node) return
 
       if (typeof value === 'string') {
-        const dataSourceMatch = value.match(/^\{\{data\.([^}]+)\}\}$/)
+        let nextValue = value
+        if (shouldAutoAppendPx(key, nextValue)) {
+          nextValue = `${nextValue.trim()}px`
+        }
+        const dataSourceMatch = nextValue.match(/^\{\{data\.([^}]+)\}\}$/)
         if (dataSourceMatch) {
           const sourceToken = dataSourceMatch[1].trim()
           // Keep transformed paths intact; normalize only root source tokens picked from dropdown.
           if (sourceToken && !sourceToken.includes('.')) {
             const preferred = expandSourceAliases(sourceToken).find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? sourceToken
-            value = `{{data.${preferred}}}`
+            nextValue = `{{data.${preferred}}}`
           }
         }
+        value = nextValue
       }
 
       // Data repeater expects the whole array source ({{data.sourceName}}), not a field token.
@@ -1050,6 +1074,44 @@ export function PropertyPanel({
     { title: 'Position', keys: ['position', 'top', 'right', 'bottom', 'left', 'zIndex'] },
     { title: 'Other', keys: ['cursor', 'pointerEvents', 'userSelect', 'aspectRatio', 'overflow', 'overflowX', 'overflowY', 'objectFit', 'objectPosition', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight'] },
   ]
+  const styleGroupHints: Record<string, string> = {
+    Typography: 'Text formatting and readability controls.',
+    Background: 'Surface paint: colors, gradients, and image fill behavior.',
+    Border: 'Stroke edges and corner rounding.',
+    'Shadow & outline': 'Depth and focus ring styling.',
+    'Filters & Blend': 'Visual effects and compositing.',
+    Position: 'Absolute/relative placement in parent.',
+    Other: 'Interaction, overflow, object fit, and sizing constraints.',
+  }
+  const styleFieldExamples: Record<string, string> = {
+    width: 'e.g. 100, 50%, 200px, 10rem, {{state.w}}',
+    height: 'e.g. 100, 50%, 200px, 10rem, {{state.h}}',
+    fontSize: 'e.g. 14, 16px, 1.2em, {{state.size}}',
+    padding: 'e.g. 16, 8px, 1rem, {{state.spacing}}',
+    margin: 'e.g. 16, 8px, 1rem, {{state.spacing}}',
+    gap: 'e.g. 8, 12px, 1rem, {{state.spacing}}',
+    borderRadius: 'e.g. 8, 12px, 50%, {{state.radius}}',
+    borderWidth: 'e.g. 1, 2px, {{state.border}}',
+    textIndent: 'e.g. 10, 2em, {{state.indent}}',
+    zIndex: 'e.g. 10, 100, 1000, {{state.layer}}',
+  }
+  const layoutFieldExamples: Record<string, string> = {
+    width: 'e.g. 100, 50%, 200px, auto, {{state.w}}',
+    height: 'e.g. 100, 50%, 200px, auto, {{state.h}}',
+    minWidth: 'e.g. 100, 50%, 200px, {{state.min}}',
+    maxWidth: 'e.g. 100, 50%, 200px, {{state.max}}',
+    minHeight: 'e.g. 50, 100px, {{state.minH}}',
+    maxHeight: 'e.g. 300, 50vh, {{state.maxH}}',
+    padding: 'e.g. 16, 8px 16px, {{state.p}}',
+    margin: 'e.g. 16, auto, 8px 16px, {{state.m}}',
+    gap: 'e.g. 8, 12px, 1rem, {{state.gap}}',
+    rowGap: 'e.g. 8, 12px, 1rem, {{state.rg}}',
+    columnGap: 'e.g. 8, 12px, 1rem, {{state.cg}}',
+  }
+  const getFieldExample = (key: string): string => styleFieldExamples[key] ?? layoutFieldExamples[key] ?? ''
+  const layoutSizingKeys = ['width', 'height', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight', 'flexBasis']
+  const layoutSpacingKeys = ['padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft', 'gap', 'rowGap', 'columnGap']
+  const layoutFlowKeys = layoutKeys.filter((k) => !layoutSizingKeys.includes(k) && !layoutSpacingKeys.includes(k) && k !== 'customId')
 
   const monacoLoading = (
     <div className="w-full h-full flex items-center justify-center bg-white dark:bg-[#0d1117]">
@@ -1306,6 +1368,9 @@ export function PropertyPanel({
     return (
       <div key={key}>
         <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
+        {getFieldExample(key) && (
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1">{getFieldExample(key)}</p>
+        )}
         <input
           type={isNumber ? 'number' : 'text'}
           value={rawVal}
@@ -1658,6 +1723,9 @@ export function PropertyPanel({
     return (
       <div key={key}>
         <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{renderFieldLabel(key, label)}</label>
+        {getFieldExample(key) && (
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1">{getFieldExample(key)}</p>
+        )}
         <div className="flex gap-1">
           {isColor && (
             <input
@@ -2352,7 +2420,7 @@ export function PropertyPanel({
                         <input
                           type="text"
                           value={String(props[k] ?? '')}
-                          onChange={(e) => onUpdate({ ...props, [k]: e.target.value })}
+                          onChange={(e) => setProp(k, e.target.value)}
                           placeholder="100% or 200"
                           className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
                         />
@@ -2387,14 +2455,30 @@ export function PropertyPanel({
                 </>
               ) : (
                 <>
-                  <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-1">ID &amp; Box</div>
-                  {renderLayoutField('customId')}
-                  {boxKeys.map((k) => (LAYOUT_KEYS.includes(k) ? renderLayoutField(k) : null))}
-                  {flexKeys.length > 0 && (
-                    <>
-                      <div className="text-xs font-medium text-gray-600 dark:text-gray-300 pt-2 uppercase tracking-wider">Layout (flex/grid)</div>
-                      {flexKeys.map(renderLayoutField)}
-                    </>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Layout is split into simple sections. Start with size, then spacing, then flow.</p>
+                  <details open className="border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]">
+                    <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Basics: ID &amp; Size</summary>
+                    <div className="p-2 pt-0 space-y-2">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">Set component identity and core dimensions. Numeric values auto-convert to <code>px</code>.</p>
+                      {renderLayoutField('customId')}
+                      {layoutSizingKeys.filter((k) => layoutKeys.includes(k)).map(renderLayoutField)}
+                    </div>
+                  </details>
+                  <details className="mt-2 border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]">
+                    <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Spacing</summary>
+                    <div className="p-2 pt-0 space-y-2">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">Padding is inside spacing, margin is outside spacing, gap controls spacing between children.</p>
+                      {layoutSpacingKeys.filter((k) => layoutKeys.includes(k)).map(renderLayoutField)}
+                    </div>
+                  </details>
+                  {layoutFlowKeys.length > 0 && (
+                    <details className="mt-2 border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]">
+                      <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Flow: Flex/Grid</summary>
+                      <div className="p-2 pt-0 space-y-2">
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">Controls child arrangement, alignment, wrapping, and ordering.</p>
+                        {layoutFlowKeys.map(renderLayoutField)}
+                      </div>
+                    </details>
                   )}
                 </>
               )}
@@ -2840,17 +2924,20 @@ export function PropertyPanel({
         {activeTab === 'style' && (
           node ? (
             <>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">CSS values (e.g. 14px, #333, 1px solid). Applied inline; script can override.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Style is grouped by purpose. Entering plain numbers for size fields auto-adds <code>px</code> (e.g. <code>20</code> -&gt; <code>20px</code>).</p>
               {styleGroups.map((g) => {
                 const keys = g.keys.filter((k): k is string => styleKeys.includes(k as (typeof styleKeys)[number]))
                 if (keys.length === 0) return null
                 return (
-                  <div key={g.title} className="space-y-2 mb-4">
-                    <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">{g.title}</div>
-                    <div className="grid gap-2">
-                      {keys.map((k) => renderStyleField(k))}
+                  <details key={g.title} open={g.title === 'Typography' || g.title === 'Background'} className="mb-2 border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]">
+                    <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">{g.title}</summary>
+                    <div className="px-2 pb-2 pt-0 space-y-2">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">{styleGroupHints[g.title]}</p>
+                      <div className="grid gap-2">
+                        {keys.map((k) => renderStyleField(k))}
+                      </div>
                     </div>
-                  </div>
+                  </details>
                 )
               })}
             </>
@@ -2864,58 +2951,64 @@ export function PropertyPanel({
         {activeTab === 'animation' && (
           node ? (
             <div className="space-y-4">
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Centralized motion controls: gradient movement, color FX, transitions, and sequence playback.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Start with Quick Start, then open Advanced sections only when needed.</p>
 
-              <div className="space-y-2 p-2 border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50 dark:bg-indigo-950/10">
-                <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">Gradient + Color Motion</div>
-                <p className="text-[11px] text-indigo-700/85 dark:text-indigo-300/85">Apply gradient colors in Style, then animate them here. Every field supports expressions.</p>
-                <div className="grid gap-2">
-                  <div>
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Gradient source (background or backgroundImage)</label>
-                    <div className="flex gap-1">
-                      {renderExpressionEditor(String(props.background ?? props.backgroundImage ?? ''), (next) => {
-                        if (String(props.background ?? '').trim()) setProp('background', next)
-                        else setProp('backgroundImage', next)
-                      }, 'linear-gradient(...) or {{state.dynamicGradient}}', 'flex-1')}
-                      <button
-                        type="button"
-                        onClick={() => setPropExpressionKey(String(props.background ?? '').trim() ? 'background' : 'backgroundImage')}
-                        className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
-                        title="Open expression builder"
-                      >
-                        Build
-                      </button>
+              <details open className="border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50 dark:bg-indigo-950/10">
+                <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">Quick Start: Gradient + Color Motion</summary>
+                <div className="space-y-2 p-2 pt-0">
+                  <p className="text-[11px] text-indigo-700/85 dark:text-indigo-300/85">Apply gradient colors in Style, then animate them here. Every field supports expressions.</p>
+                  <div className="grid gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Gradient source (background or backgroundImage)</label>
+                      <div className="flex gap-1">
+                        {renderExpressionEditor(String(props.background ?? props.backgroundImage ?? ''), (next) => {
+                          if (String(props.background ?? '').trim()) setProp('background', next)
+                          else setProp('backgroundImage', next)
+                        }, 'linear-gradient(...) or {{state.dynamicGradient}}', 'flex-1')}
+                        <button
+                          type="button"
+                          onClick={() => setPropExpressionKey(String(props.background ?? '').trim() ? 'background' : 'backgroundImage')}
+                          className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                          title="Open expression builder"
+                        >
+                          Build
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Background size (for shift animations)</label>
+                      <div className="flex gap-1">
+                        {renderExpressionEditor(String(props.backgroundSize ?? ''), (next) => setProp('backgroundSize', next), '200% 200%', 'flex-1')}
+                        <button
+                          type="button"
+                          onClick={() => setPropExpressionKey('backgroundSize')}
+                          className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                          title="Open expression builder"
+                        >
+                          Build
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Background size (for shift animations)</label>
-                    <div className="flex gap-1">
-                      {renderExpressionEditor(String(props.backgroundSize ?? ''), (next) => setProp('backgroundSize', next), '200% 200%', 'flex-1')}
-                      <button
-                        type="button"
-                        onClick={() => setPropExpressionKey('backgroundSize')}
-                        className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
-                        title="Open expression builder"
-                      >
-                        Build
-                      </button>
-                    </div>
+                  <div className="flex flex-wrap gap-1">
+                    <button type="button" onClick={() => { setProp('backgroundSize', '200% 200%'); setProp('animation', 'dccGradientShiftX 8s ease infinite') }} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Shift X</button>
+                    <button type="button" onClick={() => { setProp('backgroundSize', '200% 200%'); setProp('animation', 'dccGradientShiftY 8s ease alternate infinite') }} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Shift Y</button>
+                    <button type="button" onClick={() => setProp('animation', 'dccGradientRotate 10s linear infinite')} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Rotate</button>
+                    <button type="button" onClick={() => setProp('animation', 'dccGradientHueShift 6s linear infinite')} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Hue Shift</button>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  <button type="button" onClick={() => { setProp('backgroundSize', '200% 200%'); setProp('animation', 'dccGradientShiftX 8s ease infinite') }} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Shift X</button>
-                  <button type="button" onClick={() => { setProp('backgroundSize', '200% 200%'); setProp('animation', 'dccGradientShiftY 8s ease alternate infinite') }} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Shift Y</button>
-                  <button type="button" onClick={() => setProp('animation', 'dccGradientRotate 10s linear infinite')} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Rotate</button>
-                  <button type="button" onClick={() => setProp('animation', 'dccGradientHueShift 6s linear infinite')} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Hue Shift</button>
-                </div>
-              </div>
+              </details>
 
-              <div className="border border-blue-200 dark:border-blue-900/40 p-3 bg-blue-50 dark:bg-blue-950/10">
-                <AnimationSequenceBuilder
-                  value={props.animationSequence as AnimationSequenceConfig | undefined}
-                  onChange={(config) => setProp('animationSequence', config)}
-                />
-              </div>
+              <details className="border border-blue-200 dark:border-blue-900/40 bg-blue-50 dark:bg-blue-950/10">
+                <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wider">Quick Start: Step-by-step Sequence</summary>
+                <div className="p-3 pt-0">
+                  <p className="text-[11px] text-blue-700/85 dark:text-blue-300/85 mb-2">Use this when you want chained motion with delays and per-step control.</p>
+                  <AnimationSequenceBuilder
+                    value={props.animationSequence as AnimationSequenceConfig | undefined}
+                    onChange={(config) => setProp('animationSequence', config)}
+                  />
+                </div>
+              </details>
 
               <details className="border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]" open={false}>
                 <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Advanced: Visibility Transitions</summary>
