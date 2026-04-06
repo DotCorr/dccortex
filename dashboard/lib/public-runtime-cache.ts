@@ -218,9 +218,23 @@ export async function getCachedRuntimeData(projectId: string, varsMap: VarsMap):
     return { data: cached.data, timings: cached.timings, cacheHit: true }
   }
   const built = await buildRuntimeData(projectId, varsMap)
+  let nextData = built.data
+
+  // If a source temporarily fails in live mode, retain the last known good value
+  // for that source instead of replacing it with null.
+  if (cached && built.hasSourceErrors) {
+    const merged: RuntimeDataMap = { ...built.data }
+    for (const [sourceName, value] of Object.entries(built.data)) {
+      if (value === null && cached.data[sourceName] != null) {
+        merged[sourceName] = cached.data[sourceName]
+      }
+    }
+    nextData = merged
+  }
+
   const ttlMs = built.hasSourceErrors ? RUNTIME_CACHE_TTL_ON_SOURCE_ERROR_MS : RUNTIME_CACHE_TTL_MS
-  runtimeCache.set(key, { ts: now, ttlMs, data: built.data, timings: built.timings })
-  return { data: built.data, timings: built.timings, cacheHit: false }
+  runtimeCache.set(key, { ts: now, ttlMs, data: nextData, timings: built.timings })
+  return { data: nextData, timings: built.timings, cacheHit: false }
 }
 
 export type RuntimeWarmStats = {

@@ -817,9 +817,7 @@ function NodeRenderer({
   const suspenseVariant = String(node.props?.suspenseVariant ?? 'skeleton')
   const suspenseDirection = String(node.props?.suspenseDirection ?? 'horizontal')
   const suspenseLabel = String(node.props?.suspenseLabel ?? 'Loading...')
-  const suspenseSmartSources = suspenseSmart ? extractDataSourcesFromUnknown(node.props) : []
-  const suspenseWhenSources = extractDataSourcesFromUnknown(suspenseWhen)
-  const suspenseReferencedSources = Array.from(new Set([...suspenseSmartSources, ...suspenseWhenSources]))
+  const suspenseReferencedSources = suspenseSmart ? extractDataSourcesFromUnknown(node.props) : []
   const suspenseHasReferencedSources = suspenseReferencedSources.length > 0
   const suspenseDataReady = !suspenseHasReferencedSources || suspenseReferencedSources.every(
     (source) => loadingSignals.resolved.has(source) && !loadingSignals.pending.has(source)
@@ -830,7 +828,7 @@ function NodeRenderer({
   const suspenseAutoActive = suspenseReferencedSources.some(
     (source) => loadingSignals.pending.has(source) && !loadingSignals.resolved.has(source)
   )
-  const suspenseManualActiveWhileLoading = suspenseManualActive && (suspenseHasReferencedSources ? !suspenseDataReady : suspenseAutoActive)
+  const suspenseManualActiveWhileLoading = suspenseManualActive && (!suspenseHasReferencedSources || !suspenseDataReady)
   const showSuspenseFallback = suspenseEnabled && (
     (Boolean(previewMode) && (suspenseAutoActive || suspenseManualActiveWhileLoading))
     || (!previewMode && suspenseManualActiveWhileLoading)
