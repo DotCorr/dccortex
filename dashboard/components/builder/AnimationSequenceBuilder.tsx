@@ -57,7 +57,7 @@ const ANIMATION_PRESETS: { label: string; value: string; description: string }[]
 
 const TIMING_FUNCTIONS = ['ease', 'ease-in', 'ease-out', 'ease-in-out', 'linear', 'step-start', 'step-end', 'cubic-bezier(0.4,0,0.2,1)']
 const ITERATION_OPTIONS = ['1', '2', '3', '4', '5', 'infinite']
-const SEQUENCE_ITERATION_OPTIONS = ['1', '2', '3', '4', '5']
+const SEQUENCE_ITERATION_OPTIONS = ['1', '2', '3', '4', '5', 'infinite']
 
 type Props = {
   value?: AnimationSequenceConfig

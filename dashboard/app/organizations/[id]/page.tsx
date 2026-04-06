@@ -475,9 +475,26 @@ export default function OrganizationDetailPage() {
             ]}
           />
           <div className="mt-6">
-            <h1 className="text-3xl md:text-4xl font-medium tracking-tighter text-black dark:text-white mb-3">
-              {organization.name}
-            </h1>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-3">
+              <h1 className="text-3xl md:text-4xl font-medium tracking-tighter text-black dark:text-white">
+                {organization.name}
+              </h1>
+              {(() => {
+                const status = String((organization as any)?.metadata?.containerStatus ?? 'unknown')
+                const statusClasses = status === 'ready'
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
+                  : status === 'provisioning' || status === 'queued'
+                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                    : status === 'failed'
+                      ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800'
+                      : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+                return (
+                  <span className={`inline-flex self-start px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] border ${statusClasses}`}>
+                    {status}
+                  </span>
+                )
+              })()}
+            </div>
             <p className="text-lg text-gray-500 dark:text-gray-400 font-light">
               {organization.description || 'No description'}
             </p>

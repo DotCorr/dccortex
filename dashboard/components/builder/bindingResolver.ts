@@ -93,6 +93,16 @@ function getByPath(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.trim().split('.')
   let current: unknown = obj
   for (const p of parts) {
+    if (typeof current === 'string') {
+      const raw = current.trim()
+      if (raw.startsWith('{') || raw.startsWith('[')) {
+        try {
+          current = JSON.parse(raw) as unknown
+        } catch {
+          return undefined
+        }
+      }
+    }
     if (current == null || typeof current !== 'object') return undefined
     current = (current as Record<string, unknown>)[p]
   }
@@ -111,6 +121,20 @@ function findPathInObject(root: unknown, parts: string[], depth = 0): unknown {
   return undefined
 }
 
+function getPreferredNestedValue(sourceRoot: unknown, key: string): unknown {
+  if (sourceRoot == null || typeof sourceRoot !== 'object') return undefined
+  const obj = sourceRoot as Record<string, unknown>
+  const preferredContainers = ['current', 'latest', 'value', 'data']
+  for (const container of preferredContainers) {
+    const candidate = obj[container]
+    if (candidate && typeof candidate === 'object') {
+      const value = (candidate as Record<string, unknown>)[key]
+      if (value !== undefined) return value
+    }
+  }
+  return undefined
+}
+
 function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
   const direct = getByPath(data, path)
   if (direct !== undefined) return direct
@@ -120,10 +144,62 @@ function resolveDataPath(data: Record<string, unknown>, path: string): unknown {
 
   const source = parts[0]
   const tail = parts.slice(1)
-  const sourceRoot = data[source]
+
+  const sourceAliases = Array.from(new Set([
+    source,
+    source.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase(),
+    source.trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase(),
+    source.trim().replace(/[^a-zA-Z0-9]+/g, '').toLowerCase(),
+  ].filter(Boolean)))
+
+  let sourceRoot: unknown = undefined
+  for (const alias of sourceAliases) {
+    if (Object.prototype.hasOwnProperty.call(data, alias)) {
+      sourceRoot = data[alias]
+      break
+    }
+  }
+
+  if ((sourceRoot == null || typeof sourceRoot !== 'object') && sourceRoot === undefined) {
+    const sourceCompact = sourceAliases[sourceAliases.length - 1]
+    const matchingKey = Object.keys(data).find((key) => {
+      const normalized = key.trim().replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()
+      return normalized && normalized === sourceCompact
+    })
+    if (matchingKey) sourceRoot = data[matchingKey]
+  }
+
+  if (typeof sourceRoot === 'string') {
+    const raw = sourceRoot.trim()
+    if (raw.startsWith('{') || raw.startsWith('[')) {
+      try {
+        sourceRoot = JSON.parse(raw) as unknown
+      } catch {
+        sourceRoot = undefined
+      }
+    }
+  }
+
   if (sourceRoot == null || typeof sourceRoot !== 'object') return direct
 
-  return findPathInObject(sourceRoot, tail)
+  if (tail.length === 1) {
+    const preferred = getPreferredNestedValue(sourceRoot, tail[0])
+    if (preferred !== undefined) return preferred
+  }
+
+  const exactPath = findPathInObject(sourceRoot, tail)
+  if (exactPath !== undefined) return exactPath
+
+  const normalizedTail = tail.map((p) =>
+    p.trim()
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase()
+  )
+  const normalizedPath = findPathInObject(sourceRoot, normalizedTail)
+  if (normalizedPath !== undefined) return normalizedPath
+
+  return direct
 }
 
 export function resolveBinding(raw: string, ctx: ResolveContext): string {
@@ -436,6 +512,17 @@ export function resolveExpression(raw: string, ctx: ResolveContext): string {
   // from characters inside token paths (e.g. hyphens in source names).
   const stripped = raw.replace(BINDING_REGEX, '').trim()
   const hasExpressionOperators = /\?|\|\||&&|\?\?|===|!==|>=|<=|==|!=|\+|\-|\*|\/|%|>|</.test(raw)
+  const isTokenOnlyTemplate = stripped.length === 0
+  if (isTokenOnlyTemplate) {
+    return raw.replace(BINDING_REGEX, (_, expr) => {
+      const v = resolveToken(expr, ctx)
+      if (v === undefined || v === null) return ''
+      if (typeof v === 'object') {
+        try { return JSON.stringify(v) } catch { return String(v) }
+      }
+      return String(v)
+    })
+  }
   const isLikelyTemplateString = stripped.length > 0 && !hasExpressionOperators
   if (isLikelyTemplateString) {
     return raw.replace(BINDING_REGEX, (_, expr) => {

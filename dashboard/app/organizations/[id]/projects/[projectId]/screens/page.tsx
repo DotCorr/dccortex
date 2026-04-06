@@ -650,7 +650,7 @@ export default function ProjectScreensPage() {
         return
       }
       setBuildJobId(data.jobId)
-      setBuildLog('Build started ✓ — this takes 2–5 minutes. You can close this and come back.')
+      setBuildLog('Build started ✓ — this runs in the background. You can close this and come back.')
     } catch (err: any) {
       setBuildLog(err?.message ?? 'Network error')
       setBuildStep('error')
@@ -1166,7 +1166,7 @@ export default function ProjectScreensPage() {
                   <div className="h-12 w-12 border-4 border-black dark:border-white border-t-transparent animate-spin" />
                   <div className="text-center">
                     <p className="font-semibold text-black dark:text-white">Building your app…</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Running in your organisation&apos;s container. Usually takes 2–5 minutes.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Running in your organization&apos;s background build worker.</p>
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">You can close this dialog and come back — build will continue.</p>
                   </div>
                 </div>

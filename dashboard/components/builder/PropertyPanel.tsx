@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
+import type { EditorProps } from '@monaco-editor/react'
 import { Zap } from 'lucide-react'
 import type { Node } from './registry'
 import { getComponentDef, STYLE_PROP_KEYS } from './registry'
@@ -29,7 +30,8 @@ import { AssetPickerModal } from './AssetPickerModal'
 import { AnimationSequenceBuilder, type AnimationSequenceConfig } from './AnimationSequenceBuilder'
 import type { ReusableDefinition, ReusablePropSchema } from './globals'
 
-const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
+const MonacoEditorBase = dynamic(() => import('@monaco-editor/react'), { ssr: false })
+const MonacoEditor = (props: EditorProps) => <MonacoEditorBase keepCurrentModel {...props} />
 
 export type StateDefinition = { id: string; name: string; initialValue: string; type?: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date' }
 export type CustomTypeField = { name: string; type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'date'; defaultValue?: string }
@@ -81,6 +83,7 @@ type Props = {
   /** Live runtime data payload for Data Inspector path discovery. */
   runtimeData?: Record<string, unknown>
   namedScripts?: Record<string, string>
+  scriptsLoading?: boolean
   onNamedScriptsChange?: (scripts: Record<string, string>) => void
   theme?: ScreenTheme
   onThemeChange?: (updates: Partial<ScreenTheme>) => void
@@ -108,6 +111,8 @@ type Props = {
   onSeoChange?: (updates: Partial<SeoSettings>) => void
   /** Open reusable definition editor from selected instance. */
   onEditReusable?: (id: string) => void
+  /** Wrap selected node in a suspense component for explicit component architecture. */
+  onWrapSelectedWithSuspense?: () => void
   /** User-defined object schemas for typed state values. */
   customTypes?: CustomTypeDef[]
   onCustomTypesChange?: (defs: CustomTypeDef[]) => void
@@ -164,6 +169,12 @@ const PROP_LABELS: Record<string, string> = {
   hamburgerIcon: 'Hamburger icon (replaces 3-bar)',
   hamburgerIconSize: 'Hamburger icon size (px)',
   hamburgerContentOffset: 'Content padding-top to clear hamburger (px)',
+  suspenseEnabled: 'Loading fallback',
+  suspenseVariant: 'Fallback style',
+  suspenseDirection: 'Line direction',
+  suspenseLabel: 'Fallback label',
+  suspenseWhen: 'Show while (expression)',
+  suspenseSmart: 'Auto-detect data loading',
   size: 'Icon size (px)',
   placeholder: 'Placeholder',
   options: 'Options (comma-separated)',
@@ -351,6 +362,8 @@ const GRADIENT_PRESETS: { label: string; value: string }[] = [
   { label: 'Black → White', value: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)' },
   { label: 'Transparent → Black (overlay)', value: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.7) 100%)' },
 ]
+
+const GRADIENT_BUILDER_KEYS = new Set(['gradient', 'background', 'backgroundImage'])
 /** Quick-pick pill values for fields that have a small set of well-known options but also support free text / interpolation */
 const STYLE_QUICK_PICKS: Record<string, string[]> = {
   fontStyle: ['normal', 'italic', 'oblique'],
@@ -477,6 +490,7 @@ export function PropertyPanel({
   onDataSourcesChange,
   runtimeData = {},
   namedScripts = {},
+  scriptsLoading = false,
   onNamedScriptsChange,
   theme = {},
   onThemeChange,
@@ -493,6 +507,7 @@ export function PropertyPanel({
   projectAssets,
   seoSettings = {},
   onSeoChange,
+  onWrapSelectedWithSuspense,
   tabStorageKey,
   scrollStorageKey,
 }: Props) {
@@ -516,10 +531,30 @@ export function PropertyPanel({
   const [projectApiSourceNames, setProjectApiSourceNames] = useState<string[]>([])
   const [projectTableNames, setProjectTableNames] = useState<string[]>([])
   const [inspectorSource, setInspectorSource] = useState('')
+  const [inspectorCopyNotice, setInspectorCopyNotice] = useState('')
   const [monacoReady, setMonacoReady] = useState(false)
+  const inspectorCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bodyScrollRef = useRef<HTMLDivElement | null>(null)
 
   const props = node?.props ?? {}
+
+  const copyInspectorText = useCallback((text: string, label = 'Copied') => {
+    navigator.clipboard?.writeText(text)
+      .then(() => {
+        setInspectorCopyNotice(label)
+        if (inspectorCopyTimerRef.current) clearTimeout(inspectorCopyTimerRef.current)
+        inspectorCopyTimerRef.current = setTimeout(() => setInspectorCopyNotice(''), 1200)
+      })
+      .catch(() => {
+        setInspectorCopyNotice('Copy failed')
+        if (inspectorCopyTimerRef.current) clearTimeout(inspectorCopyTimerRef.current)
+        inspectorCopyTimerRef.current = setTimeout(() => setInspectorCopyNotice(''), 1600)
+      })
+  }, [])
+
+  useEffect(() => () => {
+    if (inspectorCopyTimerRef.current) clearTimeout(inspectorCopyTimerRef.current)
+  }, [])
 
   useEffect(() => {
     let canceled = false
@@ -658,13 +693,24 @@ export function PropertyPanel({
       ...projectApiSourceNames,
       ...projectTableNames,
     ]
-    // Return only original names; aliases still work in binding resolution via setWithAliases() in runtime-data endpoint
-    return Array.from(new Set(base))
+    return Array.from(new Set(
+      base
+        .map((name) => expandSourceAliases(name).find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? name)
+        .filter(Boolean)
+    ))
   }, [dataSources, projectApiSourceNames, projectTableNames])
   const bindingDataSources = useMemo<DataSourceDef[]>(() => bindingDataSourceNames.map((name) => ({ id: `binding-${name}`, name })), [bindingDataSourceNames])
+  const runtimeSourceLookup = useMemo(() => {
+    const lookup: Record<string, string> = {}
+    for (const key of Object.keys(runtimeData)) {
+      const canonical = expandSourceAliases(key).find((alias) => /^[a-z0-9_]+$/.test(alias)) ?? key
+      if (!lookup[canonical]) lookup[canonical] = key
+    }
+    return lookup
+  }, [runtimeData, expandSourceAliases])
   const runtimeSourceNames = useMemo(
-    () => bindingDataSourceNames.filter((name) => Object.prototype.hasOwnProperty.call(runtimeData, name)),
-    [bindingDataSourceNames, runtimeData]
+    () => Object.keys(runtimeSourceLookup).sort((a, b) => a.localeCompare(b)),
+    [runtimeSourceLookup]
   )
   useEffect(() => {
     if (runtimeSourceNames.length === 0) {
@@ -678,7 +724,7 @@ export function PropertyPanel({
 
   const inspectorTokens = useMemo(() => {
     if (!inspectorSource) return [] as string[]
-    const sourceValue = runtimeData[inspectorSource]
+    const sourceValue = runtimeData[runtimeSourceLookup[inspectorSource] ?? inspectorSource]
     const out = new Set<string>()
 
     const walk = (value: unknown, path: string, depth: number) => {
@@ -710,7 +756,7 @@ export function PropertyPanel({
 
     walk(sourceValue, `data.${inspectorSource}`, 0)
     return Array.from(out)
-  }, [inspectorSource, runtimeData])
+  }, [inspectorSource, runtimeData, runtimeSourceLookup])
   const inspectorPreferredSource = useMemo(() => {
     if (!inspectorSource) return ''
     const aliases = expandSourceAliases(inspectorSource)
@@ -724,6 +770,59 @@ export function PropertyPanel({
     if (!inspectorPreferredSource) return ''
     return `{{data.${inspectorPreferredSource}}}`
   }, [inspectorPreferredSource])
+  const inspectorPayloadPreview = useMemo(() => {
+    if (!inspectorSource) return ''
+    const value = runtimeData[runtimeSourceLookup[inspectorSource] ?? inspectorSource]
+    if (value === undefined) return ''
+    try {
+      const raw = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+      return raw.length > 6000 ? `${raw.slice(0, 6000)}\n... (truncated)` : raw
+    } catch {
+      return String(value)
+    }
+  }, [inspectorSource, runtimeData, runtimeSourceLookup])
+  const inspectorTokenValuePreview = useMemo(() => {
+    const readByPath = (root: unknown, path: string): unknown => {
+      const parts = path.split('.').filter(Boolean)
+      let current: unknown = root
+      for (const part of parts) {
+        if (current == null) return undefined
+        if (Array.isArray(current)) {
+          const idx = Number(part)
+          if (!Number.isInteger(idx) || idx < 0 || idx >= current.length) return undefined
+          current = current[idx]
+          continue
+        }
+        if (typeof current !== 'object') return undefined
+        current = (current as Record<string, unknown>)[part]
+      }
+      return current
+    }
+
+    const formatInline = (value: unknown): string => {
+      if (value === undefined) return 'undefined'
+      if (value === null) return 'null'
+      if (typeof value === 'string') {
+        const compact = value.length > 120 ? `${value.slice(0, 120)}...` : value
+        return `"${compact}"`
+      }
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+      try {
+        const json = JSON.stringify(value)
+        if (!json) return String(value)
+        return json.length > 140 ? `${json.slice(0, 140)}...` : json
+      } catch {
+        return String(value)
+      }
+    }
+
+    const out: Record<string, string> = {}
+    for (const token of inspectorTokens) {
+      const path = token.startsWith('data.') ? token.slice(5) : token
+      out[token] = formatInline(readByPath(runtimeData, path))
+    }
+    return out
+  }, [inspectorTokens, runtimeData])
   const propKeys = def ? Object.keys(def.defaultProps) : Object.keys(props)
   const uniqueKeys = Array.from(new Set([...propKeys, ...Object.keys(props), ...STYLE_PROP_KEYS, ...LAYOUT_KEYS, 'visibleWhen']))
   const isLayout = node ? ['container', 'section', 'stackV', 'stackH', 'header', 'main', 'footer', 'nav', 'aside', 'article'].includes(node.type) : false
@@ -733,7 +832,7 @@ export function PropertyPanel({
   const styleKeys = [...STYLE_PROP_KEYS]
   const eventKeys = (def?.events ?? BUILDER_EVENT_KEYS) as readonly string[]
   const availableStateDefinitions = [...globalStateDefinitions, ...stateDefinitions.filter((s) => !globalStateDefinitions.some((g) => g.name === s.name))]
-  const contentKeysAll = uniqueKeys.filter((k) => k !== 'customId' && k !== 'script' && k !== '__propContract' && k !== 'visibleWhen' && !k.startsWith('__') && !LAYOUT_KEYS.includes(k) && !STYLE_PROP_KEYS.includes(k as any) && !eventKeys.includes(k))
+  const contentKeysAll = uniqueKeys.filter((k) => k !== 'customId' && k !== 'script' && k !== '__propContract' && k !== 'visibleWhen' && k !== 'suspenseEnabled' && k !== 'suspenseVariant' && k !== 'suspenseDirection' && k !== 'suspenseLabel' && k !== 'suspenseWhen' && k !== 'suspenseSmart' && !k.startsWith('__') && !LAYOUT_KEYS.includes(k) && !STYLE_PROP_KEYS.includes(k as any) && !eventKeys.includes(k))
   const selectedReusable = node?.type === 'reusableInstance' && node?.props?.reusableId
     ? globalReusables.find((r) => r.id === node.props.reusableId)
     : null
@@ -754,13 +853,18 @@ export function PropertyPanel({
     for (const k of [...contentKeys, ...layoutKeys, ...styleKeys]) set.add(k)
     return set
   })()
+  const hasDataOrStateBinding = useMemo(
+    () => Object.values(props).some((v) => typeof v === 'string' && /\{\{\s*(data|state|script|prop|navProp)\./.test(v)),
+    [props]
+  )
+  const namedScriptNames = useMemo(() => Object.keys(namedScripts).filter(Boolean), [namedScripts])
+  const loadingUxEnabled = Boolean(props.suspenseEnabled)
   /* Style only: typography, colors, borders, shadow, position, etc. No layout (width/height/padding/margin live in Layout tab). */
   const styleGroups: { title: string; keys: readonly string[] }[] = [
     { title: 'Typography', keys: ['color', 'fontSize', 'fontWeight', 'fontFamily', 'fontStyle', 'lineHeight', 'letterSpacing', 'textAlign', 'textDecoration', 'textTransform', 'textOverflow', 'textShadow', 'textIndent', 'whiteSpace', 'wordBreak', 'verticalAlign', 'lineClamp', 'listStyleType', 'listStylePosition'] },
     { title: 'Background', keys: ['backgroundColor', 'background', 'backgroundImage', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'backgroundBlendMode', 'opacity'] },
     { title: 'Border', keys: ['border', 'borderTop', 'borderRight', 'borderBottom', 'borderLeft', 'borderWidth', 'borderStyle', 'borderColor', 'borderRadius', 'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius'] },
     { title: 'Shadow & outline', keys: ['boxShadow', 'outline', 'outlineOffset'] },
-    { title: 'Animation & FX', keys: ['animation', 'animationDuration', 'animationTimingFunction', 'animationDelay', 'animationIterationCount', 'animationDirection', 'animationFillMode', 'transition', 'transform', 'willChange'] },
     { title: 'Filters & Blend', keys: ['filter', 'backdropFilter', 'mixBlendMode'] },
     { title: 'Position', keys: ['position', 'top', 'right', 'bottom', 'left', 'zIndex'] },
     { title: 'Other', keys: ['cursor', 'pointerEvents', 'userSelect', 'aspectRatio', 'overflow', 'overflowX', 'overflowY', 'objectFit', 'objectPosition', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight'] },
@@ -792,7 +896,7 @@ export function PropertyPanel({
     }
     if (!monacoReady) {
       return (
-        <div className={`${className} h-[42px] border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`}>
+        <div className={`${className} h-[60px] border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#0d1117]`}>
           {monacoLoading}
         </div>
       )
@@ -803,7 +907,7 @@ export function PropertyPanel({
           language="javascript"
           value={value}
           onChange={(next) => onChange(next ?? '')}
-          height="42px"
+          height="60px"
           loading={monacoLoading}
           options={{
             minimap: { enabled: false },
@@ -1262,7 +1366,7 @@ export function PropertyPanel({
       )
     }
     // --- Background image / gradient ---
-    if (key === 'backgroundImage' || key === 'background') {
+    if (key === 'backgroundImage' || key === 'background' || key === 'gradient') {
       return (
         <div key={key}>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
@@ -1440,6 +1544,45 @@ export function PropertyPanel({
     const rawVal = typeof val === 'string' ? val : typeof val === 'number' ? String(val) : ''
     const isBound = rawVal.startsWith('{{') && rawVal.endsWith('}}')
 
+    if (GRADIENT_BUILDER_KEYS.has(key)) {
+      return (
+        <div key={key}>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+          <div className="flex gap-1 mb-1.5">
+            {renderExpressionEditor(rawVal, (next) => setProp(key, next), 'linear-gradient(135deg, #f00, #00f)', 'flex-1')}
+            <button
+              type="button"
+              onClick={() => setGradientBuilderFor(key)}
+              className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] text-gray-600 dark:text-gray-400 hover:border-black dark:hover:border-white hover:text-black dark:hover:text-white shrink-0 font-medium"
+              title="Open gradient builder"
+            >
+              Build
+            </button>
+          </div>
+          {rawVal && (
+            <div
+              className="w-full h-8 border border-gray-200 dark:border-[#30363d] mb-1.5"
+              style={{ background: rawVal }}
+            />
+          )}
+          <div className="flex flex-wrap gap-1">
+            {GRADIENT_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => setProp(key, p.value)}
+                className="relative overflow-hidden px-2 py-1 text-[10px] border border-gray-200 dark:border-[#30363d] font-medium text-gray-700 dark:text-gray-300 hover:border-black dark:hover:border-white"
+                title={p.value}
+              >
+                <span className="absolute inset-0 opacity-30" style={{ background: p.value }} />
+                <span className="relative">{p.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
     // ── Hamburger color fields — text input + colour swatch picker ───────────
     if (key === 'hamburgerBg' || key === 'hamburgerColor') {
       const isHexLike = /^#[0-9A-Fa-f]{3,8}$/.test(rawVal)
@@ -1610,7 +1753,13 @@ export function PropertyPanel({
             )}
             <button
               type="button"
-              onClick={() => setPropExpressionKey(key)}
+              onClick={() => {
+                if (GRADIENT_BUILDER_KEYS.has(key)) {
+                  setGradientBuilderFor(key)
+                  return
+                }
+                setPropExpressionKey(key)
+              }}
               className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
             >
               Build
@@ -2213,6 +2362,160 @@ export function PropertyPanel({
                       )}
                     </div>
                   </div>
+                  <div className="mb-3 pb-3 border-b border-gray-200 dark:border-[#30363d]">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div>
+                        <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Loading UX</div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">Wrap this component with a suspense-style fallback while data is loading.</p>
+                      </div>
+                      <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={loadingUxEnabled}
+                          onChange={(e) => setProp('suspenseEnabled', e.target.checked)}
+                        />
+                        Enable
+                      </label>
+                    </div>
+                    {!loadingUxEnabled && hasDataOrStateBinding && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onWrapSelectedWithSuspense && node?.type !== 'suspense') {
+                            onWrapSelectedWithSuspense()
+                            return
+                          }
+                          setProp('suspenseEnabled', true)
+                          if (props.suspenseSmart === undefined) setProp('suspenseSmart', true)
+                          if (!props.suspenseVariant) setProp('suspenseVariant', 'skeleton')
+                        }}
+                        className="text-[11px] px-2 py-1 border border-gray-300 dark:border-[#30363d] hover:bg-gray-100 dark:hover:bg-[#21262d]"
+                      >
+                        {onWrapSelectedWithSuspense && node?.type !== 'suspense'
+                          ? 'Suggestion: wrap in Suspense component'
+                          : 'Suggestion: add loading fallback for bound data'}
+                      </button>
+                    )}
+                    {loadingUxEnabled && (
+                      <div className="mt-2 space-y-2">
+                        <div>
+                          <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Fallback style</label>
+                          <select
+                            value={String(props.suspenseVariant ?? 'skeleton')}
+                            onChange={(e) => setProp('suspenseVariant', e.target.value)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                          >
+                            <option value="skeleton">Skeleton blocks</option>
+                            <option value="spinner">Spinner + label</option>
+                            <option value="line">Line loader</option>
+                            <option value="dots">Pulsing dots</option>
+                            <option value="custom">Label only</option>
+                          </select>
+                        </div>
+                        {String(props.suspenseVariant ?? 'skeleton') === 'line' && (
+                          <div>
+                            <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Line direction</label>
+                            <select
+                              value={String(props.suspenseDirection ?? 'horizontal')}
+                              onChange={(e) => setProp('suspenseDirection', e.target.value)}
+                              className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                            >
+                              <option value="horizontal">Horizontal</option>
+                              <option value="vertical">Vertical</option>
+                            </select>
+                          </div>
+                        )}
+                        <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={props.suspenseSmart !== false}
+                            onChange={(e) => setProp('suspenseSmart', e.target.checked)}
+                          />
+                          Auto-detect bound data sources still loading
+                        </label>
+                        <div className="relative">
+                          <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">
+                            Show fallback when (optional)
+                            <button
+                              type="button"
+                              onClick={() => setBindingFor(bindingFor === 'suspenseWhen' ? null : 'suspenseWhen')}
+                              className={`ml-1.5 p-0.5 rounded ${String(props.suspenseWhen ?? '').startsWith('{{') ? 'text-amber-500' : 'text-gray-400 hover:text-[var(--primary)]'}`}
+                              title="Bind to state, data, or expression"
+                            >
+                              <Zap className="w-3.5 h-3.5" />
+                            </button>
+                          </label>
+                          {bindingFor === 'suspenseWhen' && (
+                            <div className="absolute z-10 top-full left-0 right-0 mt-1 p-2 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded shadow-lg">
+                              <div className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">Bind to</div>
+                              <select
+                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  if (v.startsWith('state:')) setProp('suspenseWhen', `{{state.${v.slice(6)}}}`)
+                                  else if (v.startsWith('data:')) setProp('suspenseWhen', `{{data.${v.slice(5)}}}`)
+                                  else if (v.startsWith('script:')) setProp('suspenseWhen', `{{script.${v.slice(7)}}}`)
+                                  else if (v.startsWith('prop:')) setProp('suspenseWhen', `{{prop.${v.slice(5)}}}`)
+                                  else if (v === 'expr') setProp('suspenseWhen', '{{ }}')
+                                  setBindingFor(null)
+                                }}
+                              >
+                                <option value="">Select…</option>
+                                {parentPropSchema.length > 0 && parentPropSchema.map((p) => (
+                                  <option key={p.key} value={`prop:${p.key}`}>Prop: {p.key}</option>
+                                ))}
+                                {availableStateDefinitions.filter((s) => s.name.trim()).map((s) => (
+                                  <option key={s.id} value={`state:${s.name}`}>State: {s.name}</option>
+                                ))}
+                                {bindingDataSourceNames.map((name) => (
+                                  <option key={name} value={`data:${name}`}>Data: {name}</option>
+                                ))}
+                                {Object.keys(namedScripts).filter(Boolean).map((name) => (
+                                  <option key={name} value={`script:${name}`}>Script: {name}</option>
+                                ))}
+                                <option value="expr">Expression</option>
+                              </select>
+                              <button type="button" onClick={() => setBindingFor(null)} className="mt-2 text-xs text-gray-500">Close</button>
+                            </div>
+                          )}
+                          <div className="flex gap-1">
+                            {renderExpressionEditor(
+                              String(props.suspenseWhen ?? ''),
+                              (next) => setProp('suspenseWhen', next || undefined),
+                              '{{state.isLoading}} || {{data.users.loading}}',
+                              'flex-1'
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setPropExpressionKey('suspenseWhen')}
+                              className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                              title="Open expression builder"
+                            >
+                              Build
+                            </button>
+                          </div>
+                          {!!props.suspenseWhen && (
+                            <button
+                              type="button"
+                              onClick={() => setProp('suspenseWhen', undefined)}
+                              className="mt-1 text-[10px] text-red-400 hover:text-red-600"
+                            >
+                              Clear condition
+                            </button>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Fallback label</label>
+                          <input
+                            type="text"
+                            value={String(props.suspenseLabel ?? 'Loading...')}
+                            onChange={(e) => setProp('suspenseLabel', e.target.value)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {contentKeys.length > 0 && (
                     <>
                       <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider mb-1">Content</div>
@@ -2380,7 +2683,51 @@ export function PropertyPanel({
         {activeTab === 'animation' && (
           node ? (
             <div className="space-y-4">
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Add entrance animations, transitions, transforms, and sequential effects.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Centralized motion controls: gradient movement, color FX, transitions, and sequence playback.</p>
+
+              <div className="space-y-2 p-2 border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50 dark:bg-indigo-950/10">
+                <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">Gradient + Color Motion</div>
+                <p className="text-[11px] text-indigo-700/85 dark:text-indigo-300/85">Apply gradient colors in Style, then animate them here. Every field supports expressions.</p>
+                <div className="grid gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Gradient source (background or backgroundImage)</label>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.background ?? props.backgroundImage ?? ''), (next) => {
+                        if (String(props.background ?? '').trim()) setProp('background', next)
+                        else setProp('backgroundImage', next)
+                      }, 'linear-gradient(...) or {{state.dynamicGradient}}', 'flex-1')}
+                      <button
+                        type="button"
+                        onClick={() => setPropExpressionKey(String(props.background ?? '').trim() ? 'background' : 'backgroundImage')}
+                        className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                        title="Open expression builder"
+                      >
+                        Build
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Background size (for shift animations)</label>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.backgroundSize ?? ''), (next) => setProp('backgroundSize', next), '200% 200%', 'flex-1')}
+                      <button
+                        type="button"
+                        onClick={() => setPropExpressionKey('backgroundSize')}
+                        className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                        title="Open expression builder"
+                      >
+                        Build
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  <button type="button" onClick={() => { setProp('backgroundSize', '200% 200%'); setProp('animation', 'dccGradientShiftX 8s ease infinite') }} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Shift X</button>
+                  <button type="button" onClick={() => { setProp('backgroundSize', '200% 200%'); setProp('animation', 'dccGradientShiftY 8s ease alternate infinite') }} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Shift Y</button>
+                  <button type="button" onClick={() => setProp('animation', 'dccGradientRotate 10s linear infinite')} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Gradient Rotate</button>
+                  <button type="button" onClick={() => setProp('animation', 'dccGradientHueShift 6s linear infinite')} className="px-2 py-1 text-[11px] border border-gray-300 dark:border-[#30363d] hover:border-black dark:hover:border-white">Hue Shift</button>
+                </div>
+              </div>
 
               <div className="border border-blue-200 dark:border-blue-900/40 p-3 bg-blue-50 dark:bg-blue-950/10">
                 <AnimationSequenceBuilder
@@ -2389,45 +2736,45 @@ export function PropertyPanel({
                 />
               </div>
 
-              <div className="space-y-2 p-2 border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Visibility + Sequence</div>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                  Use this when your element has <code className="font-mono">visibleWhen</code> and you want it to appear/disappear smoothly.
-                </p>
-                <div>
-                  <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">When visibleWhen changes</label>
-                  <select
-                    value={String(props.visibleWhenMode ?? 'remove')}
-                    onChange={(e) => setProp('visibleWhenMode', e.target.value)}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
-                  >
-                    <option value="remove">Instant (remove from layout)</option>
-                    <option value="animate">Animate (fade + slide)</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
+              <details className="border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#0d1117]" open={false}>
+                <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Advanced: Visibility Transitions</summary>
+                <div className="space-y-2 p-2 pt-0">
                   <div>
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Duration</label>
-                    {renderExpressionEditor(String(props.visibleWhenDuration ?? '0.25s'), (next) => setProp('visibleWhenDuration', next), '0.25s')}
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Easing</label>
-                    {renderExpressionEditor(String(props.visibleWhenEasing ?? 'ease'), (next) => setProp('visibleWhenEasing', next), 'ease')}
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Slide offset</label>
-                    <input
-                      type="number"
-                      value={Number(props.visibleWhenOffset ?? 8)}
-                      onChange={(e) => setProp('visibleWhenOffset', Number(e.target.value || 0))}
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">When visibleWhen changes</label>
+                    <select
+                      value={String(props.visibleWhenMode ?? 'remove')}
+                      onChange={(e) => setProp('visibleWhenMode', e.target.value)}
                       className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white"
-                    />
+                    >
+                      <option value="remove">Instant (remove from layout)</option>
+                      <option value="animate">Animate (fade + slide)</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Duration</label>
+                      <div className="flex gap-1">
+                        {renderExpressionEditor(String(props.visibleWhenDuration ?? '0.25s'), (next) => setProp('visibleWhenDuration', next), '0.25s', 'flex-1')}
+                        <button type="button" onClick={() => setPropExpressionKey('visibleWhenDuration')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Easing</label>
+                      <div className="flex gap-1">
+                        {renderExpressionEditor(String(props.visibleWhenEasing ?? 'ease'), (next) => setProp('visibleWhenEasing', next), 'ease', 'flex-1')}
+                        <button type="button" onClick={() => setPropExpressionKey('visibleWhenEasing')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Slide offset</label>
+                      <div className="flex gap-1">
+                        {renderExpressionEditor(String(props.visibleWhenOffset ?? 8), (next) => setProp('visibleWhenOffset', next), '8', 'flex-1')}
+                        <button type="button" onClick={() => setPropExpressionKey('visibleWhenOffset')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                  Tip: Keep your sequence for motion style and set this to <strong>Animate</strong> so visibleWhen does not pop in/out instantly.
-                </p>
-              </div>
+              </details>
 
               <div className="space-y-2">
                 <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Quick Presets</div>
@@ -2458,48 +2805,86 @@ export function PropertyPanel({
 
               <div className="space-y-1">
                 <label className="block text-xs text-gray-500 dark:text-gray-400">Animation (shorthand)</label>
-                {renderExpressionEditor(String(props.animation ?? ''), (next) => setProp('animation', next), 'e.g. fadeIn 0.5s ease both')}
+                <div className="flex gap-1">
+                  {renderExpressionEditor(String(props.animation ?? ''), (next) => setProp('animation', next), 'e.g. fadeIn 0.5s ease both', 'flex-1')}
+                  <button
+                    type="button"
+                    onClick={() => setPropExpressionKey('animation')}
+                    className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0"
+                    title="Open expression builder"
+                  >
+                    Build
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Fine-tune</div>
-                <div className="grid gap-2">
+              <details className="border border-gray-200 dark:border-[#30363d]" open={false}>
+                <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Advanced: Fine-tune Motion</summary>
+                <div className="grid gap-2 p-2 pt-0">
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Duration</label>
-                    {renderExpressionEditor(String(props.animationDuration ?? ''), (next) => setProp('animationDuration', next), '0.5s')}
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationDuration ?? ''), (next) => setProp('animationDuration', next), '0.5s', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationDuration')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Timing Function</label>
-                    <select value={String(props.animationTimingFunction ?? 'ease')} onChange={(e) => setProp('animationTimingFunction', e.target.value)} className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white">
-                      {ANIMATION_TIMING_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationTimingFunction ?? 'ease'), (next) => setProp('animationTimingFunction', next), 'ease | linear | cubic-bezier(...)', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationTimingFunction')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Delay</label>
-                    {renderExpressionEditor(String(props.animationDelay ?? ''), (next) => setProp('animationDelay', next), '0s')}
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationDelay ?? ''), (next) => setProp('animationDelay', next), '0s', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationDelay')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Iteration Count</label>
-                    <select value={String(props.animationIterationCount ?? '1')} onChange={(e) => setProp('animationIterationCount', e.target.value)} className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-black dark:text-white">
-                      {ANIMATION_ITERATION_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationIterationCount ?? '1'), (next) => setProp('animationIterationCount', next), '1 | infinite', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationIterationCount')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Direction</label>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationDirection ?? 'normal'), (next) => setProp('animationDirection', next), 'normal | alternate | reverse', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationDirection')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Fill Mode</label>
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.animationFillMode ?? 'none'), (next) => setProp('animationFillMode', next), 'none | both | forwards', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('animationFillMode')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
 
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Transition & Transform</div>
-                <div className="grid gap-2">
+              <details className="border border-gray-200 dark:border-[#30363d]" open={false}>
+                <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 uppercase tracking-wider">Advanced: Transition & Transform</summary>
+                <div className="grid gap-2 p-2 pt-0">
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Transition</label>
-                    {renderExpressionEditor(String(props.transition ?? ''), (next) => setProp('transition', next), 'all 0.3s ease')}
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.transition ?? ''), (next) => setProp('transition', next), 'all 0.3s ease', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('transition')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Transform</label>
-                    {renderExpressionEditor(String(props.transform ?? ''), (next) => setProp('transform', next), 'rotate(5deg) scale(1.1)')}
+                    <div className="flex gap-1">
+                      {renderExpressionEditor(String(props.transform ?? ''), (next) => setProp('transform', next), 'rotate(5deg) scale(1.1)', 'flex-1')}
+                      <button type="button" onClick={() => setPropExpressionKey('transform')} className="px-2 py-1.5 text-xs border border-gray-300 dark:border-[#30363d] rounded hover:bg-gray-100 dark:hover:bg-[#21262d] shrink-0">Build</button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
             </div>
           ) : (
             <div className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
@@ -2642,17 +3027,27 @@ export function PropertyPanel({
                         {/* Run script */}
                         {config.action === 'runScript' && (
                           <>
+                            {scriptsLoading && (
+                              <div className="mb-1.5 flex items-center gap-2 rounded border border-emerald-300/60 bg-emerald-50/70 dark:bg-emerald-900/20 px-2 py-1 text-[11px] text-emerald-700 dark:text-emerald-300">
+                                <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="font-semibold">DCCortex</span>
+                                <span>loading scripts...</span>
+                              </div>
+                            )}
                             <select
                               value={config.scriptName ?? ''}
                               onChange={(e) => updateStep(stepIdx, { ...config, scriptName: e.target.value || undefined })}
                               className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#161b22] text-black dark:text-white"
                             >
                               <option value="">Select named script</option>
-                              {Object.keys(namedScripts).filter(Boolean).map((name) => (
+                              {namedScriptNames.map((name) => (
                                 <option key={name} value={name}>{name}</option>
                               ))}
                               <option value="__inline__">Inline script</option>
                             </select>
+                            {!scriptsLoading && namedScriptNames.length === 0 && (
+                              <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">No named scripts found yet. Use Inline script or add scripts in the Data tab.</p>
+                            )}
                             {(config.scriptName === '__inline__' || !config.scriptName) && (
                               <div className="border border-gray-300 dark:border-[#30363d] rounded overflow-hidden bg-white dark:bg-[#161b22]">
                                 <MonacoEditor
@@ -3035,13 +3430,13 @@ export function PropertyPanel({
           const sourcesWithParams = dataSources.filter(d => (d as any).urlParamDefs?.length)
           return (
           <div className="space-y-3">
-            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.sourceName.some.path&#125;&#125;</code> for nested fields. Source names with spaces also work as <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">snake_case</code> or <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">kebab-case</code> when typing manually.</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300">Read data from project sources. Use <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.source_name&#125;&#125;</code> for full payloads, <code className="px-1 py-0.5 bg-gray-100 dark:bg-[#21262d] rounded text-xs">&#123;&#123;data.source_name.some.path&#125;&#125;</code> for nested fields. Use snake_case source keys in bindings.</p>
 
             <div className="border border-gray-200 dark:border-[#30363d] rounded p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Data Inspector</p>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Live keys from preview runtime. Click to copy. (Sources with spaces also work as snake_case/kebab-case when typing manually.)</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Live keys from preview runtime. Click to copy. Source names are normalized to snake_case.</p>
                 </div>
                 {runtimeSourceNames.length > 0 && (
                   <select
@@ -3059,7 +3454,7 @@ export function PropertyPanel({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => { navigator.clipboard?.writeText(inspectorDumpToken).catch(() => {}) }}
+                    onClick={() => copyInspectorText(inspectorDumpToken, 'Copied payload token')}
                     className="px-2 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
                     title={`Copy ${inspectorDumpToken}`}
                   >
@@ -3068,14 +3463,33 @@ export function PropertyPanel({
                   {inspectorSafeDumpToken && inspectorSafeDumpToken !== inspectorDumpToken && (
                     <button
                       type="button"
-                      onClick={() => { navigator.clipboard?.writeText(inspectorSafeDumpToken).catch(() => {}) }}
+                      onClick={() => copyInspectorText(inspectorSafeDumpToken, 'Copied safe alias token')}
                       className="px-2 py-1 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
                       title={`Copy ${inspectorSafeDumpToken}`}
                     >
                       Copy safe alias token
                     </button>
                   )}
+                  {inspectorCopyNotice && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{inspectorCopyNotice}</span>
+                  )}
                   <p className="text-[10px] text-gray-500 dark:text-gray-400">For a dump preview in Text, set Content to only this token (no extra text) while Preview is ON.</p>
+                </div>
+              )}
+              {runtimeSourceNames.length > 0 && inspectorPayloadPreview && (
+                <div className="border border-gray-200 dark:border-[#30363d] bg-black text-green-300">
+                  <div className="px-2 py-1 border-b border-gray-700 flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-gray-300">Payload Preview</span>
+                    <button
+                      type="button"
+                      onClick={() => copyInspectorText(inspectorPayloadPreview, 'Copied payload preview')}
+                      className="px-1.5 py-0.5 text-[10px] border border-gray-500 text-gray-200 hover:bg-gray-800"
+                      title="Copy payload preview"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <pre className="max-h-72 min-h-36 overflow-auto px-2 py-1.5 text-[10px] leading-relaxed font-mono whitespace-pre-wrap break-words">{inspectorPayloadPreview}</pre>
                 </div>
               )}
               {runtimeSourceNames.length === 0 ? (
@@ -3083,17 +3497,25 @@ export function PropertyPanel({
               ) : inspectorTokens.length === 0 ? (
                 <p className="text-[11px] text-gray-500 dark:text-gray-400">No inspectable keys for this source yet.</p>
               ) : (
-                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-auto">
+                <div className="grid grid-cols-1 gap-1.5 max-h-[32rem] min-h-40 overflow-auto">
                   {inspectorTokens.map((token) => (
-                    <button
+                    <div
                       key={token}
-                      type="button"
-                      onClick={() => { navigator.clipboard?.writeText(`{{${token}}}`).catch(() => {}) }}
-                      className="px-2 py-0.5 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d] font-mono"
-                      title={`Copy {{${token}}}`}
+                      className="text-left p-1.5 border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117]"
                     >
-                      {`{{${token}}}`}
-                    </button>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] text-gray-700 dark:text-gray-300 font-mono">{`{{${token}}}`}</div>
+                        <button
+                          type="button"
+                          onClick={() => copyInspectorText(`{{${token}}}`, 'Copied token')}
+                          className="px-1.5 py-0.5 text-[10px] border border-gray-300 dark:border-[#30363d] rounded bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]"
+                          title={`Copy {{${token}}}`}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <div className="mt-1 bg-black text-emerald-300 font-mono text-[10px] px-1.5 py-1 overflow-hidden text-ellipsis whitespace-nowrap">{inspectorTokenValuePreview[token] ?? 'undefined'}</div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -3171,8 +3593,9 @@ export function PropertyPanel({
           open={gradientBuilderFor !== null}
           initialValue={gradientBuilderFor ? String(props[gradientBuilderFor] ?? '') : undefined}
           onClose={() => setGradientBuilderFor(null)}
-          onApply={(css) => {
-            if (gradientBuilderFor) setProp(gradientBuilderFor, css)
+          onApply={(payload) => {
+            if (!gradientBuilderFor) return
+            setProp(gradientBuilderFor, payload.css)
           }}
         />
       </div>

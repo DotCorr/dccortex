@@ -96,7 +96,7 @@ interface Props {
   open: boolean
   initialValue?: string
   onClose: () => void
-  onApply: (css: string) => void
+  onApply: (payload: { css: string }) => void
 }
 
 const DEFAULT_STOPS: ColorStop[] = [
@@ -325,6 +325,10 @@ export function GradientBuilderModal({ open, initialValue, onClose, onApply }: P
               </button>
             </div>
           </div>
+
+          <div className="border border-gray-200 dark:border-[#30363d] p-2.5 text-[11px] text-gray-500 dark:text-gray-400">
+            Gradient motion has been centralized in the Animation tab. Apply colors here, then configure movement and expression bindings in Animate.
+          </div>
         </div>
 
         {/* Footer */}
@@ -334,7 +338,10 @@ export function GradientBuilderModal({ open, initialValue, onClose, onApply }: P
           </button>
           <button
             type="button"
-            onClick={() => { onApply(css); onClose() }}
+            onClick={() => {
+              onApply({ css })
+              onClose()
+            }}
             className="flex-1 py-1.5 text-sm bg-black dark:bg-white text-white dark:text-black font-medium hover:bg-gray-800 dark:hover:bg-gray-200"
           >
             Apply gradient

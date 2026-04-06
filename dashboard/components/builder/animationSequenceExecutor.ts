@@ -12,6 +12,16 @@
 
 import type { AnimationSequenceConfig, AnimationStep } from './AnimationSequenceBuilder'
 
+const SEQUENCE_TOKEN_KEY = '__animationSequenceToken'
+
+function normalizeAnimationTime(raw: unknown, fallback: string): string {
+  const s = String(raw ?? '').trim()
+  if (!s) return fallback
+  if (/^-?\d*\.?\d+$/.test(s)) return `${s}s`
+  if (/^-?\d*\.?\d+(ms|s)$/i.test(s)) return s
+  return fallback
+}
+
 export type AnimationSequenceExecutorOptions = {
   previewMode?: boolean
   onStart?: () => void
@@ -31,75 +41,121 @@ export async function executeAnimationSequence(
   if (!options.previewMode) return // Only execute in preview mode
 
   const { onStart, onEnd, onTick } = options
-
   const playMode = sequence.playMode || 'sequential'
+  const tickMode = sequence.tickMode || 'per-step'
+  const tickEvery = Math.max(1, Number(sequence.tickEvery ?? 1) || 1)
+  const sequenceIterationRaw = String(sequence.sequenceIterationCount ?? '1').trim().toLowerCase()
+  const sequenceIterations = sequenceIterationRaw === 'infinite' ? Infinity : Math.max(1, Number(sequenceIterationRaw) || 1)
 
-  if (playMode === 'parallel') {
-    // Play all animations at once
-    const animations = sequence.steps
-      .map((step) => buildAnimationString(step))
-      .join(', ')
+  const token = Number((element as unknown as Record<string, unknown>)[SEQUENCE_TOKEN_KEY] ?? 0) + 1
+  ;(element as unknown as Record<string, unknown>)[SEQUENCE_TOKEN_KEY] = token
 
+  let stepTickCount = 0
+  let sequenceTickCount = 0
+  const isCancelled = () => Number((element as unknown as Record<string, unknown>)[SEQUENCE_TOKEN_KEY] ?? 0) !== token
+
+  const playParallelOnce = async (): Promise<void> => {
+    const animations = sequence.steps.map((step) => buildAnimationString(step)).join(', ')
     element.style.animation = animations
-    onStart?.()
 
-    // Listen for completion
     await new Promise<void>((resolve) => {
-      const handleAnimationEnd = () => {
+      let ended = 0
+      const expectedEnds = Math.max(1, sequence.steps.length)
+
+      const cleanup = () => {
         element.removeEventListener('animationend', handleAnimationEnd)
-        element.removeEventListener('animationiteration', handleAnimationTick)
-        onEnd?.()
-        resolve()
-      }
-      const handleAnimationTick = () => {
-        onTick?.()
-      }
-      element.addEventListener('animationend', handleAnimationEnd, { once: true })
-      element.addEventListener('animationiteration', handleAnimationTick)
-    })
-  } else {
-    // Sequential: play one after another
-    for (let i = 0; i < sequence.steps.length; i++) {
-      const step = sequence.steps[i]
-      const isFirst = i === 0
-      const isLast = i === sequence.steps.length - 1
-
-      if (isFirst) {
-        onStart?.()
+        element.removeEventListener('animationcancel', handleAnimationCancel)
+        element.removeEventListener('animationiteration', handleAnimationIteration)
       }
 
-      // Play this animation
-      element.style.animation = buildAnimationString(step)
-
-      // Wait for completion
-      await new Promise<void>((resolve) => {
-        const handleAnimationEnd = () => {
-          element.removeEventListener('animationend', handleAnimationEnd)
-          element.removeEventListener('animationiteration', handleAnimationTick)
-
-          if (isLast) {
-            onEnd?.()
-          }
+      const handleAnimationEnd = () => {
+        ended += 1
+        if (ended >= expectedEnds || isCancelled()) {
+          cleanup()
           resolve()
         }
-        const handleAnimationTick = () => {
-          onTick?.()
+      }
+
+      const handleAnimationCancel = () => {
+        cleanup()
+        resolve()
+      }
+
+      const handleAnimationIteration = () => {
+        if (tickMode !== 'per-step') return
+        stepTickCount += 1
+        if (stepTickCount % tickEvery === 0) onTick?.()
+      }
+
+      element.addEventListener('animationend', handleAnimationEnd)
+      element.addEventListener('animationcancel', handleAnimationCancel)
+      element.addEventListener('animationiteration', handleAnimationIteration)
+    })
+  }
+
+  const playSequentialOnce = async (): Promise<void> => {
+    for (const step of sequence.steps) {
+      if (isCancelled()) return
+
+      element.style.animation = buildAnimationString(step)
+
+      await new Promise<void>((resolve) => {
+        const cleanup = () => {
+          element.removeEventListener('animationend', handleAnimationEnd)
+          element.removeEventListener('animationcancel', handleAnimationCancel)
+          element.removeEventListener('animationiteration', handleAnimationIteration)
         }
+
+        const handleAnimationEnd = () => {
+          cleanup()
+          resolve()
+        }
+
+        const handleAnimationCancel = () => {
+          cleanup()
+          resolve()
+        }
+
+        const handleAnimationIteration = () => {
+          if (tickMode !== 'per-step') return
+          stepTickCount += 1
+          if (stepTickCount % tickEvery === 0) onTick?.()
+        }
+
         element.addEventListener('animationend', handleAnimationEnd, { once: true })
-        element.addEventListener('animationiteration', handleAnimationTick)
+        element.addEventListener('animationcancel', handleAnimationCancel, { once: true })
+        element.addEventListener('animationiteration', handleAnimationIteration)
       })
 
-      // Clear animation for next step (if any)
+      if (isCancelled()) return
       element.style.animation = 'none'
+      void element.offsetWidth
     }
   }
+
+  onStart?.()
+  for (let cycle = 0; cycle < sequenceIterations || sequenceIterations === Infinity; cycle += 1) {
+    if (isCancelled()) return
+    if (playMode === 'parallel') await playParallelOnce()
+    else await playSequentialOnce()
+    if (isCancelled()) return
+
+    if (tickMode === 'per-sequence') {
+      sequenceTickCount += 1
+      if (sequenceTickCount % tickEvery === 0) onTick?.()
+    }
+
+    if (sequenceIterations !== Infinity && cycle >= sequenceIterations - 1) break
+  }
+
+  if (!isCancelled()) onEnd?.()
 }
 
 /** Build CSS animation string from a single step */
 function buildAnimationString(step: AnimationStep): string {
-  const duration = step.duration || '0.5s'
+  const duration = normalizeAnimationTime(step.duration, '0.5s')
   const timing = step.timingFunction || 'ease'
-  const delay = step.delay || '0s'
+  const delay = normalizeAnimationTime(step.delay, '0s')
   const iteration = step.iterationCount || '1'
   const fillMode = 'both'
 
@@ -111,6 +167,7 @@ function buildAnimationString(step: AnimationStep): string {
  */
 export function clearAnimationSequence(element: HTMLElement | null): void {
   if (!element) return
+  ;(element as unknown as Record<string, unknown>)[SEQUENCE_TOKEN_KEY] = Number((element as unknown as Record<string, unknown>)[SEQUENCE_TOKEN_KEY] ?? 0) + 1
   element.style.animation = 'none'
   element.style.animationPlayState = 'running'
 }

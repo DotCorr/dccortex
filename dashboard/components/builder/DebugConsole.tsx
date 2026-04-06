@@ -51,6 +51,7 @@ type ApiFilterPreset = {
   id: string
   name: string
   search: string
+  scope: 'data-only' | 'all-api'
   method: 'all' | 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'HEAD'
   status: 'all' | 'ok' | 'error' | '2xx' | '3xx' | '4xx' | '5xx'
   pinnedOnly: boolean
@@ -125,6 +126,21 @@ function tryParseJson(value: unknown): unknown {
   } catch {
     return value
   }
+}
+
+function isDataApiUrl(url: string): boolean {
+  const lower = String(url ?? '').toLowerCase()
+  if (!lower) return false
+  if (lower.includes('/presence') || lower.includes('/sync')) return false
+  if (lower.includes('openai') || lower.includes('anthropic') || lower.includes('/ai/')) return true
+  return (
+    lower.includes('/runtime-data')
+    || lower.includes('/api/p/')
+    || lower.includes('/data')
+    || lower.includes('/api-sources')
+    || lower.includes('/datasources')
+    || lower.includes('/webhooks/test')
+  )
 }
 
 function parseIgnoreRules(text: string): { exactRules: string[][]; anyKeyRules: Set<string> } {
@@ -332,6 +348,7 @@ export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLo
   const [replHistory, setReplHistory] = useState<{ expr: string; result: string }[]>([])
   const [filter, setFilter] = useState<LogLevel | 'all'>('all')
   const [apiSearch, setApiSearch] = useState('')
+  const [apiScope, setApiScope] = useState<'data-only' | 'all-api'>('data-only')
   const [apiMethodFilter, setApiMethodFilter] = useState<'all' | 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'HEAD'>('all')
   const [apiStatusFilter, setApiStatusFilter] = useState<'all' | 'ok' | 'error' | '2xx' | '3xx' | '4xx' | '5xx'>('all')
   const [apiPinnedOnly, setApiPinnedOnly] = useState(false)
@@ -459,6 +476,7 @@ export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLo
   const apiRows = [...apiLogs]
     .slice(-400)
     .filter((entry) => {
+      if (apiScope === 'data-only' && !isDataApiUrl(entry.url)) return false
       if (apiMethodFilter !== 'all' && entry.method.toUpperCase() !== apiMethodFilter) return false
       if (apiPinnedOnly && !apiPinnedKeys.has(pinKeyForApi(entry))) return false
       if (apiStatusFilter !== 'all') {
@@ -600,6 +618,7 @@ export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLo
       id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name,
       search: apiSearch,
+      scope: apiScope,
       method: apiMethodFilter,
       status: apiStatusFilter,
       pinnedOnly: apiPinnedOnly,
@@ -613,6 +632,7 @@ export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLo
     const preset = apiPresets.find((p) => p.id === presetId)
     if (!preset) return
     setApiSearch(preset.search)
+    setApiScope(preset.scope ?? 'data-only')
     setApiMethodFilter(preset.method)
     setApiStatusFilter(preset.status)
     setApiPinnedOnly(preset.pinnedOnly)
@@ -825,6 +845,14 @@ export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLo
                     placeholder="Search URL, status, payload, error..."
                     className="min-w-[220px] flex-1 text-[11px] border border-gray-200 dark:border-[#30363d] rounded px-2 py-1 bg-white dark:bg-[#161b22] text-gray-700 dark:text-gray-300"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setApiScope((v) => (v === 'data-only' ? 'all-api' : 'data-only'))}
+                    className={`text-[10px] px-2 py-1 rounded border ${apiScope === 'data-only' ? 'border-emerald-300 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-[#30363d] text-gray-500 hover:text-gray-900 dark:hover:text-gray-100'}`}
+                    title="Toggle strict API scope"
+                  >
+                    {apiScope === 'data-only' ? 'Data/API only' : 'All API'}
+                  </button>
                   <select
                     value={apiMethodFilter}
                     onChange={(e) => setApiMethodFilter(e.target.value as typeof apiMethodFilter)}
@@ -893,7 +921,7 @@ export function DebugConsole({ runtimeState, stateDefinitions, inspection, apiLo
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setApiSearch(''); setApiMethodFilter('all'); setApiStatusFilter('all'); setApiPinnedOnly(false) }}
+                    onClick={() => { setApiSearch(''); setApiScope('data-only'); setApiMethodFilter('all'); setApiStatusFilter('all'); setApiPinnedOnly(false) }}
                     className="text-[10px] px-2 py-1 rounded text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 border border-gray-200 dark:border-[#30363d]"
                   >
                     Reset

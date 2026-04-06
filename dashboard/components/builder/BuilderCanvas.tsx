@@ -7,7 +7,7 @@
 
 'use client'
 
-import React, { useCallback, useState, useEffect, Fragment } from 'react'
+import React, { useCallback, useState, useEffect, useMemo, Fragment } from 'react'
 import type { Node } from './registry'
 import { createNode, nodePropsToStyle, getDomId } from './registry'
 import type { ScreenTheme } from './PropertyPanel'
@@ -245,6 +245,10 @@ type Props = {
   reusables?: ReusableDefinition[]
   /** Optional prop context used when rendering reusable source in edit mode. */
   reusablePropsCtx?: Record<string, unknown>
+  /** Source names currently being fetched by runtime-data. */
+  runtimePendingSources?: string[]
+  /** Source names that currently have resolved non-null data in runtimeData. */
+  runtimeResolvedSources?: string[]
 }
 
 /** Resolve {{state.x}} / {{data.x}} so state works for all components. Use for every bindable prop (see registry bindableProps). */
@@ -288,6 +292,12 @@ function evaluateVisibleWhen(raw: unknown, fn?: ResolveBindingFn): boolean {
   }
   const lower = typeof resolved === 'string' ? resolved.toLowerCase() : String(resolved).toLowerCase()
   return !(lower === 'false' || lower === '0' || lower === 'null' || lower === 'undefined' || lower === '')
+}
+
+function extractGradientColors(gradient: string): string[] {
+  const matches = gradient.match(/#[0-9a-fA-F]{3,8}|rgba?\([^\)]+\)|hsla?\([^\)]+\)/g)
+  if (!matches || matches.length === 0) return ['#22d3ee', '#6366f1']
+  return matches.slice(0, 6)
 }
 
 const GENERIC_FONT_FAMILIES = new Set([
@@ -335,7 +345,31 @@ function ensureBunnyFontLoaded(family: string) {
 
 function resolveWithProps(raw: unknown, fn?: ResolveBindingFn, propsCtx?: Record<string, unknown>): string {
   if (!propsCtx) return resolve(raw, fn)
-  if (fn) return fn(typeof raw === 'string' ? raw : String(raw ?? ''), propsCtx)
+  if (fn) {
+    let source = typeof raw === 'string' ? raw : String(raw ?? '')
+    // Flatten nested bindings like {{data.source.{{state.key}}}} before evaluating the full expression.
+    if (/\{\{[^{}]*\{\{[^{}]+\}\}[^{}]*\}\}/.test(source)) {
+      for (let i = 0; i < 6; i++) {
+        let changed = false
+        source = source.replace(/\{\{([^{}]+)\}\}/g, (match, inner) => {
+          const token = `{{${String(inner).trim()}}}`
+          const next = fn(token, propsCtx)
+          if (next !== match) changed = true
+          return next
+        })
+        if (!changed || !source.includes('{{')) break
+      }
+    }
+    let resolved = fn(source, propsCtx)
+    // Support chained bindings where a prop value itself contains bindings.
+    for (let i = 0; i < 3; i++) {
+      if (!resolved.includes('{{')) break
+      const next = fn(resolved, propsCtx)
+      if (next === resolved) break
+      resolved = next
+    }
+    return resolved
+  }
   const str = typeof raw === 'string' ? raw : String(raw ?? '')
   return str.replace(/\{\{\s*prop\.([a-zA-Z0-9_.$-]+)\s*\}\}/g, (_, keyPath) => {
     const keys = String(keyPath).split('.')
@@ -373,6 +407,38 @@ function normalizeRepeaterItems(source: unknown): unknown[] {
   return entries.map(([key, value]) => ({ key, value }))
 }
 
+function normalizeSourceKey(value: string): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
+}
+
+function extractDataSourcesFromUnknown(input: unknown): string[] {
+  const out = new Set<string>()
+  const walk = (value: unknown, depth = 0) => {
+    if (depth > 5 || value == null) return
+    if (typeof value === 'string') {
+      const tokenMatches = value.match(/\{\{\s*data\.([a-zA-Z0-9_-]+)/g) ?? []
+      for (const m of tokenMatches) {
+        const source = m.replace(/\{\{\s*data\./, '').trim()
+        if (source) out.add(normalizeSourceKey(source))
+      }
+      return
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1)
+      return
+    }
+    if (typeof value === 'object') {
+      for (const child of Object.values(value as Record<string, unknown>)) walk(child, depth + 1)
+    }
+  }
+  walk(input)
+  return Array.from(out)
+}
+
 const BUILDER_CHART_TYPES = new Set([
   'lineChart', 'barChart', 'pieChart', 'areaChart', 'doughnutChart', 'horizontalBarChart',
   'stackedBarChart', 'scatterChart', 'radarChart', 'gaugeChart', 'funnelChart', 'stepLineChart',
@@ -380,6 +446,12 @@ const BUILDER_CHART_TYPES = new Set([
 ])
 
 const MissingReusableWarningContext = React.createContext(true)
+const LoadingSignalContext = React.createContext<{ pending: Set<string>; resolved: Set<string> }>({
+  pending: new Set<string>(),
+  resolved: new Set<string>(),
+})
+
+const reusableCloneCache = new WeakMap<Node, Map<string, Node>>()
 
 function cloneForReusableInstance(node: Node, namespace: string): Node {
   return {
@@ -387,6 +459,19 @@ function cloneForReusableInstance(node: Node, namespace: string): Node {
     id: `${namespace}-${node.id}`,
     children: (node.children ?? []).map((c) => cloneForReusableInstance(c, namespace)),
   }
+}
+
+function cloneForReusableInstanceCached(node: Node, namespace: string): Node {
+  let nsMap = reusableCloneCache.get(node)
+  if (!nsMap) {
+    nsMap = new Map<string, Node>()
+    reusableCloneCache.set(node, nsMap)
+  }
+  const cached = nsMap.get(namespace)
+  if (cached) return cached
+  const cloned = cloneForReusableInstance(node, namespace)
+  nsMap.set(namespace, cloned)
+  return cloned
 }
 
 function NodeRenderer({
@@ -427,6 +512,7 @@ function NodeRenderer({
   const isSelected = !previewMode && selectedId === node.id
   const canDragNode = !previewMode && !isRoot && !!onMove
   const showMissingReusableWarning = React.useContext(MissingReusableWarningContext)
+  const loadingSignals = React.useContext(LoadingSignalContext)
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -473,7 +559,7 @@ function NodeRenderer({
   }, [onDragEndNode])
 
   const semanticLayoutTypes = ['header', 'main', 'footer', 'nav', 'aside', 'article'] as const
-  const hasLayout = ['container', 'section', 'stackV', 'stackH', 'card', 'formWrapper', 'dataRepeater', 'tabs', 'tooltip', 'modal', ...semanticLayoutTypes].includes(node.type as any)
+  const hasLayout = ['container', 'suspense', 'section', 'stackV', 'stackH', 'card', 'formWrapper', 'dataRepeater', 'tabs', 'tooltip', 'modal', ...semanticLayoutTypes].includes(node.type as any)
   // Resolve all string props (e.g. {{state.direction}}) before computing styles so edit canvas matches preview layout.
   const resolvedNodeProps = resolveBindingFn
     ? Object.fromEntries(
@@ -524,7 +610,9 @@ function NodeRenderer({
     const explicitFlex = p.flex != null && String(p.flex).trim()
     const explicitWidth = p.width != null && String(p.width).trim()
     const inheritedWidth = reusableRootProps?.width != null && String(reusableRootProps.width).trim()
-    if (explicitFlex) (style as Record<string, unknown>).flex = String(p.flex).trim()
+    // Width must win over auto-grow: when explicit width exists, neutralize flex expansion.
+    if (explicitFlex && !explicitWidth) (style as Record<string, unknown>).flex = String(p.flex).trim()
+    if (explicitWidth) (style as Record<string, unknown>).flex = '0 0 auto'
     if (explicitWidth) (style as Record<string, unknown>).width = /^\d+$/.test(String(p.width).trim()) ? `${p.width}px` : String(p.width)
     else if (inheritedWidth) (style as Record<string, unknown>).width = /^\d+$/.test(String(reusableRootProps?.width).trim()) ? `${reusableRootProps?.width}px` : String(reusableRootProps?.width)
     else if (!explicitFlex) (style as Record<string, unknown>).width = '100%'
@@ -715,6 +803,104 @@ function NodeRenderer({
     }
   }
 
+  const suspenseEnabled = Boolean(node.props?.suspenseEnabled)
+  const suspenseSmart = node.props?.suspenseSmart !== false
+  const suspenseWhen = String(node.props?.suspenseWhen ?? '').trim()
+  const suspenseVariant = String(node.props?.suspenseVariant ?? 'skeleton')
+  const suspenseDirection = String(node.props?.suspenseDirection ?? 'horizontal')
+  const suspenseLabel = String(node.props?.suspenseLabel ?? 'Loading...')
+  const suspenseManualActive = suspenseWhen
+    ? evaluateVisibleWhen(resolveWithProps(suspenseWhen, resolveBindingFn, reusablePropsCtx), resolveBindingFn)
+    : false
+  const suspenseReferencedSources = suspenseSmart ? extractDataSourcesFromUnknown(node.props) : []
+  const suspenseAutoActive = suspenseReferencedSources.some(
+    (source) => loadingSignals.pending.has(source) && !loadingSignals.resolved.has(source)
+  )
+  const showSuspenseFallback = suspenseEnabled && (
+    (Boolean(previewMode) && (suspenseManualActive || suspenseAutoActive))
+    || (!previewMode && suspenseManualActive)
+  )
+
+  if (showSuspenseFallback) {
+    const widthRaw = style?.width == null ? '' : String(style.width).trim()
+    const heightRaw = style?.height == null ? '' : String(style.height).trim()
+    const constrainedSize = (widthRaw && widthRaw !== 'auto') || (heightRaw && heightRaw !== 'auto')
+    const parsedWidth = Number.parseFloat(widthRaw)
+    const parsedHeight = Number.parseFloat(heightRaw)
+    const widthPx = Number.isFinite(parsedWidth) ? parsedWidth : null
+    const heightPx = Number.isFinite(parsedHeight) ? parsedHeight : null
+    const spinnerBoxSize = constrainedSize
+      ? Math.max(24, Math.floor(Math.min(widthPx ?? heightPx ?? 56, heightPx ?? widthPx ?? 56) * 0.72))
+      : 32
+    const showSpinnerLabel = !constrainedSize || Math.min(widthPx ?? 9999, heightPx ?? 9999) >= 72
+    const shellCls = `${constrainedSize ? 'w-full h-full' : 'inline-flex'} box-border min-w-0 min-h-0 text-gray-600 dark:text-gray-300`
+    const bodyFrameCls = constrainedSize ? 'w-full h-full min-w-0 min-h-0' : 'inline-flex'
+    const bodyPadCls = constrainedSize ? 'p-1.5' : 'p-2.5'
+    const fallbackBody =
+      suspenseVariant === 'spinner' ? (
+        <div className={`${bodyFrameCls} flex ${constrainedSize ? 'items-center justify-center' : 'flex-col items-center justify-center gap-1.5'} ${bodyPadCls} overflow-visible`}>
+          <svg
+            className="animate-spin"
+            style={{ width: spinnerBoxSize, height: spinnerBoxSize, color: '#2563eb', flexShrink: 0 }}
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            role="img"
+            aria-label="Loading"
+          >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          {showSpinnerLabel && (
+            <span className="text-[11px] font-medium tracking-wide uppercase text-gray-500 dark:text-gray-400 leading-tight max-w-full truncate">
+              {suspenseLabel}
+            </span>
+          )}
+        </div>
+      ) : suspenseVariant === 'line' ? (
+        <div className={`${bodyFrameCls} ${suspenseDirection === 'vertical' ? 'flex-col' : 'flex-row'} flex gap-1.5 ${bodyPadCls} overflow-hidden`}>
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded-md flex-1 min-w-0" />
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded-md flex-1 min-w-0" />
+          <span className="bg-gray-200 dark:bg-[#21262d] animate-pulse rounded-md flex-1 min-w-0" />
+        </div>
+      ) : suspenseVariant === 'dots' ? (
+        <div className={`${bodyFrameCls} flex items-center justify-center gap-1.5 ${bodyPadCls} overflow-hidden`}>
+          <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse [animation-delay:120ms]" />
+          <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-[#30363d] animate-pulse [animation-delay:240ms]" />
+        </div>
+      ) : suspenseVariant === 'custom' ? (
+        <div className={`${bodyFrameCls} flex items-center justify-center text-xs px-2 text-center overflow-hidden`}>
+          <span className="max-w-full truncate">{suspenseLabel || 'Loading...'}</span>
+        </div>
+      ) : (
+        <div className={`${bodyFrameCls} flex flex-col ${bodyPadCls} space-y-1.5 overflow-hidden`}>
+          <div className="h-3 w-3/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
+          <div className="h-3 w-4/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
+          <div className="h-3 w-2/5 bg-gray-200 dark:bg-[#21262d] animate-pulse rounded" />
+        </div>
+      )
+
+    return (
+      <div
+        id={domId}
+        data-node-id={node.id}
+        draggable={canDragNode ? 'true' : 'false'}
+        onDragStart={canDragNode ? handleDragStart : undefined}
+        onDragEnd={canDragNode ? handleDragEnd : undefined}
+        onClick={previewMode ? (e: React.MouseEvent) => runConfiguredEvent('onClick', e) : (e: React.MouseEvent) => { e.stopPropagation(); onSelect(node.id) }}
+          className={shellCls}
+        style={{
+          ...style,
+          backgroundColor: (style as React.CSSProperties).backgroundColor ?? 'transparent',
+          overflow: 'visible',
+        }}
+      >
+        {fallbackBody}
+      </div>
+    )
+  }
+
   if (node.type === 'reusableInstance') {
     const reusableId = String(node.props.reusableId ?? '')
     const reusable = reusableId ? reusablesById?.get(reusableId) : undefined
@@ -730,7 +916,7 @@ function NodeRenderer({
     const runtimeProps = Object.fromEntries(
       Object.entries(propBindings).map(([k, v]) => [k, resolveWithProps(v, resolveBindingFn, reusablePropsCtx)])
     )
-    const namespacedRoot = cloneForReusableInstance(reusable.root, `ri-${node.id}`)
+    const namespacedRoot = cloneForReusableInstanceCached(reusable.root, `ri-${node.id}`)
     const handleReusableInternalSelect = (selectedNodeId: string | null) => {
       if (!previewMode) {
         onSelect(node.id)
@@ -770,7 +956,7 @@ function NodeRenderer({
     )
   }
 
-  if (node.type === 'container' || semanticLayoutTypes.includes(node.type as any)) {
+  if (node.type === 'container' || node.type === 'suspense' || semanticLayoutTypes.includes(node.type as any)) {
     // — Collapsible aside (preview + edit mode) —
     if (node.type === 'aside' && node.props?.collapsible) {
       const asideChildren = node.children.map((child) => (
@@ -844,6 +1030,14 @@ function NodeRenderer({
     const clearanceStyleTag = hasCollapsibleAside && hBpRaw !== 'always' && hBpRaw !== 'never'
       ? `@media (max-width: ${bpMaxPx}px) { #${domId} { padding-left: ${hamburgerClearance}px !important; } }`
       : null
+    const handleContainerEditSelect = (e: React.MouseEvent<HTMLElement>) => {
+      e.stopPropagation()
+      const target = e.target as HTMLElement | null
+      const hitNode = target?.closest?.('[data-node-id]') as HTMLElement | null
+      const hitNodeId = hitNode?.getAttribute('data-node-id')
+      if (hitNodeId && hitNodeId !== node.id) return
+      onSelect(node.id)
+    }
     return (
       <Tag
         id={domId}
@@ -851,7 +1045,7 @@ function NodeRenderer({
         draggable={canDragNode ? 'true' : 'false'}
         onDragStart={canDragNode ? handleDragStart : undefined}
         onDragEnd={canDragNode ? handleDragEnd : undefined}
-        onClick={previewMode ? (e: React.MouseEvent<HTMLElement>) => runConfiguredEvent('onClick', e) : (e: React.MouseEvent<HTMLElement>) => { e.stopPropagation(); onSelect(node.id) }}
+        onClick={previewMode ? (e: React.MouseEvent<HTMLElement>) => runConfiguredEvent('onClick', e) : handleContainerEditSelect}
         onDrop={previewMode ? undefined : handleDrop}
         onDragOver={previewMode ? undefined : handleDragOver}
         className={previewMode ? 'rounded box-border' : `relative ${isRoot ? 'rounded box-border' : `border-2 ${isSelected ? (hasCustomBg ? 'border-[var(--primary)]' : 'border-[var(--primary)] bg-[var(--primary)]/5') : 'border-gray-200 dark:border-[#30363d] border-dashed'} rounded box-border`}`}
@@ -992,6 +1186,121 @@ function NodeRenderer({
         style={style}
       >
         <span className={variantClass} style={style}>{resolveWithProps(node.props.content ?? 'Text', resolveBindingFn, reusablePropsCtx)}</span>
+      </div>
+    )
+  }
+
+  if (node.type === 'gradientText') {
+    const content = resolveWithProps(node.props.content ?? 'Gradient Text', resolveBindingFn, reusablePropsCtx)
+    const gradient = resolveWithProps(String(node.props.gradient ?? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'), resolveBindingFn, reusablePropsCtx)
+    const textStyle: React.CSSProperties = {
+      background: gradient,
+      WebkitBackgroundClip: 'text',
+      backgroundClip: 'text',
+      color: 'transparent',
+      WebkitTextFillColor: 'transparent',
+      fontSize: typeof node.props.fontSize === 'number' ? `${node.props.fontSize}px` : (node.props.fontSize as string | undefined),
+      fontWeight: node.props.fontWeight as React.CSSProperties['fontWeight'] ?? 700,
+      lineHeight: node.props.lineHeight as React.CSSProperties['lineHeight'] ?? 1.1,
+      backgroundSize: String(node.props.backgroundSize ?? '200% 200%'),
+      animation: String(node.props.animation ?? ''),
+      textAlign: (node.props.textAlign as React.CSSProperties['textAlign']) ?? 'left',
+      display: 'inline-block',
+      width: '100%',
+    }
+    return (
+      <div
+        id={domId}
+        data-node-id={node.id}
+        draggable={canDragNode ? 'true' : 'false'}
+        onDragStart={canDragNode ? handleDragStart : undefined}
+        onDragEnd={canDragNode ? handleDragEnd : undefined}
+        onClick={previewMode ? (e) => runConfiguredEvent('onClick', e) : (e) => { e.stopPropagation(); onSelect(node.id) }}
+        className={previewMode ? 'px-2 py-1 rounded' : `px-2 py-1 border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-transparent'} rounded`}
+        style={style}
+      >
+        <span style={textStyle}>{content}</span>
+      </div>
+    )
+  }
+
+  if (node.type === 'gradientSvg') {
+    const svgWidth = Number(node.props.width ?? 240)
+    const svgHeight = Number(node.props.height ?? 140)
+    const shape = String(node.props.shape ?? 'wave')
+    const gradient = resolveWithProps(String(node.props.gradient ?? 'linear-gradient(90deg, #22d3ee 0%, #6366f1 100%)'), resolveBindingFn, reusablePropsCtx)
+    const strokeColor = resolveWithProps(String(node.props.strokeColor ?? ''), resolveBindingFn, reusablePropsCtx)
+    const strokeWidth = Number(node.props.strokeWidth ?? 0)
+    const colors = extractGradientColors(gradient)
+    const gradId = `grad-${node.id}`
+    const animationShorthand = String(node.props.animation ?? '')
+    const elementAnimation = animationShorthand
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part && !part.includes('dccGradientShiftX') && !part.includes('dccGradientShiftY') && !part.includes('dccGradientRotate'))
+      .join(', ')
+    const animationDurationSecMatch = animationShorthand.match(/(\d*\.?\d+)s/)
+    const gradientAnimDuration = `${animationDurationSecMatch ? Number(animationDurationSecMatch[1]) : 8}s`
+    const animatesShiftX = animationShorthand.includes('dccGradientShiftX')
+    const animatesShiftY = animationShorthand.includes('dccGradientShiftY')
+    const animatesRotate = animationShorthand.includes('dccGradientRotate')
+
+    const pathByShape: Record<string, string> = {
+      wave: 'M 0 70 C 35 10 85 130 120 70 C 155 10 205 130 240 70 L 240 140 L 0 140 Z',
+      blob: 'M 120 14 C 156 14 196 28 212 58 C 228 88 220 132 192 156 C 164 180 116 184 76 172 C 36 160 4 132 6 98 C 8 64 44 24 82 16 C 94 14 106 14 120 14 Z',
+      ring: 'M 120 20 A 50 50 0 1 1 119.9 20 Z M 120 58 A 12 12 0 1 0 120.1 58 Z',
+      diamond: 'M 120 12 L 228 70 L 120 128 L 12 70 Z',
+    }
+
+    return (
+      <div
+        id={domId}
+        data-node-id={node.id}
+        draggable={canDragNode ? 'true' : 'false'}
+        onDragStart={canDragNode ? handleDragStart : undefined}
+        onDragEnd={canDragNode ? handleDragEnd : undefined}
+        onClick={previewMode ? (e) => runConfiguredEvent('onClick', e) : (e) => { e.stopPropagation(); onSelect(node.id) }}
+        className={previewMode ? 'inline-block rounded' : `inline-block border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-transparent'} rounded`}
+        style={style}
+      >
+        <svg width={svgWidth} height={svgHeight} viewBox="0 0 240 140" style={{ display: 'block', animation: elementAnimation, opacity: Number(node.props.opacity ?? 1) }}>
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
+              {animatesShiftX && (
+                <>
+                  <animate attributeName="x1" values="0%;100%;0%" dur={gradientAnimDuration} repeatCount="indefinite" />
+                  <animate attributeName="x2" values="100%;200%;100%" dur={gradientAnimDuration} repeatCount="indefinite" />
+                </>
+              )}
+              {animatesShiftY && (
+                <>
+                  <animate attributeName="y1" values="0%;100%;0%" dur={gradientAnimDuration} repeatCount="indefinite" />
+                  <animate attributeName="y2" values="100%;200%;100%" dur={gradientAnimDuration} repeatCount="indefinite" />
+                </>
+              )}
+              {animatesRotate && (
+                <animateTransform
+                  attributeName="gradientTransform"
+                  type="rotate"
+                  from="0 120 70"
+                  to="360 120 70"
+                  dur={gradientAnimDuration}
+                  repeatCount="indefinite"
+                />
+              )}
+              {colors.map((c, idx) => (
+                <stop key={`${c}-${idx}`} offset={`${(idx / Math.max(1, colors.length - 1)) * 100}%`} stopColor={c} />
+              ))}
+            </linearGradient>
+          </defs>
+          <path
+            d={pathByShape[shape] ?? pathByShape.wave}
+            fill={`url(#${gradId})`}
+            stroke={strokeColor || 'none'}
+            strokeWidth={strokeWidth > 0 ? strokeWidth : undefined}
+            fillRule={shape === 'ring' ? 'evenodd' : undefined}
+          />
+        </svg>
       </div>
     )
   }
@@ -1679,8 +1988,8 @@ function NodeRenderer({
             {showPercent && <span className="text-xs font-medium text-gray-600 dark:text-gray-300">{Math.round(pct)}%</span>}
           </div>
         )}
-        <div className="w-full bg-gray-200 dark:bg-[#30363d] overflow-hidden" style={{ height, borderRadius: height / 2 }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: height / 2, transition: 'width 0.4s ease' }}
+        <div className="w-full bg-gray-200 dark:bg-[#30363d] overflow-hidden" style={{ height, borderRadius: 'var(--border-radius-full, 9999px)' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 'var(--border-radius-full, 9999px)', transition: 'width 0.4s ease' }}
             className={animated ? 'animate-pulse' : ''} />
         </div>
       </div>
@@ -1711,7 +2020,7 @@ function NodeRenderer({
     const rounded = String(node.props.rounded ?? 'md')
     const bordered = node.props.bordered !== false
     const shadowMap: Record<string, string> = { none: '', sm: 'shadow-sm', md: 'shadow', lg: 'shadow-lg', xl: 'shadow-xl' }
-    const roundedMap: Record<string, string> = { none: '0', sm: 'var(--border-radius-sm, 0px)', md: 'var(--border-radius, 0px)', lg: 'var(--border-radius-lg, 0px)', full: '24px' }
+    const roundedMap: Record<string, string> = { none: '0', sm: 'var(--border-radius-sm, 0px)', md: 'var(--border-radius, 0px)', lg: 'var(--border-radius-lg, 0px)', full: 'var(--border-radius-full, 9999px)' }
     const childEls = (node.children ?? []).map((child) => (
       <NodeRenderer key={`${child.id}:${child.type}`} node={child} selectedId={selectedId} onSelect={onSelect}
         onUpdate={(up) => { const kids = node.children ?? []; const next = kids.map(c => c.id === up.id ? up : c); onUpdate({ ...node, children: next }) }}
@@ -2069,8 +2378,12 @@ function NodeRenderer({
   )
 }
 
-export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMode, suppressRootChrome = false, resolveBinding: resolveBindingFn, theme, onMove, onRunEvent, reusables = [], reusablePropsCtx }: Props) {
+export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMode, suppressRootChrome = false, resolveBinding: resolveBindingFn, theme, onMove, onRunEvent, reusables = [], reusablePropsCtx, runtimePendingSources = [], runtimeResolvedSources = [] }: Props) {
   const reusablesById = new Map(reusables.map((r) => [r.id, r]))
+  const loadingSignalValue = useMemo(() => ({
+    pending: new Set(runtimePendingSources.map(normalizeSourceKey)),
+    resolved: new Set(runtimeResolvedSources.map(normalizeSourceKey)),
+  }), [runtimePendingSources, runtimeResolvedSources])
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
   const [showMissingReusableWarning, setShowMissingReusableWarning] = useState(reusables.length > 0)
   const scrollRef = React.useRef<HTMLDivElement>(null)
@@ -2234,7 +2547,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
       // If the parent is a row-flex semantic/layout element and the child is a
       // layout container, auto-set flex:1 so it fills the available width
       const rowFlexParentTypes = ['header', 'footer', 'nav', 'stackH']
-      const expandableChildTypes = ['container', 'section', 'stackV', 'stackH', 'main', 'aside', 'article', 'reusableInstance']
+      const expandableChildTypes = ['container', 'section', 'stackV', 'stackH', 'main', 'aside', 'article']
       const parentFd = String((parent.props as Record<string, unknown>)?.flexDirection ?? '')
       const isRowParent = rowFlexParentTypes.includes(parent.type) || parentFd === 'row'
       if (isRowParent && expandableChildTypes.includes(type) && !child.props.flex && !child.props.width) {
@@ -2277,6 +2590,16 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
         @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
         @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0 } }
         @keyframes float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-12px) } }
+        @keyframes dccGradientShiftX { 0% { background-position: 0% 50% } 50% { background-position: 100% 50% } 100% { background-position: 0% 50% } }
+        @keyframes dccGradientShiftY { 0% { background-position: 50% 0% } 50% { background-position: 50% 100% } 100% { background-position: 50% 0% } }
+        @keyframes dccGradientRotate {
+          0% { background-position: 50% 0% }
+          25% { background-position: 100% 50% }
+          50% { background-position: 50% 100% }
+          75% { background-position: 0% 50% }
+          100% { background-position: 50% 0% }
+        }
+        @keyframes dccGradientHueShift { 0% { filter: hue-rotate(0deg) } 100% { filter: hue-rotate(360deg) } }
       `}</style>
     <div
       data-builder-canvas="true"
@@ -2306,16 +2629,19 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
       }}
     >
       <style>{`
-        [data-builder-canvas="true"] .rounded,
-        [data-builder-canvas="true"] .rounded-md {
+        [data-builder-canvas=true] .rounded,
+        [data-builder-canvas=true] .rounded-md {
           border-radius: var(--border-radius, 0px);
         }
-        [data-builder-canvas="true"] .rounded-sm {
+        [data-builder-canvas=true] .rounded-sm {
           border-radius: var(--border-radius-sm, 0px);
         }
-        [data-builder-canvas="true"] .rounded-lg,
-        [data-builder-canvas="true"] .rounded-xl {
+        [data-builder-canvas=true] .rounded-lg,
+        [data-builder-canvas=true] .rounded-xl {
           border-radius: var(--border-radius-lg, 0px);
+        }
+        [data-builder-canvas=true] .rounded-full {
+          border-radius: var(--border-radius-full, 9999px);
         }
       `}</style>
       <div
@@ -2330,6 +2656,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
           onDragOver={previewMode ? undefined : (e) => { e.preventDefault(); e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-builder-tree-node') ? 'move' : 'copy' }}
         >
           <MissingReusableWarningContext.Provider value={showMissingReusableWarning}>
+          <LoadingSignalContext.Provider value={loadingSignalValue}>
           <NodeErrorBoundary nodeId={root.id}>
           <NodeRenderer
             key={`${root.id}:${root.type}`}
@@ -2351,6 +2678,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
             onDragEndNode={() => setDraggingNodeId(null)}
           />
           </NodeErrorBoundary>
+          </LoadingSignalContext.Provider>
           </MissingReusableWarningContext.Provider>
         </div>
       </div>

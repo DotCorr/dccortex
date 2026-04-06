@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { logAuditEvent } from '@/lib/audit'
 import axios from 'axios'
 
 export async function GET(
@@ -101,7 +102,30 @@ export async function GET(
       },
     })
 
-    return NextResponse.json({ organization })
+    const platformApiUrl = process.env.PLATFORM_API_URL || 'http://localhost:3001'
+    let liveContainer: any = null
+    try {
+      const response = await axios.get(`${platformApiUrl}/api/v1/apps/organizations/${resolvedParams.id}/container`, { timeout: 2000 })
+      liveContainer = response.data?.container ?? null
+    } catch {
+      liveContainer = null
+    }
+
+    const mergedOrganization = liveContainer
+      ? {
+          ...organization,
+          metadata: {
+            ...((organization?.metadata as Record<string, unknown> | null) ?? {}),
+            containerStatus: liveContainer.status,
+            containerBackend: liveContainer.backend,
+            containerProvisionedAt: liveContainer.provisionedAt,
+            containerRequestedAt: liveContainer.requestedAt,
+            containerLastError: liveContainer.lastError,
+          },
+        }
+      : organization
+
+    return NextResponse.json({ organization: mergedOrganization })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
@@ -162,7 +186,7 @@ export async function DELETE(
     
     console.log(`[Organizations API] ✅ Verification passed, proceeding with deletion...`)
 
-    // Step 1: Delete Docker container (the "computer") - deletes ALL apps, files, data
+    // Step 1: Request container teardown for this organization workspace.
     const platformApiUrl = process.env.PLATFORM_API_URL || 'http://localhost:3001'
     try {
       await axios.delete(`${platformApiUrl}/api/v1/apps/organizations/${organization.id}/container`)
@@ -204,6 +228,20 @@ export async function DELETE(
     console.log(`[Organizations API] ✅ Deleted organization and all related data: ${organization.id}`)
     console.log(`[Organizations API] Deleted ${organization.projects?.length || 0} projects`)
 
+    await logAuditEvent({
+      action: 'organization.delete',
+      status: 'success',
+      actorUserId: session.user.id,
+      organizationId: organization.id,
+      targetType: 'organization',
+      targetId: organization.id,
+      metadata: {
+        organizationName: organization.name,
+        deletedProjects: organization.projects?.length || 0,
+      },
+      request,
+    })
+
     return NextResponse.json({ 
       success: true,
       message: 'Organization and all related data deleted successfully',
@@ -211,6 +249,14 @@ export async function DELETE(
     })
   } catch (error: any) {
     console.error('[Organizations API] Error deleting organization:', error)
+    await logAuditEvent({
+      action: 'organization.delete',
+      status: 'failure',
+      actorUserId: null,
+      targetType: 'organization',
+      reason: error?.message || 'unknown_error',
+      request,
+    })
     return NextResponse.json(
       { error: 'Failed to delete organization', message: error.message },
       { status: 500 }

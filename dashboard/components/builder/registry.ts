@@ -94,6 +94,47 @@ export const COMPONENT_REGISTRY: ComponentDef[] = [
     },
   },
   {
+    id: 'suspense',
+    label: 'Suspense',
+    category: 'Layout',
+    defaultProps: {
+      ...LAYOUT_DEFAULTS,
+      suspenseEnabled: true,
+      suspenseSmart: true,
+      suspenseVariant: 'skeleton',
+      suspenseDirection: 'horizontal',
+      suspenseLabel: 'Loading...',
+      suspenseWhen: '',
+    },
+    bindableProps: ['suspenseWhen', 'suspenseLabel'],
+    allowsChildren: true,
+    events: ['onClick', 'onDoubleClick', 'onMouseEnter', 'onMouseLeave'],
+    options: {
+      display: [
+        { value: 'flex', label: 'Flex' },
+      ],
+      flexDirection: [
+        { value: 'row', label: 'Row' },
+        { value: 'column', label: 'Column' },
+        { value: 'row-reverse', label: 'Row reverse' },
+        { value: 'column-reverse', label: 'Column reverse' },
+      ],
+      alignItems: [
+        { value: 'flex-start', label: 'Start' },
+        { value: 'flex-end', label: 'End' },
+        { value: 'center', label: 'Center' },
+        { value: 'stretch', label: 'Stretch' },
+      ],
+      justifyContent: [
+        { value: 'flex-start', label: 'Start' },
+        { value: 'flex-end', label: 'End' },
+        { value: 'center', label: 'Center' },
+        { value: 'space-between', label: 'Space between' },
+        { value: 'space-around', label: 'Space around' },
+      ],
+    },
+  },
+  {
     id: 'section',
     label: 'Section',
     category: 'Layout',
@@ -198,6 +239,50 @@ export const COMPONENT_REGISTRY: ComponentDef[] = [
         { value: 'small', label: 'Small' },
       ],
     },
+  },
+  {
+    id: 'gradientText',
+    label: 'Gradient Text',
+    category: 'Display',
+    defaultProps: {
+      content: 'Gradient Text',
+      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      fontSize: 42,
+      fontWeight: 700,
+      lineHeight: 1.1,
+      backgroundSize: '200% 200%',
+      animation: 'dccGradientShiftX 8s ease infinite',
+      textAlign: 'left',
+    },
+    bindableProps: ['content', 'gradient'],
+    allowsChildren: false,
+    events: ['onClick', 'onDoubleClick', 'onMouseEnter', 'onMouseLeave'],
+  },
+  {
+    id: 'gradientSvg',
+    label: 'Gradient SVG',
+    category: 'Display',
+    defaultProps: {
+      shape: 'wave',
+      gradient: 'linear-gradient(90deg, #22d3ee 0%, #6366f1 100%)',
+      width: 240,
+      height: 140,
+      strokeColor: '',
+      strokeWidth: 0,
+      opacity: 1,
+      animation: '',
+    },
+    bindableProps: ['gradient', 'strokeColor'],
+    allowsChildren: false,
+    options: {
+      shape: [
+        { value: 'wave', label: 'Wave' },
+        { value: 'blob', label: 'Blob' },
+        { value: 'ring', label: 'Ring' },
+        { value: 'diamond', label: 'Diamond' },
+      ],
+    },
+    events: ['onClick', 'onDoubleClick', 'onMouseEnter', 'onMouseLeave'],
   },
   { id: 'image', label: 'Image', category: 'Display', defaultProps: { url: '', alt: '', width: 200, height: 150, objectFit: 'cover', objectPosition: 'center' }, bindableProps: ['url', 'alt'], allowsChildren: false, events: ['onClick', 'onDoubleClick', 'onMouseEnter', 'onMouseLeave'], options: { objectFit: [{ value: 'fill', label: 'Fill' }, { value: 'contain', label: 'Contain' }, { value: 'cover', label: 'Cover' }, { value: 'none', label: 'None' }, { value: 'scale-down', label: 'Scale down' }] } },
   // Iconify icon — any icon from iconify.design (e.g. "mdi:home", "lucide:star", "heroicons:user")
@@ -799,6 +884,14 @@ function toCssMs(ms: number): string {
   return `${Math.max(0, Math.round(ms))}ms`
 }
 
+function normalizeAnimationTime(raw: unknown, fallback: string): string {
+  const s = String(raw ?? '').trim()
+  if (!s) return fallback
+  if (/^-?\d*\.?\d+$/.test(s)) return `${s}s`
+  if (/^-?\d*\.?\d+(ms|s)$/i.test(s)) return s
+  return fallback
+}
+
 /** Build inline style from CSS-like props (100% web-aligned for scripting and export) */
 export function stylePropsToStyle(props: Record<string, unknown>): Record<string, string | number> {
   const p = props as Record<string, unknown>
@@ -828,9 +921,9 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
     if (playMode === 'parallel') {
       const base = steps.map((step) => {
         const preset = step.preset || 'none'
-        const duration = step.duration || '0.5s'
+        const duration = normalizeAnimationTime(step.duration, '0.5s')
         const timing = step.timingFunction || 'ease'
-        const delay = step.delay || '0s'
+        const delay = normalizeAnimationTime(step.delay, '0s')
         const iteration = step.iterationCount || '1'
         return `${preset} ${duration} ${timing} ${delay} ${iteration} both`
       })
@@ -842,9 +935,10 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
       let cycleMs = 0
       for (const step of steps) {
         const preset = step.preset || 'none'
-        const durationRaw = step.duration || '0.5s'
+        const durationRaw = normalizeAnimationTime(step.duration, '0.5s')
         const timing = step.timingFunction || 'ease'
-        const delayMs = parseTimeMs(step.delay, 0)
+        const delayRaw = normalizeAnimationTime(step.delay, '0s')
+        const delayMs = parseTimeMs(delayRaw, 0)
         const durationMs = parseTimeMs(durationRaw, 500)
         const iterationRaw = String(step.iterationCount ?? '1').trim()
         const iterationCount = iterationRaw === 'infinite' ? Infinity : Math.max(1, Number(iterationRaw) || 1)
@@ -855,12 +949,11 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
         }
       }
 
-      if (seqIterations === Infinity) {
-        // Browser cannot natively loop an entire composed sequence forever as a single unit.
-        // Keep one cycle and runtime/event layer can retrigger when needed.
-        animations = base
-      } else {
-        for (let i = 0; i < seqIterations; i++) {
+      // Browser cannot natively loop an entire composed sequence forever as a single unit.
+      // For "infinite", expand to a long-running repeated timeline so live auto-play behaves as expected.
+      // This keeps CSS-only playback (no event trigger required) while avoiding unbounded CSS strings.
+      const effectiveCycles = seqIterations === Infinity ? 240 : seqIterations
+      for (let i = 0; i < effectiveCycles; i++) {
           const cycleOffsetMs = i * cycleMs
           for (const entry of base) {
             const parts = entry.split(' ')
@@ -874,7 +967,6 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
             const delayMs = parseTimeMs(delay, 0)
             animations.push(`${name} ${duration} ${timing} ${toCssMs(delayMs + cycleOffsetMs)} ${iteration} ${fill}`)
           }
-        }
       }
     }
 

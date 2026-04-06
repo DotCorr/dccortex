@@ -10,6 +10,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { corsJson, withCors } from '@/lib/cors'
+import { warmProjectRuntimeCache } from '@/lib/public-runtime-cache'
+import { warmProjectPayloadCache } from '@/lib/public-project-cache'
 
 export async function OPTIONS(req: NextRequest) {
   return withCors(new NextResponse(null, { status: 204 }), req.headers.get('origin'))
@@ -156,6 +158,33 @@ export async function PUT(
       where: { id: resolvedParams.id },
       data: updateData,
     })
+
+    if (updateData.status === 'published') {
+      void Promise.all([
+        warmProjectPayloadCache(resolvedParams.id),
+        warmProjectRuntimeCache(resolvedParams.id),
+      ]).then(([payloadStats, runtimeStats]) => {
+        if (payloadStats.failed) {
+          console.warn(
+            `[Publish warm][payload] project=${payloadStats.projectId} failed durationMs=${payloadStats.durationMs} error=${payloadStats.error ?? 'unknown'}`
+          )
+        } else {
+          console.info(
+            `[Publish warm][payload] project=${payloadStats.projectId} cacheHit=${payloadStats.cacheHit ? '1' : '0'} durationMs=${payloadStats.durationMs}`
+          )
+        }
+
+        if (runtimeStats.failed) {
+          console.warn(
+            `[Publish warm][runtime] project=${runtimeStats.projectId} failed durationMs=${runtimeStats.durationMs} error=${runtimeStats.error ?? 'unknown'}`
+          )
+        } else {
+          console.info(
+            `[Publish warm][runtime] project=${runtimeStats.projectId} signatures=${runtimeStats.signatureCount} warmed=${runtimeStats.warmedCount} misses=${runtimeStats.cacheMissCount} durationMs=${runtimeStats.durationMs}`
+          )
+        }
+      })
+    }
 
     return corsJson(request, { project: updated })
   } catch (error: any) {
