@@ -610,9 +610,10 @@ function NodeRenderer({
     const explicitFlex = p.flex != null && String(p.flex).trim()
     const explicitWidth = p.width != null && String(p.width).trim()
     const inheritedWidth = reusableRootProps?.width != null && String(reusableRootProps.width).trim()
+    const targetWidth = explicitWidth || inheritedWidth
     // Width must win over auto-grow: when explicit width exists, neutralize flex expansion.
-    if (explicitFlex && !explicitWidth) (style as Record<string, unknown>).flex = String(p.flex).trim()
-    if (explicitWidth) (style as Record<string, unknown>).flex = '0 0 auto'
+    if (explicitFlex && !targetWidth) (style as Record<string, unknown>).flex = String(p.flex).trim()
+    if (targetWidth) (style as Record<string, unknown>).flex = '0 0 auto'
     if (explicitWidth) (style as Record<string, unknown>).width = /^\d+$/.test(String(p.width).trim()) ? `${p.width}px` : String(p.width)
     else if (inheritedWidth) (style as Record<string, unknown>).width = /^\d+$/.test(String(reusableRootProps?.width).trim()) ? `${reusableRootProps?.width}px` : String(reusableRootProps?.width)
     else if (!explicitFlex) (style as Record<string, unknown>).width = '100%'
@@ -673,6 +674,13 @@ function NodeRenderer({
     },
     [node.props, previewMode, onRunEvent, domId, resolveBindingFn, reusablePropsCtx]
   )
+
+  const lifecycleFiredRef = React.useRef(false)
+  useEffect(() => {
+    if (!previewMode || lifecycleFiredRef.current) return
+    lifecycleFiredRef.current = true
+    fireConfiguredEvent('onLoad')
+  }, [previewMode, fireConfiguredEvent])
 
   // Keep all hooks at component top-level to preserve hook call order across renders.
   const inputValue = resolveWithProps(String(node.props.value ?? ''), resolveBindingFn, reusablePropsCtx) || ''
@@ -809,16 +817,21 @@ function NodeRenderer({
   const suspenseVariant = String(node.props?.suspenseVariant ?? 'skeleton')
   const suspenseDirection = String(node.props?.suspenseDirection ?? 'horizontal')
   const suspenseLabel = String(node.props?.suspenseLabel ?? 'Loading...')
+  const suspenseReferencedSources = suspenseSmart ? extractDataSourcesFromUnknown(node.props) : []
+  const suspenseHasReferencedSources = suspenseReferencedSources.length > 0
+  const suspenseDataReady = !suspenseHasReferencedSources || suspenseReferencedSources.every(
+    (source) => loadingSignals.resolved.has(source) && !loadingSignals.pending.has(source)
+  )
   const suspenseManualActive = suspenseWhen
     ? evaluateVisibleWhen(resolveWithProps(suspenseWhen, resolveBindingFn, reusablePropsCtx), resolveBindingFn)
     : false
-  const suspenseReferencedSources = suspenseSmart ? extractDataSourcesFromUnknown(node.props) : []
   const suspenseAutoActive = suspenseReferencedSources.some(
     (source) => loadingSignals.pending.has(source) && !loadingSignals.resolved.has(source)
   )
+  const suspenseManualActiveWhileLoading = suspenseManualActive && (!suspenseHasReferencedSources || !suspenseDataReady)
   const showSuspenseFallback = suspenseEnabled && (
-    (Boolean(previewMode) && (suspenseManualActive || suspenseAutoActive))
-    || (!previewMode && suspenseManualActive)
+    (Boolean(previewMode) && (suspenseAutoActive || suspenseManualActiveWhileLoading))
+    || (!previewMode && suspenseManualActiveWhileLoading)
   )
 
   if (showSuspenseFallback) {
@@ -917,6 +930,16 @@ function NodeRenderer({
       Object.entries(propBindings).map(([k, v]) => [k, resolveWithProps(v, resolveBindingFn, reusablePropsCtx)])
     )
     const namespacedRoot = cloneForReusableInstanceCached(reusable.root, `ri-${node.id}`)
+    const reusableRootWidth = String((reusable.root.props as Record<string, unknown>)?.width ?? '').trim()
+    const reusableRootHeight = String((reusable.root.props as Record<string, unknown>)?.height ?? '').trim()
+    const reusableRootDisplay = reusableRootWidth || reusableRootHeight ? 'inline-block' : undefined
+    const reusableInstanceStyle: React.CSSProperties = {
+      ...style,
+      overflow: 'hidden',
+      width: style.width ?? (reusableRootWidth ? (/^\d+$/.test(reusableRootWidth) ? `${reusableRootWidth}px` : reusableRootWidth) : undefined),
+      height: style.height ?? (reusableRootHeight ? (/^\d+$/.test(reusableRootHeight) ? `${reusableRootHeight}px` : reusableRootHeight) : undefined),
+      ...(style.display ? {} : (reusableRootDisplay ? { display: reusableRootDisplay } : {})),
+    }
     const handleReusableInternalSelect = (selectedNodeId: string | null) => {
       if (!previewMode) {
         onSelect(node.id)
@@ -932,8 +955,8 @@ function NodeRenderer({
         onDragStart={canDragNode ? handleDragStart : undefined}
         onDragEnd={canDragNode ? handleDragEnd : undefined}
         onClick={previewMode ? (e: React.MouseEvent) => runConfiguredEvent('onClick', e) : (e: React.MouseEvent) => { e.stopPropagation(); onSelect(node.id) }}
-        className={previewMode ? 'rounded' : `rounded outline outline-2 ${isSelected ? 'outline-[var(--primary)]' : 'outline-transparent'}`}
-        style={style}
+        className={previewMode ? 'rounded overflow-hidden' : `rounded overflow-hidden outline outline-2 ${isSelected ? 'outline-[var(--primary)]' : 'outline-transparent'}`}
+        style={reusableInstanceStyle}
       >
         <NodeRenderer
           node={namespacedRoot}
@@ -1133,8 +1156,8 @@ function NodeRenderer({
         onMouseUp={previewMode ? makeEventHandler('onPressOut') : undefined}
         onDrop={previewMode ? undefined : handleDrop}
         onDragOver={previewMode ? undefined : handleDragOver}
-        className={`inline-block cursor-pointer transition-transform ${activeClass} ${previewMode ? 'rounded' : `border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-gray-200 dark:border-[#30363d] border-dashed'} rounded`}`}
-        style={style}
+        className={`inline-block cursor-pointer transition-transform ${activeClass} ${previewMode ? 'rounded overflow-hidden' : `border-2 ${isSelected ? 'border-[var(--primary)]' : 'border-gray-200 dark:border-[#30363d] border-dashed'} rounded overflow-hidden`}`}
+        style={{ ...style, overflow: 'hidden' }}
       >
         {(node.children ?? []).length > 0 ? (
           (node.children ?? []).map((child) => (
@@ -2395,7 +2418,7 @@ export function BuilderCanvas({ root, selectedId, onSelect, onUpdate, previewMod
       return
     }
     setShowMissingReusableWarning(false)
-    const timer = window.setTimeout(() => setShowMissingReusableWarning(true), 300)
+    const timer = window.setTimeout(() => setShowMissingReusableWarning(true), 1500)
     return () => window.clearTimeout(timer)
   }, [reusables.length, root.id])
 

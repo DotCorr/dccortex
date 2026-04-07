@@ -18,7 +18,7 @@ export type Node = {
 
 /** Event keys that can be configured per component. Extensible for plugins. */
 export const BUILDER_EVENT_KEYS = [
-  'onLoad', 'onClick', 'onDoubleClick', 'onChange', 'onSubmit', 'onFocus', 'onBlur', 'onInput',
+  'onLoad', 'onRender', 'onClick', 'onDoubleClick', 'onChange', 'onSubmit', 'onFocus', 'onBlur', 'onInput',
   'onMouseEnter', 'onMouseLeave', 'onPressIn', 'onPressOut', 'onKeyDown', 'onKeyUp',
   'onAnimationStart', 'onAnimationEnd', 'onAnimationTick',
 ] as const

@@ -8,7 +8,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ChevronRight, ChevronDown, Trash2, PackagePlus } from 'lucide-react'
+import { ChevronRight, ChevronDown, ChevronUp, Trash2, PackagePlus } from 'lucide-react'
 import type { Node } from './registry'
 import { getDomId } from './registry'
 import { clearBuilderDragPayload, getBuilderDragPayload, setBuilderDragPayload } from './drag-payload'
@@ -39,6 +39,7 @@ function NodeTreeItem({
   node, rootId, parentId, indexInParent,
   selectedId, onSelect, onDelete, onCreateReusable, onMove,
   depth, ancestorLines, draggingNodeId, onDragStartNode, onDragEndNode,
+  siblingCount,
   reusablesMap, storageKey,
 }: {
   node: Node; rootId: string; parentId: string; indexInParent: number
@@ -47,6 +48,7 @@ function NodeTreeItem({
   onMove?: (nodeId: string, targetParentId: string, index: number) => void
   depth: number; ancestorLines: boolean[]
   draggingNodeId: string | null; onDragStartNode: (id: string) => void; onDragEndNode: () => void
+  siblingCount: number
   reusablesMap?: Map<string, ReusableMeta>
   storageKey?: string
 }) {
@@ -70,6 +72,15 @@ function NodeTreeItem({
   const hasChildren = (node.children?.length ?? 0) > 0
   const canDelete = node.id !== rootId
   const canDrag = node.id !== rootId && !!onMove
+  const canMoveUp = canDrag && indexInParent > 0
+  const canMoveDown = canDrag && indexInParent < siblingCount - 1
+
+  const moveNodeByOffset = (offset: -1 | 1) => {
+    if (!onMove || !canDrag) return
+    const nextIndex = indexInParent + offset
+    if (nextIndex < 0 || nextIndex >= siblingCount) return
+    onMove(node.id, parentId, nextIndex)
+  }
 
   useEffect(() => {
     if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
@@ -252,6 +263,30 @@ function NodeTreeItem({
 
         {/* action icons */}
         <div className="flex-shrink-0 flex items-center pr-1 gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {canDelete && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); moveNodeByOffset(-1) }}
+              disabled={!canMoveUp}
+              title="Move component up"
+              className={`p-0.5 rounded-sm ${isSelected ? 'text-white/60 hover:text-white hover:bg-white/20 disabled:text-white/25 disabled:hover:bg-transparent' : 'text-gray-400 hover:text-[var(--primary)] hover:bg-[var(--primary)]/10 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed'}`}
+              aria-label="Move component up"
+            >
+              <ChevronUp className="w-3 h-3" />
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); moveNodeByOffset(1) }}
+              disabled={!canMoveDown}
+              title="Move component down"
+              className={`p-0.5 rounded-sm ${isSelected ? 'text-white/60 hover:text-white hover:bg-white/20 disabled:text-white/25 disabled:hover:bg-transparent' : 'text-gray-400 hover:text-[var(--primary)] hover:bg-[var(--primary)]/10 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed'}`}
+              aria-label="Move component down"
+            >
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          )}
           {canDelete && onCreateReusable && (
             <button type="button" onClick={(e) => { e.stopPropagation(); onCreateReusable(node.id) }}
               className={`p-0.5 rounded-sm ${isSelected ? 'text-white/60 hover:text-white hover:bg-white/20' : 'text-gray-400 hover:text-[var(--primary)] hover:bg-[var(--primary)]/10'}`}
@@ -283,6 +318,7 @@ function NodeTreeItem({
                 depth={depth + 1}
                 ancestorLines={[...ancestorLines, !isLast]}
                 draggingNodeId={draggingNodeId} onDragStartNode={onDragStartNode} onDragEndNode={onDragEndNode}
+                siblingCount={node.children!.length}
                 reusablesMap={reusablesMap}
                 storageKey={storageKey}
               />
@@ -332,6 +368,7 @@ export function NodeTree({ root, selectedId, onSelect, onDelete, onCreateReusabl
         draggingNodeId={draggingNodeId}
         onDragStartNode={setDraggingNodeId}
         onDragEndNode={() => setDraggingNodeId(null)}
+        siblingCount={1}
         reusablesMap={reusablesMap}
         storageKey={storageKey}
       />

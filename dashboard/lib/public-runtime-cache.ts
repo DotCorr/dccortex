@@ -8,7 +8,8 @@
 import { prisma } from '@/lib/prisma'
 
 const EXTERNAL_API_TIMEOUT_MS = 3500
-const RUNTIME_CACHE_TTL_MS = 5 * 60 * 1000
+const RUNTIME_CACHE_TTL_MS = 15 * 1000
+const RUNTIME_CACHE_TTL_ON_SOURCE_ERROR_MS = 3 * 1000
 const MAX_SIGNATURES_TO_WARM = 12
 
 type VarsMap = Record<string, Record<string, string>>
@@ -22,6 +23,7 @@ type RuntimeBuildTimings = {
 
 type RuntimeCacheEntry = {
   ts: number
+  ttlMs: number
   data: RuntimeDataMap
   timings: RuntimeBuildTimings
 }
@@ -30,6 +32,21 @@ const runtimeCache = new Map<string, RuntimeCacheEntry>()
 
 function resolveEnvPlaceholders(input: string): string {
   return input.replace(/\{\{env\.([A-Za-z0-9_]+)\}\}/g, (_m, key: string) => process.env[key] ?? '')
+}
+
+function sourceNameAliases(name: string): string[] {
+  const trimmed = String(name ?? '').trim()
+  if (!trimmed) return []
+  const snake = trimmed.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase()
+  const kebab = trimmed.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+  const compact = trimmed.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()
+  return Array.from(new Set([trimmed, snake, kebab, compact].filter(Boolean)))
+}
+
+function setWithAliases(target: Record<string, unknown>, sourceName: string, value: unknown) {
+  for (const alias of sourceNameAliases(sourceName)) {
+    if (!(alias in target)) target[alias] = value
+  }
 }
 
 function normalizeVarsMap(varsMap: VarsMap): VarsMap {
@@ -105,7 +122,7 @@ export function parseVarsQuery(raw: string | null): VarsMap {
   }
 }
 
-export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Promise<{ data: RuntimeDataMap; timings: RuntimeBuildTimings }> {
+export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Promise<{ data: RuntimeDataMap; timings: RuntimeBuildTimings; hasSourceErrors: boolean }> {
   const totalStart = performance.now()
   const result: RuntimeDataMap = {}
 
@@ -135,15 +152,14 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
         ...(r.data as Record<string, unknown>),
         created_at: r.createdAt,
       }))
-      result[table.name] = mapped
-      const lower = table.name.toLowerCase()
-      if (lower !== table.name) result[lower] = mapped
+      setWithAliases(result, table.name, mapped)
     }
   }
 
   const dbMs = performance.now() - dbStart
 
   const apiStart = performance.now()
+  let hasSourceErrors = false
   await Promise.all(
     apiSources.map(async (src) => {
       try {
@@ -186,9 +202,10 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
         const text = await resp.text()
         let data: unknown
         try { data = JSON.parse(text) } catch { data = text }
-        result[src.name] = data
+        setWithAliases(result, src.name, data)
       } catch (err) {
-        result[src.name] = null
+        hasSourceErrors = true
+        setWithAliases(result, src.name, null)
         console.warn(`[Public data] Failed to fetch source "${src.name}":`, (err as Error).message)
       }
     })
@@ -202,6 +219,7 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
       dbMs,
       apiMs,
     },
+    hasSourceErrors,
   }
 }
 
@@ -209,12 +227,27 @@ export async function getCachedRuntimeData(projectId: string, varsMap: VarsMap):
   const key = signatureFor(projectId, varsMap)
   const now = Date.now()
   const cached = runtimeCache.get(key)
-  if (cached && now - cached.ts <= RUNTIME_CACHE_TTL_MS) {
+  if (cached && now - cached.ts <= cached.ttlMs) {
     return { data: cached.data, timings: cached.timings, cacheHit: true }
   }
   const built = await buildRuntimeData(projectId, varsMap)
-  runtimeCache.set(key, { ts: now, data: built.data, timings: built.timings })
-  return { data: built.data, timings: built.timings, cacheHit: false }
+  let nextData = built.data
+
+  // If a source temporarily fails in live mode, retain the last known good value
+  // for that source instead of replacing it with null.
+  if (cached && built.hasSourceErrors) {
+    const merged: RuntimeDataMap = { ...built.data }
+    for (const [sourceName, value] of Object.entries(built.data)) {
+      if (value === null && cached.data[sourceName] != null) {
+        merged[sourceName] = cached.data[sourceName]
+      }
+    }
+    nextData = merged
+  }
+
+  const ttlMs = built.hasSourceErrors ? RUNTIME_CACHE_TTL_ON_SOURCE_ERROR_MS : RUNTIME_CACHE_TTL_MS
+  runtimeCache.set(key, { ts: now, ttlMs, data: nextData, timings: built.timings })
+  return { data: nextData, timings: built.timings, cacheHit: false }
 }
 
 export type RuntimeWarmStats = {

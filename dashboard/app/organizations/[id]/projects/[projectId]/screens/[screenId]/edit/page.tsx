@@ -675,7 +675,7 @@ export default function ScreenEditPage() {
   const [inspection, setInspection] = useState<{ nodeId: string; html: string } | null>(null)
   const [apiLogs, setApiLogs] = useState<ApiLogEntry[]>([])
   const [collaboratorsDialogOpen, setCollaboratorsDialogOpen] = useState(false)
-  const [presenceMode, setPresenceMode] = useState<PresenceMode>('off')
+  const [presenceMode, setPresenceMode] = useState<PresenceMode>('slow')
   const [mobileAutoClosePalette, setMobileAutoClosePalette] = useState(false)
   const [panelWidthsVersion, setPanelWidthsVersion] = useState(0)
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
@@ -925,6 +925,7 @@ export default function ScreenEditPage() {
     try {
       const raw = window.localStorage.getItem('dccortex:presence-mode')
       if (raw === 'off' || raw === 'slow' || raw === 'panel') setPresenceMode(raw)
+      else setPresenceMode('slow')
     } catch {}
   }, [])
 
@@ -3531,6 +3532,9 @@ export default function ScreenEditPage() {
                 <option value="panel">Only when panel open</option>
               </select>
             </label>
+            <span className="hidden lg:inline text-[10px] text-gray-400 dark:text-gray-500" title="Presence shows who else is online, where their cursor is, and what they have selected.">
+              online cursors and selections
+            </span>
             {visibleCollaborators.length > 0 && (
               <button
                 type="button"
