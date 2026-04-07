@@ -840,5 +840,14 @@ else
   echo ""
   echo -e "${GREEN}${BOLD}All tests passed!${NC}"
   echo ""
+  echo -e "${BOLD}┌─── Login & View Test Data ───────────────────────┐${NC}"
+  echo -e "${BOLD}│${NC}  Email:    ${TEST_EMAIL}"
+  echo -e "${BOLD}│${NC}  Password: ${TEST_PASSWORD}"
+  echo -e "${BOLD}│${NC}"
+  echo -e "${BOLD}│${NC}  Dashboard: ${BASE_URL}/dashboard"
+  echo -e "${BOLD}│${NC}  Org:       ${BASE_URL}/organizations/${ORG_ID}"
+  echo -e "${BOLD}│${NC}  Project:   ${BASE_URL}/organizations/${ORG_ID}/projects/${PROJECT_ID}/screens"
+  echo -e "${BOLD}└──────────────────────────────────────────────────┘${NC}"
+  echo ""
   exit 0
 fi
