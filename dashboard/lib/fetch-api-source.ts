@@ -6,6 +6,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { invalidateRuntimeCache } from '@/lib/public-runtime-cache'
 
 const FETCH_TIMEOUT_MS = 15_000
 
@@ -84,6 +85,9 @@ export async function fetchAndCacheApiSource(sourceId: string): Promise<{ data: 
         ...(schema ? { schema: schema as any } : {}),
       },
     })
+
+    // Bust in-memory cache so next request picks up fresh DB data
+    invalidateRuntimeCache(src.projectId)
 
     return { data }
   } catch (err) {

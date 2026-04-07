@@ -29,6 +29,14 @@ type RuntimeCacheEntry = {
 
 const runtimeCache = new Map<string, RuntimeCacheEntry>()
 
+/** Bust in-memory runtime cache for a project (call after DB data changes) */
+export function invalidateRuntimeCache(projectId: string) {
+  const prefix = `${projectId}::`
+  Array.from(runtimeCache.keys()).forEach((key) => {
+    if (key.startsWith(prefix)) runtimeCache.delete(key)
+  })
+}
+
 function resolveEnvPlaceholders(input: string): string {
   return input.replace(/\{\{env\.([A-Za-z0-9_]+)\}\}/g, (_m, key: string) => process.env[key] ?? '')
 }
