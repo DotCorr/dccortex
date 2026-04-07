@@ -2659,7 +2659,7 @@ export default function ScreenEditPage() {
     const typ = (s: (typeof effectiveStateDefinitions)[0]) => (s as { type?: 'string' | 'number' | 'boolean' | 'date' }).type ?? 'string'
     for (const s of effectiveStateDefinitions) {
       if (!s.name?.trim()) continue
-      const raw = s.initialValue?.trim() ?? ''
+      const raw = String(s.initialValue ?? '').trim()
       // Try constructor first
       const constructed = resolveConstructor(raw)
       if (constructed !== undefined) { out[s.name] = constructed; continue }
@@ -2882,7 +2882,7 @@ export default function ScreenEditPage() {
     const fp: Record<string, string> = {}
     for (const s of effectiveStateDefinitions) {
       if (!s.name?.trim()) continue
-      const iv = s.initialValue?.trim() ?? ''
+      const iv = String(s.initialValue ?? '').trim()
       const ctMatch = iv.match(/^(\w+)\(\)$/)
       if (ctMatch) {
         // Include the data model's field defaults in the fingerprint so cache invalidates when they change

@@ -477,7 +477,7 @@ export default function PreviewApp({ projectId, initialProject, initialData }: {
         }
         for (const s of stateDefs) {
           if (!s.name?.trim()) continue
-          const raw = s.initialValue ?? ''
+          const raw = String(s.initialValue ?? '')
           const constructed = resolveConstructor(raw)
           if (constructed !== undefined) { initial[s.name] = constructed; continue }
           const v = resolveDateNow(raw)

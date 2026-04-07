@@ -143,6 +143,14 @@ api_put() {
     -X PUT --data-raw "$data" "${BASE_URL}${path}"
 }
 
+api_put_status() {
+  local path="$1"
+  local data="${2:-{\}}"
+  curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    -H "Content-Type: application/json" \
+    -X PUT --data-raw "$data" "${BASE_URL}${path}"
+}
+
 api_delete() {
   local path="$1"
   curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X DELETE "${BASE_URL}${path}"
@@ -245,7 +253,9 @@ PROJECT_RESP=$(api_post "/api/projects" "{\"name\":\"Full Test App\",\"organizat
 assert_json_field "Project created" "$PROJECT_RESP" ".project.id"
 PROJECT_ID=$(echo "$PROJECT_RESP" | jq -r '.project.id')
 assert_json_eq "Project status=draft" "$PROJECT_RESP" ".project.status" "draft"
-
+# GET single project
+PROJECT_GET=$(api_get "/api/projects/$PROJECT_ID")
+assert_json_eq "Project fetched" "$PROJECT_GET" ".project.id" "$PROJECT_ID"
 # Publish
 PUB_RESP=$(api_put "/api/projects/$PROJECT_ID" '{"isPublished":true}')
 assert_json_eq "Project published" "$PUB_RESP" ".project.status" "published"
@@ -383,6 +393,27 @@ assert_json_field "Screen updated" "$PATCH_RESP" ".screen.id"
 VERSIONS_RESP=$(api_get "/api/projects/$PROJECT_ID/screens/$SCREEN2_ID/versions")
 assert_json_field "Versions listed" "$VERSIONS_RESP" ".versions"
 
+# Restore a version (auto-created by screen edits)
+VERSION_ID=$(echo "$VERSIONS_RESP" | jq -r '.versions[0].id // empty')
+if [[ -n "$VERSION_ID" ]]; then
+  RESTORE_RESP=$(api_post "/api/projects/$PROJECT_ID/screens/$SCREEN2_ID/versions" "{\"versionId\":\"$VERSION_ID\"}")
+  RESTORE_OK=$(echo "$RESTORE_RESP" | jq 'has("ok") or has("restoredFrom")')
+  if [[ "$RESTORE_OK" == "true" ]]; then
+    echo -e "  ${GREEN}✓${NC} Version restored"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Version restore failed"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo -e "  ${YELLOW}⚠${NC} No versions to restore"
+  SKIP=$((SKIP + 1))
+fi
+
+# Edit-payload (used by screen builder)
+EDIT_PAYLOAD=$(api_get "/api/projects/$PROJECT_ID/screens/$SCREEN2_ID/edit-payload")
+assert_json_field "Edit-payload returned" "$EDIT_PAYLOAD" ".screen.id"
+
 # Delete second screen
 DEL_STATUS=$(api_delete_status "/api/projects/$PROJECT_ID/screens/$SCREEN2_ID")
 assert_status "Screen deleted" "200" "$DEL_STATUS"
@@ -508,6 +539,22 @@ assert_json_field "Realtime enabled" "$RT_RESP" ".datasource.id"
 RT_OFF=$(api_patch "/api/projects/$PROJECT_ID/datasources/$DS_ID" '{"realtimePollMs":0}')
 assert_json_field "Realtime disabled" "$RT_OFF" ".datasource.id"
 
+# CSV Import
+CSV_TMP=$(mktemp /tmp/test-csv-XXXXXX.csv)
+printf 'title,price,inStock\nHammer,12.50,true\nNails,3.99,true\n' > "$CSV_TMP"
+CSV_RESP=$(curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -X POST "${BASE_URL}/api/projects/$PROJECT_ID/datasources/$DS_ID/tables/$TBL2_ID/import-csv" \
+  -F "file=@${CSV_TMP};type=text/csv")
+rm -f "$CSV_TMP"
+CSV_INSERTED=$(echo "$CSV_RESP" | jq '.inserted // 0')
+if [[ "$CSV_INSERTED" -ge 1 ]]; then
+  echo -e "  ${GREEN}✓${NC} CSV imported ($CSV_INSERTED rows)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} CSV import failed — inserted=$CSV_INSERTED"
+  FAIL=$((FAIL + 1))
+fi
+
 # =========================================================================
 section "7. External API Sources — REST API Connector"
 # =========================================================================
@@ -571,6 +618,27 @@ fi
 DEL_SRC=$(api_delete_status "/api/projects/$PROJECT_ID/api-sources/$API_SRC2_ID")
 assert_status "API source deleted" "200" "$DEL_SRC"
 
+# Refresh cached data for remaining source
+REFRESH_SRC=$(api_post "/api/projects/$PROJECT_ID/api-sources/$API_SRC_ID/refresh")
+REFRESH_HAS=$(echo "$REFRESH_SRC" | jq 'has("ok") or has("error")')
+if [[ "$REFRESH_HAS" == "true" ]]; then
+  echo -e "  ${GREEN}✓${NC} API source refresh endpoint works"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} API source refresh returned unexpected response"
+  SKIP=$((SKIP + 1))
+fi
+
+# Refresh-all
+REFRESH_ALL_STATUS=$(api_post_status "/api/projects/$PROJECT_ID/api-sources/refresh-all")
+if [[ "$REFRESH_ALL_STATUS" == "200" || "$REFRESH_ALL_STATUS" == "207" ]]; then
+  echo -e "  ${GREEN}✓${NC} Refresh-all endpoint responded (HTTP $REFRESH_ALL_STATUS)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Refresh-all unexpected: HTTP $REFRESH_ALL_STATUS"
+  FAIL=$((FAIL + 1))
+fi
+
 # =========================================================================
 section "8. External DB Connectors"
 # =========================================================================
@@ -615,6 +683,28 @@ if [[ -n "$CONN_ID" ]]; then
   # Test connection (will fail — no real external DB)
   TEST_CONN_STATUS=$(api_post_status "/api/projects/$PROJECT_ID/db-connectors/$CONN_ID/test")
   assert_status "Test connection endpoint responds" "200" "$TEST_CONN_STATUS"
+
+  # Introspect (will fail/return empty — no real DB, but tests endpoint exists)
+  INTROSPECT_RESP=$(api_post "/api/projects/$PROJECT_ID/db-connectors/$CONN_ID/introspect")
+  INTROSPECT_HAS=$(echo "$INTROSPECT_RESP" | jq 'has("ok") or has("error")')
+  if [[ "$INTROSPECT_HAS" == "true" ]]; then
+    echo -e "  ${GREEN}✓${NC} Introspect endpoint responds"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Introspect returned unexpected response"
+    FAIL=$((FAIL + 1))
+  fi
+
+  # Refresh cached data (will fail — no real DB, but tests endpoint exists)
+  REFRESH_CONN=$(api_post "/api/projects/$PROJECT_ID/db-connectors/$CONN_ID/refresh")
+  REFRESH_CONN_HAS=$(echo "$REFRESH_CONN" | jq 'has("ok") or has("error")')
+  if [[ "$REFRESH_CONN_HAS" == "true" ]]; then
+    echo -e "  ${GREEN}✓${NC} Connector refresh endpoint responds"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Connector refresh returned unexpected response"
+    FAIL=$((FAIL + 1))
+  fi
 
   # Delete connector
   DEL_CONN=$(api_delete_status "/api/projects/$PROJECT_ID/db-connectors/$CONN_ID")
@@ -765,8 +855,8 @@ else
   SKIP=$((SKIP + 1))
 fi
 
-READALL_STATUS=$(api_post_status "/api/notifications/read-all")
-if [[ "$READALL_STATUS" == "200" || "$READALL_STATUS" == "405" ]]; then
+READALL_STATUS=$(api_put_status "/api/notifications/read-all")
+if [[ "$READALL_STATUS" == "200" ]]; then
   echo -e "  ${GREEN}✓${NC} Read-all endpoint responded (HTTP $READALL_STATUS)"
   PASS=$((PASS + 1))
 else
@@ -803,7 +893,89 @@ else
 fi
 
 # =========================================================================
-section "17. RBAC — Unauthenticated Access Denied"
+section "17. Organization Management"
+# =========================================================================
+
+# Get org details
+ORG_DETAIL=$(api_get "/api/organizations/$ORG_ID")
+assert_json_field "Org fetched" "$ORG_DETAIL" ".organization.id"
+
+# Update org
+ORG_UPD=$(api_put "/api/organizations/$ORG_ID" '{"name":"Updated Test Org","description":"Integration test org"}')
+assert_json_field "Org updated" "$ORG_UPD" ".organization.id"
+
+# Roles
+ROLES_RESP=$(api_get "/api/organizations/$ORG_ID/roles")
+ROLES_HAS=$(echo "$ROLES_RESP" | jq 'has("roles")')
+if [[ "$ROLES_HAS" == "true" ]]; then
+  echo -e "  ${GREEN}✓${NC} Org roles endpoint works"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} Org roles returned unexpected shape"
+  SKIP=$((SKIP + 1))
+fi
+
+# Audit logs
+AUDIT_RESP=$(api_get "/api/organizations/$ORG_ID/audit-logs")
+AUDIT_HAS=$(echo "$AUDIT_RESP" | jq 'has("logs")')
+if [[ "$AUDIT_HAS" == "true" ]]; then
+  echo -e "  ${GREEN}✓${NC} Audit logs endpoint works"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} Audit logs returned unexpected shape"
+  SKIP=$((SKIP + 1))
+fi
+
+# Invite (will send to non-existent email, but tests endpoint)
+INVITE_RESP=$(api_post "/api/organizations/$ORG_ID/invite" '{"email":"invited-test@dccortex-test.local","role":"member"}')
+INVITE_HAS=$(echo "$INVITE_RESP" | jq 'has("invitation") or has("error")')
+if [[ "$INVITE_HAS" == "true" ]]; then
+  echo -e "  ${GREEN}✓${NC} Invite endpoint responds"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Invite returned unexpected response"
+  FAIL=$((FAIL + 1))
+fi
+
+# =========================================================================
+section "18. Public Project Endpoint"
+# =========================================================================
+
+PUB_PROJECT=$(curl -s "${BASE_URL}/api/p/$PROJECT_ID")
+assert_json_field "Public project returned" "$PUB_PROJECT" ".project.id"
+PUB_SCREENS=$(echo "$PUB_PROJECT" | jq '.screens | length')
+if [[ "$PUB_SCREENS" -ge 1 ]]; then
+  echo -e "  ${GREEN}✓${NC} Public project has $PUB_SCREENS screen(s)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Public project has no screens"
+  FAIL=$((FAIL + 1))
+fi
+
+# =========================================================================
+section "19. Project Delete"
+# =========================================================================
+
+# Delete the duplicated project (not the main one)
+if [[ -n "$DUP_ID" ]]; then
+  DEL_PROJ=$(curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    -H "Content-Type: application/json" \
+    -X DELETE --data-raw '{"verificationName":"Full Test App (copy)"}' "${BASE_URL}/api/projects/$DUP_ID")
+  DEL_PROJ_OK=$(echo "$DEL_PROJ" | jq -r '.success // empty')
+  if [[ "$DEL_PROJ_OK" == "true" ]]; then
+    echo -e "  ${GREEN}✓${NC} Duplicate project deleted"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Project delete failed"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo -e "  ${YELLOW}⚠${NC} No duplicate to delete"
+  SKIP=$((SKIP + 1))
+fi
+
+# =========================================================================
+section "20. RBAC — Unauthenticated Access Denied"
 # =========================================================================
 
 # Without cookies, authenticated endpoints should return 401
