@@ -122,7 +122,7 @@ export function parseVarsQuery(raw: string | null): VarsMap {
   }
 }
 
-export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Promise<{ data: RuntimeDataMap; timings: RuntimeBuildTimings; hasSourceErrors: boolean }> {
+export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts?: { skipPublishedCheck?: boolean }): Promise<{ data: RuntimeDataMap; timings: RuntimeBuildTimings; hasSourceErrors: boolean }> {
   const totalStart = performance.now()
   const result: RuntimeDataMap = {}
 
@@ -136,7 +136,7 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap): Pro
     prisma.externalApiSource.findMany({ where: { projectId } }),
   ])
 
-  if (!project || project.status !== 'published') {
+  if (!opts?.skipPublishedCheck && (!project || project.status !== 'published')) {
     throw new Error('PROJECT_NOT_PUBLISHED')
   }
 

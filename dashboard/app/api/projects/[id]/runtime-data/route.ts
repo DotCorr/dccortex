@@ -6,40 +6,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import { requireProjectDataAccess } from '@/lib/project-access'
-
-const EXTERNAL_API_TIMEOUT_MS = 3500
-
-function resolveEnvPlaceholders(input: string): string {
-  return input.replace(/\{\{env\.([A-Za-z0-9_]+)\}\}/g, (_m, key: string) => process.env[key] ?? '')
-}
-
-function sourceNameAliases(name: string): string[] {
-  const trimmed = String(name ?? '').trim()
-  if (!trimmed) return []
-  const snake = trimmed
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase()
-  const kebab = trimmed
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase()
-  const compact = trimmed.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()
-  return Array.from(new Set([trimmed, snake, kebab, compact].filter(Boolean)))
-}
-
-function setWithAliases(target: Record<string, unknown>, sourceName: string, value: unknown) {
-  for (const alias of sourceNameAliases(sourceName)) {
-    if (!(alias in target)) target[alias] = value
-  }
-}
+import { buildRuntimeData, parseVarsQuery } from '@/lib/public-runtime-cache'
 
 /**
  * Authenticated runtime-data endpoint for the editor preview panel.
- * Returns all project data sources as a flat map: { [sourceName]: data }
- * Same logic as the public endpoint, but with auth guard.
+ * Uses the same buildRuntimeData as the public endpoint — single source of truth.
+ * Only difference: auth guard + skipPublishedCheck so draft projects work.
  */
 export async function GET(
   req: NextRequest,
@@ -50,106 +23,14 @@ export async function GET(
     const access = await requireProjectDataAccess(projectId, false)
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
-    const result: Record<string, unknown> = {}
+    const varsMap = parseVarsQuery(req.nextUrl.searchParams.get('vars'))
+    const { data, timings } = await buildRuntimeData(projectId, varsMap, { skipPublishedCheck: true })
 
-    // ── 1. Internal DB tables ──────────────────────────────────────────────
-    const datasources = await prisma.internalDatasource.findMany({
-      where: { projectId },
-      include: {
-        tables: {
-          include: { columns: true },
-        },
+    return NextResponse.json({ data }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache',
+        'Server-Timing': `db;dur=${timings.dbMs.toFixed(1)}, api;dur=${timings.apiMs.toFixed(1)}, total;dur=${timings.totalMs.toFixed(1)}`,
       },
-    })
-
-    for (const ds of datasources) {
-      for (const table of ds.tables) {
-        const rows = await prisma.internalRow.findMany({
-          where: { tableId: table.id },
-          orderBy: { createdAt: 'asc' },
-          take: 500,
-        })
-        const mapped = rows.map((r) => ({
-          id: r.id,
-          ...(r.data as Record<string, unknown>),
-          created_at: r.createdAt,
-        }))
-        result[table.name] = mapped
-        // Also store under lowercase key so {{data.channels}} works even if table is named "Channels"
-        const lower = table.name.toLowerCase()
-        if (lower !== table.name) result[lower] = mapped
-      }
-    }
-
-    // ── 2. External API sources ────────────────────────────────────────────
-    const apiSources = await prisma.externalApiSource.findMany({
-      where: { projectId },
-    })
-
-    await Promise.all(
-      apiSources.map(async (src) => {
-        try {
-          const rawHeaders = ((src.headers as Record<string, string> | null) ?? {})
-          const headers: Record<string, string> = Object.fromEntries(
-            Object.entries(rawHeaders).map(([k, v]) => [k, resolveEnvPlaceholders(String(v ?? ''))])
-          )
-          const authValue = src.authValue ? resolveEnvPlaceholders(src.authValue) : src.authValue
-          const requestBody = src.body ? resolveEnvPlaceholders(src.body) : src.body
-          if (src.authType === 'bearer' && authValue) {
-            headers['Authorization'] = `Bearer ${authValue}`
-          } else if (src.authType === 'basic' && authValue) {
-            headers['Authorization'] = `Basic ${Buffer.from(authValue).toString('base64')}`
-          } else if (src.authType === 'apiKey' && authValue) {
-            headers[src.authHeader ?? 'X-Api-Key'] = authValue
-          }
-
-          const fetchOptions: RequestInit = {
-            method: src.method,
-            headers,
-            signal: AbortSignal.timeout(EXTERNAL_API_TIMEOUT_MS),
-          }
-
-          // Resolve {{paramName}} template variables in URL using urlParams defaults
-          let resolvedUrl = resolveEnvPlaceholders(src.url)
-          // Also resolve any remaining {{name}} from query params if passed
-          const passedVars = req.nextUrl.searchParams.get('vars')
-          if (passedVars) {
-            try {
-              const vars = JSON.parse(passedVars) as Record<string, Record<string, string>>
-              const sourceVars = vars[src.name] ?? {}
-              for (const [k, v] of Object.entries(sourceVars)) {
-                resolvedUrl = resolvedUrl.replaceAll(`{{${k}}}`, encodeURIComponent(v))
-              }
-            } catch { /* ignore bad JSON */ }
-          }
-          const urlParamDefs = (src.urlParams as Array<{name: string; defaultValue?: string}> | null) ?? []
-          for (const p of urlParamDefs) {
-            if (p.defaultValue !== undefined) {
-              const defaultVal = resolveEnvPlaceholders(String(p.defaultValue))
-              resolvedUrl = resolvedUrl.replaceAll(`{{${p.name}}}`, encodeURIComponent(defaultVal))
-            }
-          }
-          if (requestBody && !['GET', 'HEAD'].includes(src.method.toUpperCase())) {
-            fetchOptions.body = requestBody
-            if (!headers['content-type'] && !headers['Content-Type']) {
-              headers['Content-Type'] = 'application/json'
-            }
-          }
-
-          const resp = await fetch(resolvedUrl, fetchOptions)
-          const text = await resp.text()
-          let data: unknown
-          try { data = JSON.parse(text) } catch { data = text }
-          setWithAliases(result, src.name, data)
-        } catch (err) {
-          setWithAliases(result, src.name, null)
-          console.warn(`[Runtime data] Failed to fetch source "${src.name}":`, (err as Error).message)
-        }
-      })
-    )
-
-    return NextResponse.json({ data: result }, {
-      headers: { 'Cache-Control': 'no-store, no-cache' },
     })
   } catch (err: unknown) {
     console.error('[Runtime data] Error:', err)
