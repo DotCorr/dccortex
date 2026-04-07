@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireProjectDataAccess } from '@/lib/project-access'
-import { buildRuntimeData, parseVarsQuery } from '@/lib/public-runtime-cache'
+import { getCachedRuntimeData, parseVarsQuery } from '@/lib/public-runtime-cache'
 
 /**
  * Authenticated runtime-data endpoint for the editor preview panel.
@@ -24,12 +24,12 @@ export async function GET(
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     const varsMap = parseVarsQuery(req.nextUrl.searchParams.get('vars'))
-    const { data, timings } = await buildRuntimeData(projectId, varsMap, { skipPublishedCheck: true })
+    const { data, timings, cacheHit } = await getCachedRuntimeData(projectId, varsMap, { skipPublishedCheck: true })
 
     return NextResponse.json({ data }, {
       headers: {
         'Cache-Control': 'no-store, no-cache',
-        'Server-Timing': `db;dur=${timings.dbMs.toFixed(1)}, api;dur=${timings.apiMs.toFixed(1)}, total;dur=${timings.totalMs.toFixed(1)}`,
+        'Server-Timing': `db;dur=${timings.dbMs.toFixed(1)}, api;dur=${timings.apiMs.toFixed(1)}, total;dur=${timings.totalMs.toFixed(1)}, cache;desc="${cacheHit ? 'hit' : 'miss'}"`,
       },
     })
   } catch (err: unknown) {

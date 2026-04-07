@@ -223,14 +223,14 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts
   }
 }
 
-export async function getCachedRuntimeData(projectId: string, varsMap: VarsMap): Promise<{ data: RuntimeDataMap; timings: RuntimeBuildTimings; cacheHit: boolean }> {
+export async function getCachedRuntimeData(projectId: string, varsMap: VarsMap, opts?: { skipPublishedCheck?: boolean }): Promise<{ data: RuntimeDataMap; timings: RuntimeBuildTimings; cacheHit: boolean }> {
   const key = signatureFor(projectId, varsMap)
   const now = Date.now()
   const cached = runtimeCache.get(key)
   if (cached && now - cached.ts <= cached.ttlMs) {
     return { data: cached.data, timings: cached.timings, cacheHit: true }
   }
-  const built = await buildRuntimeData(projectId, varsMap)
+  const built = await buildRuntimeData(projectId, varsMap, opts)
   let nextData = built.data
 
   // If a source temporarily fails in live mode, retain the last known good value
