@@ -173,8 +173,8 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts
   let hasSourceErrors = false
 
   // Separate cached vs realtime sources
-  const cachedSources = apiSources.filter((s) => (s as any).cacheMode !== 'realtime')
-  const realtimeSources = apiSources.filter((s) => (s as any).cacheMode === 'realtime')
+  const cachedSources = apiSources.filter((s: any) => s.cacheMode !== 'realtime')
+  const realtimeSources = apiSources.filter((s: any) => s.cacheMode === 'realtime')
 
   // Cached sources: read from DB — zero HTTP calls
   for (const src of cachedSources) {
@@ -188,7 +188,7 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts
   // Realtime sources: live fetch at runtime
   if (realtimeSources.length > 0) {
     await Promise.all(
-      realtimeSources.map(async (src) => {
+      realtimeSources.map(async (src: any) => {
         try {
           const rawHeaders = ((src.headers as Record<string, string> | null) ?? {})
           const headers: Record<string, string> = Object.fromEntries(
@@ -242,8 +242,8 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts
   const apiMs = performance.now() - apiStart
 
   // External database connectors
-  const cachedConnectors = dbConnectors.filter(c => (c as any).cacheMode !== 'realtime')
-  const realtimeConnectors = dbConnectors.filter(c => (c as any).cacheMode === 'realtime')
+  const cachedConnectors = dbConnectors.filter((c: any) => c.cacheMode !== 'realtime')
+  const realtimeConnectors = dbConnectors.filter((c: any) => c.cacheMode === 'realtime')
 
   for (const conn of cachedConnectors) {
     const key = `connector_${conn.name}`
@@ -256,7 +256,7 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts
 
   if (realtimeConnectors.length > 0) {
     await Promise.all(
-      realtimeConnectors.map(async (conn) => {
+      realtimeConnectors.map(async (conn: any) => {
         const key = `connector_${conn.name}`
         const selectedTables = (conn.selectedTables as string[] | null) ?? []
         if (selectedTables.length === 0) {
