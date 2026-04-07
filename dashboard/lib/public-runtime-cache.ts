@@ -6,6 +6,9 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { getDriver } from '@/lib/connectors'
+import { decryptPassword } from '@/lib/connectors/encryption'
+import type { ConnectorConfig } from '@/lib/connectors'
 
 const RUNTIME_CACHE_TTL_MS = 15 * 1000
 const REALTIME_FETCH_TIMEOUT_MS = 8000
@@ -134,13 +137,14 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts
   const result: RuntimeDataMap = {}
 
   const dbStart = performance.now()
-  const [project, datasources, apiSources] = await Promise.all([
+  const [project, datasources, apiSources, dbConnectors] = await Promise.all([
     prisma.project.findUnique({ where: { id: projectId }, select: { id: true, status: true } }),
     prisma.internalDatasource.findMany({
       where: { projectId },
       include: { tables: { include: { columns: true } } },
     }),
     prisma.externalApiSource.findMany({ where: { projectId } }),
+    prisma.externalDbConnector.findMany({ where: { projectId, status: 'connected' } }),
   ])
 
   if (!opts?.skipPublishedCheck && (!project || project.status !== 'published')) {
@@ -236,6 +240,49 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts
   }
 
   const apiMs = performance.now() - apiStart
+
+  // External database connectors
+  const cachedConnectors = dbConnectors.filter(c => (c as any).cacheMode !== 'realtime')
+  const realtimeConnectors = dbConnectors.filter(c => (c as any).cacheMode === 'realtime')
+
+  for (const conn of cachedConnectors) {
+    const key = `connector_${conn.name}`
+    if (conn.cachedData != null) {
+      setWithAliases(result, key, conn.cachedData)
+    } else {
+      setWithAliases(result, key, null)
+    }
+  }
+
+  if (realtimeConnectors.length > 0) {
+    await Promise.all(
+      realtimeConnectors.map(async (conn) => {
+        const key = `connector_${conn.name}`
+        const selectedTables = (conn.selectedTables as string[] | null) ?? []
+        if (selectedTables.length === 0) {
+          setWithAliases(result, key, null)
+          return
+        }
+        try {
+          const config: ConnectorConfig = {
+            host: conn.host,
+            port: conn.port,
+            database: conn.database,
+            username: conn.username,
+            password: decryptPassword(conn.passwordEnc),
+            ssl: conn.ssl,
+          }
+          const drv = getDriver(conn.driver)
+          const data = await drv.queryTables(config, selectedTables, conn.queryLimit)
+          setWithAliases(result, key, data)
+        } catch (err) {
+          hasSourceErrors = true
+          setWithAliases(result, key, null)
+          console.warn(`[Runtime] Connector "${conn.name}" failed:`, (err as Error).message)
+        }
+      })
+    )
+  }
 
   return {
     data: result,

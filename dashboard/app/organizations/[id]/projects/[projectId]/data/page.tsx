@@ -13,7 +13,7 @@ import { Breadcrumb } from '@/components/ui/breadcrumb'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import Link from 'next/link'
-import { Database, Table, Plus, Upload, Trash2, ChevronRight, Globe, Layout, Zap, ClipboardCheck, CheckCircle2, AlertCircle, Loader2, Eye, EyeOff, RefreshCw, Image, Webhook, Settings2, Settings } from 'lucide-react'
+import { Database, Table, Plus, Upload, Trash2, ChevronRight, Globe, Layout, Zap, ClipboardCheck, CheckCircle2, AlertCircle, Loader2, Eye, EyeOff, RefreshCw, Image, Webhook, Settings2, Settings, Server, PlugZap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { LoadingBar } from '@/components/ui/loading-bar'
 import { useState, useEffect } from 'react'
@@ -469,6 +469,410 @@ function RestApiTab({ projectId }: { projectId: string }) {
   )
 }
 
+function DbConnectorsTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [newOpen, setNewOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newDriver, setNewDriver] = useState('postgres')
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [form, setForm] = useState<{
+    name: string; driver: string; host: string; port: number; database: string
+    username: string; password: string; ssl: boolean; cacheMode: string; queryLimit: number
+    selectedTables: string[]
+  }>({ name: '', driver: 'postgres', host: '', port: 5432, database: '', username: '', password: '', ssl: false, cacheMode: 'cached', queryLimit: 500, selectedTables: [] })
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['db-connectors', projectId],
+    queryFn: async () => (await axios.get(`/api/projects/${projectId}/db-connectors`)).data,
+  })
+  const connectors: Array<any> = data?.connectors ?? []
+  const supportedDrivers: Array<{ value: string; label: string; defaultPort: number }> = data?.supportedDrivers ?? []
+  const selected = connectors.find((c: any) => c.id === selectedId) ?? null
+
+  useEffect(() => {
+    if (selected) {
+      setForm({
+        name: selected.name, driver: selected.driver, host: selected.host, port: selected.port,
+        database: selected.database, username: selected.username, password: '',
+        ssl: selected.ssl, cacheMode: selected.cacheMode ?? 'cached', queryLimit: selected.queryLimit ?? 500,
+        selectedTables: selected.selectedTables ?? [],
+      })
+    }
+  }, [selected?.id])
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const def = supportedDrivers.find(d => d.value === newDriver)
+      const res = await axios.post(`/api/projects/${projectId}/db-connectors`, {
+        name: newName.trim(), driver: newDriver, host: '', port: def?.defaultPort ?? 5432,
+        database: '', username: '', password: '',
+      })
+      return res.data
+    },
+    onSuccess: (d) => {
+      queryClient.invalidateQueries({ queryKey: ['db-connectors', projectId] })
+      setNewOpen(false); setNewName(''); setSelectedId(d.connector.id)
+    },
+  })
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, any> = {
+        name: form.name, host: form.host, port: form.port, database: form.database,
+        username: form.username, ssl: form.ssl, cacheMode: form.cacheMode,
+        queryLimit: form.queryLimit, selectedTables: form.selectedTables,
+      }
+      if (form.password) body.password = form.password
+      const res = await axios.patch(`/api/projects/${projectId}/db-connectors/${selectedId}`, body)
+      return res.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['db-connectors', projectId] })
+      setSaveMsg('Saved'); setTimeout(() => setSaveMsg(null), 2000)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => axios.delete(`/api/projects/${projectId}/db-connectors/${id}`),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['db-connectors', projectId] }); setSelectedId(null) },
+  })
+
+  const [testResult, setTestResult] = useState<{ ok: boolean; message?: string | null } | null>(null)
+  const [testLoading, setTestLoading] = useState(false)
+  const handleTest = async () => {
+    if (!selectedId) return
+    setTestLoading(true); setTestResult(null)
+    try {
+      const res = await axios.post(`/api/projects/${projectId}/db-connectors/${selectedId}/test`)
+      setTestResult(res.data)
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e?.response?.data?.error ?? (e as Error).message })
+    }
+    setTestLoading(false)
+  }
+
+  const [refreshLoading, setRefreshLoading] = useState(false)
+  const [refreshResult, setRefreshResult] = useState<{ ok: boolean; tables?: string[]; error?: string } | null>(null)
+  const handleRefresh = async () => {
+    if (!selectedId) return
+    setRefreshLoading(true); setRefreshResult(null)
+    try {
+      const res = await axios.post(`/api/projects/${projectId}/db-connectors/${selectedId}/refresh`)
+      setRefreshResult(res.data)
+      queryClient.invalidateQueries({ queryKey: ['db-connectors', projectId] })
+    } catch (e: any) {
+      setRefreshResult({ ok: false, error: e?.response?.data?.error ?? (e as Error).message })
+    }
+    setRefreshLoading(false)
+  }
+
+  const [introspectLoading, setIntrospectLoading] = useState(false)
+  const handleIntrospect = async () => {
+    if (!selectedId) return
+    setIntrospectLoading(true)
+    try {
+      await axios.post(`/api/projects/${projectId}/db-connectors/${selectedId}/introspect`)
+      queryClient.invalidateQueries({ queryKey: ['db-connectors', projectId] })
+    } catch { /* ignore */ }
+    setIntrospectLoading(false)
+  }
+
+  const tables: Array<{ name: string; schema?: string; columns: Array<{ name: string; type: string }>; rowCount?: number }> = selected?.tables ?? []
+
+  if (isLoading) return <div className="p-4 text-sm text-gray-400">Loading…</div>
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-0 h-full min-h-0">
+      {/* Connector list */}
+      <div className="w-full lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--border)] flex flex-col max-h-52 lg:max-h-none">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
+          <span className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">Connectors</span>
+          <button type="button" onClick={() => setNewOpen(true)} className="p-1 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)]"><Plus className="h-4 w-4" /></button>
+        </div>
+        <div className="flex-1 overflow-auto py-2 space-y-0.5 px-2">
+          {connectors.length === 0 && (
+            <div className="text-xs text-[var(--muted-foreground)] px-2 py-4 text-center">No connectors yet.<br/>Connect to PostgreSQL, MySQL, or MSSQL.</div>
+          )}
+          {connectors.map((c: any) => (
+            <button key={c.id} type="button" onClick={() => setSelectedId(c.id)}
+              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors ${selectedId === c.id ? 'bg-[var(--primary)] text-[var(--primary-foreground)]' : 'hover:bg-[var(--muted)] text-[var(--foreground)]'}`}>
+              <Server className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{c.name}</span>
+              <span className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${c.status === 'connected' ? 'bg-emerald-500' : c.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`} />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Editor */}
+      <div className="flex-1 min-w-0 flex flex-col overflow-auto">
+        {!selected ? (
+          <div className="flex-1 flex items-center justify-center text-[var(--muted-foreground)] text-sm">
+            Select a connector or create one
+          </div>
+        ) : (
+          <div className="p-3 sm:p-6 space-y-5 max-w-3xl">
+            {/* Sticky header */}
+            <div className="sticky top-0 z-20 bg-[var(--background)]/95 backdrop-blur border-b border-[var(--border)] -mx-3 sm:-mx-6 px-3 sm:px-6 py-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+              <div>
+                <h2 className="font-semibold text-[var(--foreground)]">{selected.name}</h2>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${selected.status === 'connected' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : selected.status === 'error' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'}`}>
+                    {selected.status === 'connected' ? <CheckCircle2 className="h-3 w-3" /> : selected.status === 'error' ? <AlertCircle className="h-3 w-3" /> : <Loader2 className="h-3 w-3 animate-spin" />}
+                    {selected.status}
+                  </span>
+                  {selected.statusMessage && <span className="text-[10px] text-[var(--muted-foreground)]">{selected.statusMessage}</span>}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 items-center">
+                {saveMsg && <span className="text-xs text-emerald-600 italic">{saveMsg}</span>}
+                <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-black dark:bg-white text-white dark:text-black rounded hover:opacity-80 disabled:opacity-50">
+                  {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                  Save
+                </button>
+                <button type="button" onClick={() => deleteMutation.mutate(selected.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-red-300 dark:border-red-700 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+                  <Trash2 className="h-3 w-3" />
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            {/* Connection details */}
+            <div className="space-y-3">
+              <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">Connection</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Name</label>
+                  <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--background)] text-[var(--foreground)]" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Driver</label>
+                  <div className="px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--muted)] text-[var(--foreground)] font-mono">
+                    {supportedDrivers.find(d => d.value === selected.driver)?.label ?? selected.driver}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Host</label>
+                  <input type="text" value={form.host} onChange={e => setForm(f => ({ ...f, host: e.target.value }))}
+                    placeholder="localhost or db.example.com"
+                    className="w-full px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--background)] text-[var(--foreground)] font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Port</label>
+                  <input type="number" value={form.port} onChange={e => setForm(f => ({ ...f, port: Number(e.target.value) }))}
+                    className="w-full px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--background)] text-[var(--foreground)] font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Database</label>
+                  <input type="text" value={form.database} onChange={e => setForm(f => ({ ...f, database: e.target.value }))}
+                    placeholder="my_database"
+                    className="w-full px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--background)] text-[var(--foreground)] font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Username</label>
+                  <input type="text" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--background)] text-[var(--foreground)] font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Password</label>
+                  <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                    placeholder="(unchanged if blank)"
+                    className="w-full px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--background)] text-[var(--foreground)] font-mono" />
+                </div>
+                <div className="flex items-end gap-3 pb-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.ssl} onChange={e => setForm(f => ({ ...f, ssl: e.target.checked }))} className="w-4 h-4" />
+                    <span className="text-sm text-[var(--foreground)]">SSL</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Test connection */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button type="button" onClick={handleTest} disabled={testLoading}
+                className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium border border-[var(--border)] rounded bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-40">
+                {testLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />}
+                Test connection
+              </button>
+              <button type="button" onClick={handleIntrospect} disabled={introspectLoading || selected.status !== 'connected'}
+                className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium border border-[var(--border)] rounded bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-40">
+                {introspectLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh tables
+              </button>
+              {testResult && (
+                <span className={`text-xs flex items-center gap-1 ${testResult.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {testResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                  {testResult.ok ? 'Connected!' : (testResult.message ?? 'Failed')}
+                </span>
+              )}
+            </div>
+
+            {/* Tables discovered */}
+            {tables.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
+                    Tables ({tables.length} discovered)
+                  </label>
+                  <span className="text-[10px] text-[var(--muted-foreground)]">Select tables to include in your app data</span>
+                </div>
+                <div className="border border-[var(--border)] rounded divide-y divide-[var(--border)] max-h-64 overflow-auto">
+                  {tables.map((t) => {
+                    const key = t.schema ? `${t.schema}.${t.name}` : t.name
+                    const checked = form.selectedTables.includes(key)
+                    return (
+                      <label key={key} className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)]/50 cursor-pointer">
+                        <input type="checkbox" checked={checked}
+                          onChange={() => setForm(f => ({
+                            ...f,
+                            selectedTables: checked ? f.selectedTables.filter(s => s !== key) : [...f.selectedTables, key],
+                          }))}
+                          className="w-4 h-4 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-[var(--foreground)] truncate">
+                            {t.schema && <span className="text-[var(--muted-foreground)]">{t.schema}.</span>}
+                            {t.name}
+                          </div>
+                          <div className="text-[10px] text-[var(--muted-foreground)]">
+                            {t.columns.length} columns{t.rowCount != null ? ` · ~${t.rowCount} rows` : ''}
+                          </div>
+                        </div>
+                        <div className="hidden sm:flex flex-wrap gap-1 max-w-xs">
+                          {t.columns.slice(0, 5).map(c => (
+                            <span key={c.name} className="text-[10px] px-1 py-0.5 bg-[var(--muted)] rounded text-[var(--muted-foreground)]">{c.name}</span>
+                          ))}
+                          {t.columns.length > 5 && <span className="text-[10px] text-[var(--muted-foreground)]">+{t.columns.length - 5}</span>}
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Query limit */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide">Row limit per table</label>
+              <input type="number" value={form.queryLimit} onChange={e => setForm(f => ({ ...f, queryLimit: Number(e.target.value) || 500 }))}
+                min={1} max={10000}
+                className="w-32 px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--background)] text-[var(--foreground)] font-mono" />
+              <p className="text-[10px] text-[var(--muted-foreground)]">Max rows fetched per table when caching. 1–10,000.</p>
+            </div>
+
+            {/* Cache mode */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5" />
+                Runtime mode
+              </label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setForm(f => ({ ...f, cacheMode: 'cached' }))}
+                  className={`flex-1 px-3 py-2 rounded border text-xs font-medium transition-colors ${
+                    form.cacheMode !== 'realtime'
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
+                      : 'border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]'
+                  }`}>
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <Zap className="h-3.5 w-3.5" />Instant (cached)
+                  </div>
+                </button>
+                <button type="button" onClick={() => setForm(f => ({ ...f, cacheMode: 'realtime' }))}
+                  className={`flex-1 px-3 py-2 rounded border text-xs font-medium transition-colors ${
+                    form.cacheMode === 'realtime'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                      : 'border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]'
+                  }`}>
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <RefreshCw className="h-3.5 w-3.5" />Live (realtime)
+                  </div>
+                </button>
+              </div>
+              <div className="rounded-md bg-[var(--muted)]/50 border border-[var(--border)] px-3 py-2.5 text-[11px] text-[var(--muted-foreground)] leading-relaxed">
+                {form.cacheMode !== 'realtime' ? (
+                  <>
+                    <strong className="text-emerald-600 dark:text-emerald-400">Instant mode</strong> — Selected tables are queried once on save/refresh and stored in the DB.
+                    Your app reads cached data instantly with <strong>zero external DB connections</strong> at runtime.
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-blue-600 dark:text-blue-400">Live mode</strong> — Every page load queries the external database in real time.
+                    Use this for data that changes frequently. Slower than instant since it depends on the external DB latency.
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Refresh data */}
+            {form.selectedTables.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button type="button" onClick={handleRefresh} disabled={refreshLoading || selected.status !== 'connected'}
+                    className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium bg-black dark:bg-white text-white dark:text-black rounded hover:opacity-80 disabled:opacity-50">
+                    {refreshLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    Refresh cached data
+                  </button>
+                  {selected.cachedAt && (
+                    <span className="text-[10px] text-[var(--muted-foreground)]">Last cached: {new Date(selected.cachedAt).toLocaleString()}</span>
+                  )}
+                </div>
+                {refreshResult && (
+                  <div className={`text-xs flex items-center gap-1 ${refreshResult.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {refreshResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                    {refreshResult.ok ? `Cached ${refreshResult.tables?.length ?? 0} tables` : refreshResult.error}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Data reference */}
+            <div className="rounded-md bg-[var(--muted)]/50 border border-[var(--border)] px-3 py-2.5 text-[11px] text-[var(--muted-foreground)] leading-relaxed">
+              <strong>Data binding:</strong> Use <code className="bg-[var(--muted)] px-1">{'{{data.connector_' + (selected.name || 'name') + '.tableName}}'}</code> in the builder to reference connector data.
+              Each selected table becomes a key with an array of rows.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Create dialog */}
+      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>New database connector</DialogTitle></DialogHeader>
+          <div className="space-y-3 pt-2">
+            <Input placeholder="Connector name (e.g. analytics-db, crm)" value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--muted-foreground)]">Database type</label>
+              <div className="flex gap-2">
+                {(supportedDrivers.length > 0 ? supportedDrivers : [
+                  { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432 },
+                  { value: 'mysql', label: 'MySQL', defaultPort: 3306 },
+                  { value: 'mssql', label: 'MS SQL Server', defaultPort: 1433 },
+                ]).map(d => (
+                  <button key={d.value} type="button" onClick={() => setNewDriver(d.value)}
+                    className={`flex-1 px-3 py-2 rounded border text-xs font-medium transition-colors ${
+                      newDriver === d.value
+                        ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]'
+                        : 'border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--muted)]'
+                    }`}>
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Button onClick={() => newName.trim() && createMutation.mutate()} disabled={!newName.trim() || createMutation.isPending}>
+              {createMutation.isPending ? 'Creating…' : 'Create'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 function AssetsTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient()
   const inputRef = useState<HTMLInputElement | null>(null)
@@ -755,7 +1159,7 @@ export default function ProjectDataPage() {
   const queryClient = useQueryClient()
   const orgId = params.id as string
   const projectId = params.projectId as string
-  const [dataTab, setDataTab] = useState<'db' | 'api' | 'assets' | 'webhooks'>('db')
+  const [dataTab, setDataTab] = useState<'db' | 'api' | 'connectors' | 'assets' | 'webhooks'>('db')
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [newTableName, setNewTableName] = useState('')
   const [newColumnName, setNewColumnName] = useState('')
@@ -964,6 +1368,10 @@ export default function ProjectDataPage() {
               className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px ${dataTab === 'api' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]'}`}>
               <Globe className="h-3.5 w-3.5" />REST APIs
             </button>
+            <button type="button" onClick={() => setDataTab('connectors')}
+              className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px ${dataTab === 'connectors' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]'}`}>
+              <PlugZap className="h-3.5 w-3.5" />Connectors
+            </button>
             <button type="button" onClick={() => setDataTab('assets')}
               className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px ${dataTab === 'assets' ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]'}`}>
               <Image className="h-3.5 w-3.5" />Assets
@@ -978,6 +1386,10 @@ export default function ProjectDataPage() {
         {dataTab === 'api' ? (
           <div className="flex-1 min-h-0 overflow-hidden">
             <RestApiTab projectId={projectId} />
+          </div>
+        ) : dataTab === 'connectors' ? (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <DbConnectorsTab projectId={projectId} />
           </div>
         ) : dataTab === 'assets' ? (
           <div className="flex-1 min-h-0 overflow-auto">
