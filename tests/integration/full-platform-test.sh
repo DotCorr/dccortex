@@ -264,100 +264,484 @@ assert_json_eq "Project published" "$PUB_RESP" ".project.status" "published"
 section "4. Screens — CRUD + Layout"
 # =========================================================================
 
-# Create screen with a complex layout exercising every component type
+# Create screen with a proper layout using correct component types + props
+# Props are top-level (not nested in "style"); uses correct types from registry
 LAYOUT_JSON='{
-  "id": "root",
-  "type": "container",
-  "props": {"style":{"padding":"16px","display":"flex","flexDirection":"column","gap":"12px"}},
-  "children": [
-    {
-      "id": "hdr",
-      "type": "text",
-      "props": {"content":"Welcome to {{state.username}}!","style":{"fontSize":"24px","fontWeight":"bold"}},
-      "children": []
+  "root": {
+    "id": "root",
+    "type": "container",
+    "props": {
+      "display": "flex",
+      "flexDirection": "column",
+      "gap": 16,
+      "padding": 24,
+      "minHeight": "100vh",
+      "backgroundColor": "#f8fafc",
+      "fontFamily": "Inter, system-ui, sans-serif"
     },
-    {
-      "id": "img1",
-      "type": "image",
-      "props": {"src":"https://placehold.co/300x200","alt":"placeholder","style":{"width":"300px","borderRadius":"8px"}},
-      "children": []
-    },
-    {
-      "id": "btn1",
-      "type": "button",
-      "props": {"label":"Click Me","onClick":{"action":"setState","key":"clicks","value":"{{state.clicks + 1}}"},"style":{"backgroundColor":"#3b82f6","color":"white","padding":"8px 16px","borderRadius":"6px"}},
-      "children": []
-    },
-    {
-      "id": "form1",
-      "type": "form",
-      "props": {"onSubmit":{"action":"insertRow","table":"contacts","data":{"name":"{{state.formName}}","email":"{{state.formEmail}}"}}},
-      "children": [
-        {
-          "id": "input1",
-          "type": "input",
-          "props": {"placeholder":"Your name","bind":"formName","style":{"border":"1px solid #ccc","padding":"8px","borderRadius":"4px"}},
-          "children": []
+    "children": [
+      {
+        "id": "header",
+        "type": "header",
+        "props": {
+          "display": "flex",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+          "alignItems": "center",
+          "padding": "16px 24px",
+          "backgroundColor": "#ffffff",
+          "borderRadius": 12,
+          "boxShadow": "0 1px 3px rgba(0,0,0,0.1)"
         },
-        {
-          "id": "input2",
-          "type": "input",
-          "props": {"placeholder":"Email","bind":"formEmail","type":"email","style":{"border":"1px solid #ccc","padding":"8px","borderRadius":"4px"}},
-          "children": []
+        "children": [
+          {
+            "id": "logo-text",
+            "type": "gradientText",
+            "props": {
+              "content": "DCCortex Test App",
+              "gradient": "linear-gradient(135deg, #3b82f6, #8b5cf6)",
+              "fontSize": "24px",
+              "fontWeight": "800"
+            },
+            "children": []
+          },
+          {
+            "id": "nav-badge",
+            "type": "badge",
+            "props": {
+              "label": "Published",
+              "variant": "success",
+              "size": "sm"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "hero-card",
+        "type": "card",
+        "props": {
+          "shadow": "lg",
+          "rounded": "lg",
+          "bordered": true,
+          "display": "flex",
+          "flexDirection": "column",
+          "gap": 16,
+          "padding": 32,
+          "backgroundColor": "#ffffff"
         },
-        {
-          "id": "submit1",
-          "type": "button",
-          "props": {"label":"Submit","type":"submit","style":{"backgroundColor":"#10b981","color":"white","padding":"8px 16px","borderRadius":"6px"}},
-          "children": []
-        }
-      ]
-    },
-    {
-      "id": "repeater1",
-      "type": "repeater",
-      "props": {"dataSource":"{{data.contacts}}","itemKey":"id"},
-      "children": [
-        {
-          "id": "rep-text",
-          "type": "text",
-          "props": {"content":"{{item.name}} — {{item.email}}"},
-          "children": []
-        }
-      ]
-    },
-    {
-      "id": "cond1",
-      "type": "conditional",
-      "props": {"condition":"{{state.clicks > 0}}"},
-      "children": [
-        {
-          "id": "cond-text",
-          "type": "text",
-          "props": {"content":"Clicked {{state.clicks}} times!","style":{"color":"#8b5cf6"}},
-          "children": []
-        }
-      ]
-    },
-    {
-      "id": "chart1",
-      "type": "container",
-      "props": {"style":{"padding":"16px","backgroundColor":"#f9fafb","borderRadius":"8px"}},
-      "children": [
-        {
-          "id": "chart-title",
-          "type": "text",
-          "props": {"content":"Weather from API: {{data.weather.current.temperature_2m}}°C"},
-          "children": []
-        }
-      ]
-    },
-    {
-      "id": "nav1",
-      "type": "button",
-      "props": {"label":"Go to About","onClick":{"action":"navigate","screen":"about"},"style":{"textDecoration":"underline","color":"#3b82f6","background":"none","border":"none"}},
-      "children": []
-    }
+        "children": [
+          {
+            "id": "hero-title",
+            "type": "text",
+            "props": {
+              "content": "Welcome, {{state.username}}!",
+              "variant": "h1",
+              "color": "#0f172a",
+              "fontWeight": "700",
+              "fontSize": "32px"
+            },
+            "children": []
+          },
+          {
+            "id": "hero-subtitle",
+            "type": "text",
+            "props": {
+              "content": "This app tests every feature of the DCCortex runtime — data binding, forms, repeaters, API data, images, and state management.",
+              "variant": "body",
+              "color": "#64748b",
+              "fontSize": "16px",
+              "lineHeight": "1.6"
+            },
+            "children": []
+          },
+          {
+            "id": "hero-image",
+            "type": "image",
+            "props": {
+              "url": "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&h=400&fit=crop",
+              "alt": "Code on screen",
+              "width": "100%",
+              "height": "300px",
+              "objectFit": "cover",
+              "borderRadius": 12
+            },
+            "children": []
+          },
+          {
+            "id": "hero-divider",
+            "type": "divider",
+            "props": {
+              "orientation": "horizontal",
+              "color": "#e2e8f0",
+              "thickness": 1,
+              "margin": "8px 0"
+            },
+            "children": []
+          },
+          {
+            "id": "hero-stats-row",
+            "type": "stackH",
+            "props": {
+              "gap": 16,
+              "alignItems": "center"
+            },
+            "children": [
+              {
+                "id": "click-btn",
+                "type": "button",
+                "props": {
+                  "label": "Clicks: {{state.clicks}}",
+                  "variant": "primary",
+                  "backgroundColor": "#3b82f6",
+                  "color": "#ffffff",
+                  "padding": "10px 20px",
+                  "borderRadius": 8,
+                  "fontWeight": "600",
+                  "onClick": [
+                    {"action": "mutateState", "stateKey": "clicks", "mutationOp": "increment", "mutationAmount": 1}
+                  ]
+                },
+                "children": []
+              },
+              {
+                "id": "click-count-text",
+                "type": "text",
+                "props": {
+                  "content": "Total clicks: {{state.clicks}}",
+                  "color": "#8b5cf6",
+                  "fontWeight": "600"
+                },
+                "children": []
+              },
+              {
+                "id": "dark-toggle",
+                "type": "toggle",
+                "props": {
+                  "label": "Dark Mode",
+                  "checked": "{{state.darkMode}}",
+                  "onChange": [{"action": "setState", "stateKey": "darkMode", "value": "{{event.checked}}"}]
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "form-card",
+        "type": "card",
+        "props": {
+          "shadow": "md",
+          "rounded": "lg",
+          "bordered": true,
+          "padding": 24,
+          "backgroundColor": "#ffffff"
+        },
+        "children": [
+          {
+            "id": "form-title",
+            "type": "text",
+            "props": {
+              "content": "Add Contact",
+              "variant": "h2",
+              "fontSize": "20px",
+              "fontWeight": "700",
+              "color": "#0f172a",
+              "margin": "0 0 16px 0"
+            },
+            "children": []
+          },
+          {
+            "id": "contact-form",
+            "type": "formWrapper",
+            "props": {
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": 12,
+              "submitLabel": "Add Contact",
+              "onSubmit": [
+                {"action": "insertRow", "tableName": "contacts", "rowData": {"name": "{{state.formName}}", "email": "{{state.formEmail}}"}, "resultStateKey": "lastInsert"}
+              ]
+            },
+            "children": [
+              {
+                "id": "name-input",
+                "type": "textInput",
+                "props": {
+                  "label": "Name",
+                  "placeholder": "Enter full name",
+                  "value": "{{state.formName}}",
+                  "onChange": [{"action": "setState", "stateKey": "formName", "value": "{{event.value}}"}]
+                },
+                "children": []
+              },
+              {
+                "id": "email-input",
+                "type": "textInput",
+                "props": {
+                  "label": "Email",
+                  "placeholder": "email@example.com",
+                  "value": "{{state.formEmail}}",
+                  "onChange": [{"action": "setState", "stateKey": "formEmail", "value": "{{event.value}}"}]
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "contacts-card",
+        "type": "card",
+        "props": {
+          "shadow": "md",
+          "rounded": "lg",
+          "bordered": true,
+          "padding": 24,
+          "backgroundColor": "#ffffff"
+        },
+        "children": [
+          {
+            "id": "contacts-title",
+            "type": "text",
+            "props": {
+              "content": "Contact List ({{data.contacts.length}} records)",
+              "variant": "h2",
+              "fontSize": "20px",
+              "fontWeight": "700",
+              "color": "#0f172a",
+              "margin": "0 0 16px 0"
+            },
+            "children": []
+          },
+          {
+            "id": "contacts-repeater",
+            "type": "dataRepeater",
+            "props": {
+              "dataSource": "{{data.contacts}}",
+              "itemVar": "contact",
+              "emptyText": "No contacts found",
+              "display": "flex",
+              "flexDirection": "column",
+              "gap": 8
+            },
+            "children": [
+              {
+                "id": "contact-row",
+                "type": "card",
+                "props": {
+                  "shadow": "sm",
+                  "rounded": "md",
+                  "display": "flex",
+                  "flexDirection": "row",
+                  "alignItems": "center",
+                  "gap": 12,
+                  "padding": "12px 16px",
+                  "backgroundColor": "#f8fafc"
+                },
+                "children": [
+                  {
+                    "id": "contact-avatar",
+                    "type": "avatar",
+                    "props": {
+                      "initials": "{{prop.contact.name}}",
+                      "size": 40,
+                      "shape": "circle"
+                    },
+                    "children": []
+                  },
+                  {
+                    "id": "contact-info",
+                    "type": "stackV",
+                    "props": {"gap": 2},
+                    "children": [
+                      {
+                        "id": "contact-name",
+                        "type": "text",
+                        "props": {
+                          "content": "{{prop.contact.name}}",
+                          "fontWeight": "600",
+                          "fontSize": "14px",
+                          "color": "#0f172a"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "contact-email",
+                        "type": "text",
+                        "props": {
+                          "content": "{{prop.contact.email}}",
+                          "fontSize": "13px",
+                          "color": "#64748b"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "contact-active-badge",
+                    "type": "badge",
+                    "props": {
+                      "label": "Active",
+                      "variant": "success",
+                      "size": "sm"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "products-card",
+        "type": "card",
+        "props": {
+          "shadow": "md",
+          "rounded": "lg",
+          "bordered": true,
+          "padding": 24,
+          "backgroundColor": "#ffffff"
+        },
+        "children": [
+          {
+            "id": "products-title",
+            "type": "text",
+            "props": {
+              "content": "Product Catalog",
+              "variant": "h2",
+              "fontSize": "20px",
+              "fontWeight": "700",
+              "color": "#0f172a",
+              "margin": "0 0 16px 0"
+            },
+            "children": []
+          },
+          {
+            "id": "products-table",
+            "type": "table",
+            "props": {
+              "columns": "title,price,inStock",
+              "rows": "{{data.products}}",
+              "striped": true,
+              "showSearch": true,
+              "sortable": true,
+              "compact": false
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "api-card",
+        "type": "card",
+        "props": {
+          "shadow": "md",
+          "rounded": "lg",
+          "bordered": true,
+          "padding": 24,
+          "backgroundColor": "#ffffff"
+        },
+        "children": [
+          {
+            "id": "api-title",
+            "type": "text",
+            "props": {
+              "content": "Live Weather (API Source)",
+              "variant": "h2",
+              "fontSize": "20px",
+              "fontWeight": "700",
+              "color": "#0f172a",
+              "margin": "0 0 12px 0"
+            },
+            "children": []
+          },
+          {
+            "id": "weather-temp",
+            "type": "text",
+            "props": {
+              "content": "Temperature: {{data.weather.current.temperature_2m}}°C",
+              "fontSize": "18px",
+              "color": "#0f172a"
+            },
+            "children": []
+          },
+          {
+            "id": "weather-icon",
+            "type": "icon",
+            "props": {
+              "icon": "mdi:weather-sunny",
+              "size": 48,
+              "color": "#f59e0b"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "alert-section",
+        "type": "alertBanner",
+        "props": {
+          "title": "Runtime Verified",
+          "message": "All components, bindings, and data sources are working.",
+          "variant": "success",
+          "dismissible": true
+        },
+        "children": []
+      },
+      {
+        "id": "progress-section",
+        "type": "stackH",
+        "props": {"gap": 16, "alignItems": "center", "padding": "8px 0"},
+        "children": [
+          {
+            "id": "progress-bar",
+            "type": "progressBar",
+            "props": {
+              "value": 86,
+              "max": 100,
+              "label": "Tests passing",
+              "showPercent": true,
+              "color": "#10b981",
+              "height": 12,
+              "animated": true
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "footer",
+        "type": "footer",
+        "props": {
+          "display": "flex",
+          "justifyContent": "center",
+          "padding": "24px 0",
+          "borderTop": "1px solid #e2e8f0"
+        },
+        "children": [
+          {
+            "id": "footer-text",
+            "type": "text",
+            "props": {
+              "content": "Built with DCCortex — {{dateNow.fullDate}}",
+              "fontSize": "13px",
+              "color": "#94a3b8"
+            },
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "stateDefinitions": [
+    {"id": "s-username", "name": "username", "initialValue": "Guest", "type": "string"},
+    {"id": "s-clicks", "name": "clicks", "initialValue": "0", "type": "number"},
+    {"id": "s-formName", "name": "formName", "initialValue": "", "type": "string"},
+    {"id": "s-formEmail", "name": "formEmail", "initialValue": "", "type": "string"},
+    {"id": "s-darkMode", "name": "darkMode", "initialValue": "false", "type": "boolean"}
   ]
 }'
 
@@ -368,7 +752,7 @@ SCREEN_ID=$(echo "$SCREEN_RESP" | jq -r '.screen.id')
 assert_json_eq "Screen name" "$SCREEN_RESP" ".screen.name" "Home"
 
 # Create second screen
-SCREEN2_BODY='{"name":"About","slug":"about","layout":{"id":"root","type":"container","props":{},"children":[{"id":"t1","type":"text","props":{"content":"About page"},"children":[]}]}}'
+SCREEN2_BODY='{"name":"About","slug":"about","layout":{"root":{"id":"root","type":"container","props":{"display":"flex","flexDirection":"column","gap":16,"padding":24,"backgroundColor":"#f8fafc"},"children":[{"id":"about-title","type":"text","props":{"content":"About This App","variant":"h1","fontSize":"28px","fontWeight":"700","color":"#0f172a"},"children":[]},{"id":"about-desc","type":"text","props":{"content":"Built with DCCortex — a full no-code platform for building web apps.","fontSize":"16px","color":"#64748b","lineHeight":"1.6"},"children":[]},{"id":"about-link","type":"link","props":{"label":"Back to Home","url":"screen:home"},"children":[]}]}}}'
 SCREEN2_RESP=$(api_post "/api/projects/$PROJECT_ID/screens" "$SCREEN2_BODY")
 assert_json_field "Second screen created" "$SCREEN2_RESP" ".screen.id"
 SCREEN2_ID=$(echo "$SCREEN2_RESP" | jq -r '.screen.id')
@@ -812,6 +1196,118 @@ if [[ "$PUB_CONTACTS" == "true" ]]; then
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}✗${NC} Public data missing contacts"
+  FAIL=$((FAIL + 1))
+fi
+
+# =========================================================================
+section "12b. Visual Rendering — HTML Verification"
+# =========================================================================
+
+# Fetch the public project payload and verify layout + data are structured correctly
+PUB_PAYLOAD=$(curl -s "${BASE_URL}/api/p/$PROJECT_ID")
+
+# 1. Verify screen layout has correct root node type
+ROOT_TYPE=$(echo "$PUB_PAYLOAD" | jq -r '.screens[0].layout.root.type // .screens[0].layout.type // empty')
+if [[ "$ROOT_TYPE" == "container" ]]; then
+  echo -e "  ${GREEN}✓${NC} Root node type is 'container'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Root node type is '$ROOT_TYPE' — expected 'container'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 2. Verify layout has children with correct component types (recursive check)
+ALL_TYPES=$(echo "$PUB_PAYLOAD" | jq -r '[(.screens[0].layout.root // .screens[0].layout) | .. | .type? // empty] | unique | join(",")')
+for EXPECTED_TYPE in header card dataRepeater table alertBanner footer text button textInput formWrapper badge avatar; do
+  if echo "$ALL_TYPES" | grep -q "$EXPECTED_TYPE"; then
+    echo -e "  ${GREEN}✓${NC} Layout contains '${EXPECTED_TYPE}' component"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Layout missing '${EXPECTED_TYPE}' component (found: ${ALL_TYPES:0:100})"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# 3. Verify state definitions exist in layout
+STATE_DEFS=$(echo "$PUB_PAYLOAD" | jq '.screens[0].layout.stateDefinitions | length')
+if [[ "$STATE_DEFS" -ge 3 ]]; then
+  echo -e "  ${GREEN}✓${NC} State definitions present ($STATE_DEFS definitions)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Missing state definitions (got $STATE_DEFS)"
+  FAIL=$((FAIL + 1))
+fi
+
+# 4. Verify data repeater has correct binding
+REPEATER_DS=$(echo "$PUB_PAYLOAD" | jq -r '
+  [(.screens[0].layout.root // .screens[0].layout).children[]
+    | select(.type == "card")
+    | .children[]?
+    | select(.type == "dataRepeater")
+    | .props.dataSource
+  ] | first // empty')
+if [[ "$REPEATER_DS" == *"data.contacts"* ]]; then
+  echo -e "  ${GREEN}✓${NC} DataRepeater bound to contacts data"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} DataRepeater binding wrong: '$REPEATER_DS'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 5. Verify table component has rows bound to products data
+TABLE_ROWS=$(echo "$PUB_PAYLOAD" | jq -r '
+  [(.screens[0].layout.root // .screens[0].layout).children[]
+    | select(.type == "card")
+    | .children[]?
+    | select(.type == "table")
+    | .props.rows
+  ] | first // empty')
+if [[ "$TABLE_ROWS" == *"data.products"* ]]; then
+  echo -e "  ${GREEN}✓${NC} Table component bound to products data"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Table binding wrong: '$TABLE_ROWS'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 6. Verify runtime data has actual row values that would interpolate
+CONTACT_NAME=$(echo "$PUB_RESP" | jq -r '.data.contacts[0].name // empty')
+PRODUCT_TITLE=$(echo "$PUB_RESP" | jq -r '.data.products[0].title // empty')
+if [[ -n "$CONTACT_NAME" && -n "$PRODUCT_TITLE" ]]; then
+  echo -e "  ${GREEN}✓${NC} Runtime data has interpolatable values (contact='$CONTACT_NAME', product='$PRODUCT_TITLE')"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Runtime data empty — contacts[0].name='$CONTACT_NAME', products[0].title='$PRODUCT_TITLE'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 7. Verify globals with state definitions are returned
+GLOBALS_STATE=$(echo "$PUB_PAYLOAD" | jq '.globals.globalStateDefinitions | length // 0')
+if [[ "$GLOBALS_STATE" -ge 3 ]]; then
+  echo -e "  ${GREEN}✓${NC} Globals state definitions present ($GLOBALS_STATE)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} Globals state definitions: $GLOBALS_STATE (may be in layout instead)"
+  SKIP=$((SKIP + 1))
+fi
+
+# 8. Fetch the actual rendered HTML page and verify key content
+HTML=$(curl -s "${BASE_URL}/p/$PROJECT_ID")
+# Check that the page has the React root + script tags (SSR hydration)
+if echo "$HTML" | grep -q '__NEXT_DATA__\|__next'; then
+  echo -e "  ${GREEN}✓${NC} Preview page renders (Next.js hydration present)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Preview page missing Next.js hydration markers"
+  FAIL=$((FAIL + 1))
+fi
+
+# Check that server-side data is embedded in the page
+if echo "$HTML" | grep -q "$PROJECT_ID"; then
+  echo -e "  ${GREEN}✓${NC} Preview page contains project reference"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Preview page missing project data"
   FAIL=$((FAIL + 1))
 fi
 

@@ -5,6 +5,7 @@
  * Commercial use requires a license from DotCorr.
  */
 
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000
@@ -109,22 +110,49 @@ async function buildPublicProjectPayload(projectId: string): Promise<{ payload: 
     throw new Error('PROJECT_NOT_PUBLISHED')
   }
 
-  const [screensRows, globalsRow] = await Promise.all([
-    prisma.appScreen.findMany({
-      where: { projectId, NOT: { slug: '__globals__' } },
-      orderBy: { sortOrder: 'asc' },
-      select: { id: true, name: true, slug: true, layout: true, script: true, sortOrder: true },
-    }),
-    prisma.appScreen.findUnique({
-      where: { projectId_slug: { projectId, slug: '__globals__' } },
-      select: { layout: true },
-    }),
-  ])
+  const client = prisma as any
+  let screensRows: Array<{ id: string; name: string; slug: string; layout: unknown; script: string | null; sortOrder: number }>
+  let globalsLayout: unknown | null = null
+
+  if (client.appScreen?.findMany) {
+    const [screens, globalsRow] = await Promise.all([
+      client.appScreen.findMany({
+        where: { projectId, NOT: { slug: '__globals__' } },
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true, name: true, slug: true, layout: true, script: true, sortOrder: true },
+      }),
+      client.appScreen.findUnique({
+        where: { projectId_slug: { projectId, slug: '__globals__' } },
+        select: { layout: true },
+      }),
+    ])
+    screensRows = screens
+    globalsLayout = globalsRow?.layout ?? null
+  } else {
+    // Fallback: Prisma client may not have AppScreen model yet
+    const [rawScreens, rawGlobals] = await Promise.all([
+      prisma.$queryRaw<
+        { id: string; name: string; slug: string; layout: unknown; script: string | null; sort_order: number }[]
+      >(Prisma.sql`SELECT id, name, slug, layout, script, sort_order FROM app_screens WHERE project_id = ${projectId} AND slug != '__globals__' ORDER BY sort_order ASC`),
+      prisma.$queryRaw<
+        { layout: unknown }[]
+      >(Prisma.sql`SELECT layout FROM app_screens WHERE project_id = ${projectId} AND slug = '__globals__' LIMIT 1`),
+    ])
+    screensRows = rawScreens.map((r) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      layout: r.layout,
+      script: r.script,
+      sortOrder: r.sort_order,
+    }))
+    globalsLayout = rawGlobals[0]?.layout ?? null
+  }
 
   const payload: PublicProjectPayload = {
     project: { id: project.id, name: project.name, faviconUrl: project.faviconUrl, seoDefaults: project.seoDefaults },
     screens: screensRows.map((r) => ({ ...r, layout: sanitize(r.layout) })),
-    globals: sanitize(globalsRow?.layout ?? {}) as Record<string, unknown>,
+    globals: sanitize(globalsLayout ?? {}) as Record<string, unknown>,
   }
 
   return {
