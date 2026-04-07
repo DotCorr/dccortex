@@ -234,6 +234,9 @@ model ExternalApiSource {
   authHeader  String?  // custom header name for apiKey auth
   schema      Json?    // inferred schema [{name, type}]
   urlParams   Json?    @map("url_params") // [{name, defaultValue, description?}] for {{name}} templates in URL
+  cacheMode   String   @default("cached") @map("cache_mode") // "cached" = DB-served, "realtime" = live-proxied at runtime
+  cachedResponse Json? @map("cached_response") // last fetched API response stored in DB (cacheMode=cached only)
+  cachedAt       DateTime? @map("cached_at")   // when cachedResponse was last refreshed
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

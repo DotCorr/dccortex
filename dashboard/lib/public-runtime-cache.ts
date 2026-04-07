@@ -7,9 +7,8 @@
 
 import { prisma } from '@/lib/prisma'
 
-const EXTERNAL_API_TIMEOUT_MS = 3500
 const RUNTIME_CACHE_TTL_MS = 15 * 1000
-const RUNTIME_CACHE_TTL_ON_SOURCE_ERROR_MS = 3 * 1000
+const REALTIME_FETCH_TIMEOUT_MS = 8000
 const MAX_SIGNATURES_TO_WARM = 12
 
 type VarsMap = Record<string, Record<string, string>>
@@ -160,56 +159,74 @@ export async function buildRuntimeData(projectId: string, varsMap: VarsMap, opts
 
   const apiStart = performance.now()
   let hasSourceErrors = false
-  await Promise.all(
-    apiSources.map(async (src) => {
-      try {
-        const rawHeaders = ((src.headers as Record<string, string> | null) ?? {})
-        const headers: Record<string, string> = Object.fromEntries(
-          Object.entries(rawHeaders).map(([k, v]) => [k, resolveEnvPlaceholders(String(v ?? ''))])
-        )
-        const authValue = src.authValue ? resolveEnvPlaceholders(src.authValue) : src.authValue
-        const requestBody = src.body ? resolveEnvPlaceholders(src.body) : src.body
 
-        if (src.authType === 'bearer' && authValue) headers.Authorization = `Bearer ${authValue}`
-        else if (src.authType === 'basic' && authValue) headers.Authorization = `Basic ${Buffer.from(authValue).toString('base64')}`
-        else if (src.authType === 'apiKey' && authValue) headers[src.authHeader ?? 'X-Api-Key'] = authValue
+  // Separate cached vs realtime sources
+  const cachedSources = apiSources.filter((s) => (s as any).cacheMode !== 'realtime')
+  const realtimeSources = apiSources.filter((s) => (s as any).cacheMode === 'realtime')
 
-        const fetchOptions: RequestInit = {
-          method: src.method,
-          headers,
-          signal: AbortSignal.timeout(EXTERNAL_API_TIMEOUT_MS),
-        }
+  // Cached sources: read from DB — zero HTTP calls
+  for (const src of cachedSources) {
+    if (src.cachedResponse !== null && src.cachedResponse !== undefined) {
+      setWithAliases(result, src.name, src.cachedResponse)
+    } else {
+      setWithAliases(result, src.name, null)
+    }
+  }
 
-        if (requestBody && !['GET', 'HEAD'].includes(src.method.toUpperCase())) {
-          fetchOptions.body = requestBody
-          if (!headers['content-type'] && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
-        }
+  // Realtime sources: live fetch at runtime
+  if (realtimeSources.length > 0) {
+    await Promise.all(
+      realtimeSources.map(async (src) => {
+        try {
+          const rawHeaders = ((src.headers as Record<string, string> | null) ?? {})
+          const headers: Record<string, string> = Object.fromEntries(
+            Object.entries(rawHeaders).map(([k, v]) => [k, resolveEnvPlaceholders(String(v ?? ''))])
+          )
+          const authValue = src.authValue ? resolveEnvPlaceholders(src.authValue) : src.authValue
+          const requestBody = src.body ? resolveEnvPlaceholders(src.body) : src.body
 
-        let resolvedUrl = resolveEnvPlaceholders(src.url)
-        const urlParamDefs = (src.urlParams as Array<{ name: string; defaultValue?: string }> | null) ?? []
-        const sourceVars = varsMap[src.name] ?? {}
-        for (const [k, v] of Object.entries(sourceVars)) {
-          resolvedUrl = resolvedUrl.replaceAll(`{{${k}}}`, encodeURIComponent(v))
-        }
-        for (const p of urlParamDefs) {
-          if (p.defaultValue !== undefined) {
-            const defaultVal = resolveEnvPlaceholders(String(p.defaultValue))
-            resolvedUrl = resolvedUrl.replaceAll(`{{${p.name}}}`, encodeURIComponent(defaultVal))
+          if (src.authType === 'bearer' && authValue) headers.Authorization = `Bearer ${authValue}`
+          else if (src.authType === 'basic' && authValue) headers.Authorization = `Basic ${Buffer.from(authValue).toString('base64')}`
+          else if (src.authType === 'apiKey' && authValue) headers[src.authHeader ?? 'X-Api-Key'] = authValue
+
+          const fetchOptions: RequestInit = {
+            method: src.method,
+            headers,
+            signal: AbortSignal.timeout(REALTIME_FETCH_TIMEOUT_MS),
           }
-        }
 
-        const resp = await fetch(resolvedUrl, fetchOptions)
-        const text = await resp.text()
-        let data: unknown
-        try { data = JSON.parse(text) } catch { data = text }
-        setWithAliases(result, src.name, data)
-      } catch (err) {
-        hasSourceErrors = true
-        setWithAliases(result, src.name, null)
-        console.warn(`[Public data] Failed to fetch source "${src.name}":`, (err as Error).message)
-      }
-    })
-  )
+          if (requestBody && !['GET', 'HEAD'].includes(src.method.toUpperCase())) {
+            fetchOptions.body = requestBody
+            if (!headers['content-type'] && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
+          }
+
+          let resolvedUrl = resolveEnvPlaceholders(src.url)
+          const urlParamDefs = (src.urlParams as Array<{ name: string; defaultValue?: string }> | null) ?? []
+          const sourceVars = varsMap[src.name] ?? {}
+          for (const [k, v] of Object.entries(sourceVars)) {
+            resolvedUrl = resolvedUrl.replaceAll(`{{${k}}}`, encodeURIComponent(v))
+          }
+          for (const p of urlParamDefs) {
+            if (p.defaultValue !== undefined) {
+              const defaultVal = resolveEnvPlaceholders(String(p.defaultValue))
+              resolvedUrl = resolvedUrl.replaceAll(`{{${p.name}}}`, encodeURIComponent(defaultVal))
+            }
+          }
+
+          const resp = await fetch(resolvedUrl, fetchOptions)
+          const text = await resp.text()
+          let data: unknown
+          try { data = JSON.parse(text) } catch { data = text }
+          setWithAliases(result, src.name, data)
+        } catch (err) {
+          hasSourceErrors = true
+          setWithAliases(result, src.name, null)
+          console.warn(`[Runtime] Realtime source "${src.name}" failed:`, (err as Error).message)
+        }
+      })
+    )
+  }
+
   const apiMs = performance.now() - apiStart
 
   return {
@@ -233,8 +250,7 @@ export async function getCachedRuntimeData(projectId: string, varsMap: VarsMap, 
   const built = await buildRuntimeData(projectId, varsMap, opts)
   let nextData = built.data
 
-  // If a source temporarily fails in live mode, retain the last known good value
-  // for that source instead of replacing it with null.
+  // For realtime sources that temporarily fail, retain last-known good value
   if (cached && built.hasSourceErrors) {
     const merged: RuntimeDataMap = { ...built.data }
     for (const [sourceName, value] of Object.entries(built.data)) {
@@ -245,8 +261,7 @@ export async function getCachedRuntimeData(projectId: string, varsMap: VarsMap, 
     nextData = merged
   }
 
-  const ttlMs = built.hasSourceErrors ? RUNTIME_CACHE_TTL_ON_SOURCE_ERROR_MS : RUNTIME_CACHE_TTL_MS
-  runtimeCache.set(key, { ts: now, ttlMs, data: nextData, timings: built.timings })
+  runtimeCache.set(key, { ts: now, ttlMs: RUNTIME_CACHE_TTL_MS, data: nextData, timings: built.timings })
   return { data: nextData, timings: built.timings, cacheHit: false }
 }
 
