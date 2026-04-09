@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireProjectDataAccess } from '@/lib/project-access'
+import { fetchAndCacheApiSource } from '@/lib/fetch-api-source'
 
 async function getSource(projectId: string, sourceId: string) {
   return prisma.externalApiSource.findFirst({ where: { id: sourceId, projectId } })
@@ -51,8 +52,28 @@ export async function PATCH(
       authHeader: body.authHeader !== undefined ? body.authHeader : existing.authHeader,
       schema: body.schema !== undefined ? body.schema : existing.schema,
       urlParams: body.urlParams !== undefined ? body.urlParams : (existing as any).urlParams,
+      cacheMode: body.cacheMode !== undefined ? (body.cacheMode === 'realtime' ? 'realtime' : 'cached') : (existing as any).cacheMode,
     },
   })
+
+  // Re-fetch and cache if any fetch-relevant fields changed (cached mode only)
+  const resolvedCacheMode = (updated as any).cacheMode ?? 'cached'
+  const fetchFieldsChanged = (
+    body.url !== undefined ||
+    body.method !== undefined ||
+    body.headers !== undefined ||
+    body.body !== undefined ||
+    body.authType !== undefined ||
+    body.authValue !== undefined ||
+    body.authHeader !== undefined ||
+    body.urlParams !== undefined
+  )
+  if (resolvedCacheMode === 'cached' && fetchFieldsChanged && updated.url) {
+    fetchAndCacheApiSource(sourceId).catch((err) =>
+      console.warn('[api-sources PATCH] background fetch failed:', err)
+    )
+  }
+
   return NextResponse.json({ source: updated })
 }
 
