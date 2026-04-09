@@ -125,7 +125,7 @@ function evaluateEventCondition(
   }
 }
 
-export default function PreviewApp({ projectId, initialProject }: { projectId: string; initialProject?: PublicProjectPayload | null }) {
+export default function PreviewApp({ projectId, initialProject, initialData }: { projectId: string; initialProject?: PublicProjectPayload | null; initialData?: Record<string, unknown> | null }) {
   const [isDesktopShell, setIsDesktopShell] = useState(false)
   const initialHomeScreenId = useMemo(() => {
     const rows = initialProject?.screens ?? []
@@ -138,14 +138,14 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
   const [currentScreenId, setCurrentScreenId] = useState<string | null>(initialHomeScreenId)
   const screenHistoryRef = useRef<string[]>([])
   const [runtimeState, setRuntimeState] = useState<Record<string, unknown>>({})
-  const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>({})
+  const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>(initialData ?? {})
   const runtimeDataCacheKey = useMemo(() => `dccortex:runtime-data:${projectId}`, [projectId])
   const runtimeDataSignatureCacheKey = useMemo(() => `dccortex:runtime-data-signatures:${projectId}`, [projectId])
   const previewBootstrapCacheKey = useMemo(() => `dccortex:preview-bootstrap:${projectId}`, [projectId])
   const stateCacheKey = useMemo(() => `dccortex:state-cache:${projectId}`, [projectId])
   const runtimeDataRequestIdRef = useRef(0)
-  const lastRuntimeVarsSignatureRef = useRef<string | null>(null)
-  const hasFetchedRuntimeDataRef = useRef(false)
+  const lastRuntimeVarsSignatureRef = useRef<string | null>(initialData ? '' : null)
+  const hasFetchedRuntimeDataRef = useRef(!!initialData)
   const runtimeDataMemoryCacheRef = useRef<Map<string, Record<string, unknown>>>(new Map())
   const prefetchedSignaturesRef = useRef<Set<string>>(new Set())
   const resolvePerfRef = useRef({ calls: 0, totalMs: 0, maxMs: 0 })
@@ -358,27 +358,29 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
 
     const ac = new AbortController()
 
-    // Start runtime data fetch in parallel with project metadata fetch.
-    const preloadRequestId = ++runtimeDataRequestIdRef.current
-    const preloadStart = performance.now()
-    fetch(`/api/p/${projectId}/data`, { signal: ac.signal, cache: 'no-store' })
-      .then(async (r) => {
-        const st = parseServerTimingHeader(r.headers.get('server-timing'))
-        if (st.total !== undefined) networkPerfRef.current.runtimeServerTotalMs = st.total
-        if (st.db !== undefined) networkPerfRef.current.runtimeServerDbMs = st.db
-        if (st.api !== undefined) networkPerfRef.current.runtimeServerApiMs = st.api
-        if (!r.ok) return null
-        return r.json()
-      })
-      .then((d) => {
-        networkPerfRef.current.runtimeFetchMs = performance.now() - preloadStart
-        if (preloadRequestId !== runtimeDataRequestIdRef.current) return
-        if (d?.data) {
-          lastRuntimeVarsSignatureRef.current = ''
-          applyRuntimeData(d.data, '')
-        }
-      })
-      .catch(() => {})
+    // Skip runtime data preload when SSR already provided data
+    if (!initialData) {
+      const preloadRequestId = ++runtimeDataRequestIdRef.current
+      const preloadStart = performance.now()
+      fetch(`/api/p/${projectId}/data`, { signal: ac.signal, cache: 'no-store' })
+        .then(async (r) => {
+          const st = parseServerTimingHeader(r.headers.get('server-timing'))
+          if (st.total !== undefined) networkPerfRef.current.runtimeServerTotalMs = st.total
+          if (st.db !== undefined) networkPerfRef.current.runtimeServerDbMs = st.db
+          if (st.api !== undefined) networkPerfRef.current.runtimeServerApiMs = st.api
+          if (!r.ok) return null
+          return r.json()
+        })
+        .then((d) => {
+          networkPerfRef.current.runtimeFetchMs = performance.now() - preloadStart
+          if (preloadRequestId !== runtimeDataRequestIdRef.current) return
+          if (d?.data) {
+            lastRuntimeVarsSignatureRef.current = ''
+            applyRuntimeData(d.data, '')
+          }
+        })
+        .catch(() => {})
+    }
 
     const projectFetchStart = performance.now()
     fetch(`/api/p/${projectId}`, { signal: ac.signal })
@@ -508,7 +510,7 @@ export default function PreviewApp({ projectId, initialProject }: { projectId: s
       })
       .catch((e) => { if (e?.name !== 'AbortError') setStatus('error') })
     return () => ac.abort()
-  }, [projectId, applyRuntimeData, previewBootstrapCacheKey, stateCacheKey, initialProject])
+  }, [projectId, applyRuntimeData, previewBootstrapCacheKey, stateCacheKey, initialProject, initialData])
 
   const currentScreen = useMemo(() => screens.find((s) => s.id === currentScreenId) ?? null, [screens, currentScreenId])
 

@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireProjectDataAccess } from '@/lib/project-access'
+import { fetchAndCacheApiSource } from '@/lib/fetch-api-source'
 
 export async function GET(
   _req: NextRequest,
@@ -39,7 +40,7 @@ export async function POST(
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     const body = await req.json().catch(() => ({}))
-    const { name, url, method, headers, authType, authValue, authHeader, schema: schemaVal, body: reqBody } = body as {
+    const { name, url, method, headers, authType, authValue, authHeader, schema: schemaVal, body: reqBody, cacheMode } = body as {
       name?: string
       url?: string
       method?: string
@@ -49,12 +50,15 @@ export async function POST(
       authHeader?: string
       schema?: unknown
       body?: string
+      cacheMode?: string
     }
 
     if (!name?.trim()) return NextResponse.json({ error: 'name is required' }, { status: 400 })
 
     // Coerce schema to a JSON-safe value (Prisma Json? requires null or a plain object/array)
     const schemaJson = schemaVal !== undefined ? schemaVal : null
+
+    const resolvedCacheMode = cacheMode === 'realtime' ? 'realtime' : 'cached'
 
     const source = await prisma.externalApiSource.create({
       data: {
@@ -68,8 +72,17 @@ export async function POST(
         authValue: authValue ?? null,
         authHeader: authHeader ?? null,
         schema: schemaJson as any,
+        cacheMode: resolvedCacheMode,
       },
     })
+
+    // Fetch the external API and cache the response in DB (non-blocking, cached mode only)
+    if (resolvedCacheMode === 'cached' && source.url) {
+      fetchAndCacheApiSource(source.id).catch((err) =>
+        console.warn('[api-sources POST] background fetch failed:', err)
+      )
+    }
+
     return NextResponse.json({ source })
   } catch (err: any) {
     console.error('[api-sources POST]', err)

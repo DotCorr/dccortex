@@ -46,6 +46,7 @@ type ApiSource = {
   authHeader: string | null
   schema: Array<{ name: string; type: string }> | null
   urlParams: Array<{ name: string; defaultValue?: string; description?: string }> | null
+  cacheMode: string
 }
 
 type ProjectAsset = { id: string; name: string; url: string; mimetype: string; size: number; createdAt: string }
@@ -71,7 +72,7 @@ function RestApiTab({ projectId }: { projectId: string }) {
   } | null>(null)
   const [testLoading, setTestLoading] = useState(false)
   const [form, setForm] = useState<Partial<ApiSource>>({
-    url: '', method: 'GET', headers: {}, authType: 'none', authValue: '', authHeader: 'X-Api-Key', body: ''
+    url: '', method: 'GET', headers: {}, authType: 'none', authValue: '', authHeader: 'X-Api-Key', body: '', cacheMode: 'cached'
   })
   const [headersText, setHeadersText] = useState('{}')
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
@@ -98,6 +99,7 @@ function RestApiTab({ projectId }: { projectId: string }) {
         authValue: selectedSource.authValue ?? '',
         authHeader: selectedSource.authHeader ?? 'X-Api-Key',
         body: selectedSource.body ?? '',
+        cacheMode: (selectedSource as any).cacheMode ?? 'cached',
       })
       setHeadersText(JSON.stringify(selectedSource.headers ?? {}, null, 2))
       setUrlParamDefs((selectedSource.urlParams ?? []).map(p => ({ name: p.name, defaultValue: p.defaultValue ?? '', description: p.description ?? '' })))
@@ -336,6 +338,54 @@ function RestApiTab({ projectId }: { projectId: string }) {
                   className="w-full px-2 py-1.5 text-sm border border-[var(--border)] rounded bg-[var(--background)] text-[var(--foreground)] font-mono resize-y" />
               </div>
             )}
+
+            {/* Runtime Mode */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5" />
+                Runtime mode
+              </label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setForm(f => ({ ...f, cacheMode: 'cached' }))}
+                  className={`flex-1 px-3 py-2 rounded border text-xs font-medium transition-colors ${
+                    form.cacheMode !== 'realtime'
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
+                      : 'border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]'
+                  }`}>
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <Zap className="h-3.5 w-3.5" />
+                    Instant (cached)
+                  </div>
+                </button>
+                <button type="button" onClick={() => setForm(f => ({ ...f, cacheMode: 'realtime' }))}
+                  className={`flex-1 px-3 py-2 rounded border text-xs font-medium transition-colors ${
+                    form.cacheMode === 'realtime'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                      : 'border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]'
+                  }`}>
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Live (realtime)
+                  </div>
+                </button>
+              </div>
+              <div className="rounded-md bg-[var(--muted)]/50 border border-[var(--border)] px-3 py-2.5 text-[11px] text-[var(--muted-foreground)] leading-relaxed">
+                {form.cacheMode !== 'realtime' ? (
+                  <>
+                    <strong className="text-emerald-600 dark:text-emerald-400">Instant mode</strong> — Data is fetched once when you save or refresh, then stored directly in the database.
+                    Your published app reads it instantly from the DB with <strong>zero network calls</strong> — no waiting on external servers.
+                    This is what makes your app load as fast as a static page while still being fully dynamic.
+                    Perfect for reference data, weather, catalogs, or any API that doesn&apos;t change every second.
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-blue-600 dark:text-blue-400">Live mode</strong> — Every page load fetches fresh data from the external API in real time, proxied securely through your server (API keys stay hidden).
+                    Use this for live feeds, AI completions, stock tickers, or POST/PUT mutations that change state on the external service.
+                    Slightly slower than instant mode since it depends on the external API&apos;s response time.
+                  </>
+                )}
+              </div>
+            </div>
 
             {/* Test */}
             <div className="space-y-3">
