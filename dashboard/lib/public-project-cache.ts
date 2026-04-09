@@ -172,7 +172,11 @@ export async function getCachedPublicProjectPayload(projectId: string): Promise<
   }
 
   const built = await buildPublicProjectPayload(projectId)
-  projectCache.set(projectId, { ts: now, payload: built.payload, timings: built.timings })
+  // Only cache if the payload has screens — a published project with 0 screens
+  // is likely mid-setup and caching it would return stale empty data until TTL expires.
+  if (built.payload.screens.length > 0) {
+    projectCache.set(projectId, { ts: now, payload: built.payload, timings: built.timings })
+  }
   return { payload: built.payload, timings: built.timings, cacheHit: false }
 }
 

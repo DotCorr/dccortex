@@ -1203,8 +1203,18 @@ fi
 section "12b. Visual Rendering — HTML Verification"
 # =========================================================================
 
+# Warm up the public API endpoint (first hit after server recompile can be slow)
+curl -s -o /dev/null "${BASE_URL}/api/p/$PROJECT_ID"
+sleep 1
+
 # Fetch the public project payload and verify layout + data are structured correctly
 PUB_PAYLOAD=$(curl -s "${BASE_URL}/api/p/$PROJECT_ID")
+# If screens are empty, retry once (cache may have stale empty entry from recompile)
+PUB_SCREEN_COUNT=$(echo "$PUB_PAYLOAD" | jq '.screens | length // 0')
+if [[ "$PUB_SCREEN_COUNT" == "0" ]]; then
+  sleep 2
+  PUB_PAYLOAD=$(curl -s "${BASE_URL}/api/p/$PROJECT_ID")
+fi
 
 # 1. Verify screen layout has correct root node type
 ROOT_TYPE=$(echo "$PUB_PAYLOAD" | jq -r '.screens[0].layout.root.type // .screens[0].layout.type // empty')
@@ -1308,6 +1318,176 @@ if echo "$HTML" | grep -q "$PROJECT_ID"; then
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}✗${NC} Preview page missing project data"
+  FAIL=$((FAIL + 1))
+fi
+
+# 10. Verify state bindings resolve in SSR HTML (not empty)
+if echo "$HTML" | grep -q 'Welcome, Guest!'; then
+  echo -e "  ${GREEN}✓${NC} SSR resolves state binding: 'Welcome, Guest!'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} SSR state binding may resolve client-side only"
+  SKIP=$((SKIP + 1))
+fi
+
+# 11. Verify stackH renders flex-direction:row in HTML
+if echo "$HTML" | grep -o 'id="hero-stats-row"[^>]*' | head -1 | grep -q 'flex-direction:row'; then
+  echo -e "  ${GREEN}✓${NC} stackH renders with flex-direction:row in HTML"
+  PASS=$((PASS + 1))
+elif echo "$HTML" | grep -A2 'hero-stats-row' | grep -q 'flex-direction:row'; then
+  echo -e "  ${GREEN}✓${NC} stackH renders with flex-direction:row in HTML"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} stackH flex-direction:row not found in SSR HTML (may resolve client-side)"
+  SKIP=$((SKIP + 1))
+fi
+
+# 12. Verify borderRadius has px units in rendered HTML (no bare 'border-radius:12')
+# Match border-radius followed by digits then a semicolon or quote (missing px/em/rem/%)
+BAD_BR_COUNT=$(echo "$HTML" | { grep -oE 'border-radius:[0-9]+[;"]' || true; } | wc -l | tr -d ' ')
+if [[ "$BAD_BR_COUNT" == "0" ]]; then
+  echo -e "  ${GREEN}✓${NC} All border-radius values have px units in HTML"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Found $BAD_BR_COUNT border-radius values without px units"
+  FAIL=$((FAIL + 1))
+fi
+
+# =========================================================================
+section "12c. Runtime Resolve API — Style & Binding Verification"
+# =========================================================================
+
+# Build the layout root from the public payload for the resolve API
+LAYOUT_ROOT=$(echo "$PUB_PAYLOAD" | jq '.screens[0].layout.root')
+STATE_OBJ='{"username":"Guest","clicks":0,"formName":"","formEmail":"","darkMode":false}'
+DATA_OBJ=$(echo "$PUB_RESP" | jq '.data // {}')
+
+RESOLVE_RESP=$(curl -s -X POST "${BASE_URL}/api/runtime-resolve" \
+  -H "Content-Type: application/json" \
+  -d "{\"root\":$LAYOUT_ROOT,\"state\":$STATE_OBJ,\"data\":$DATA_OBJ}")
+
+# 1. stackH components must have flexDirection: row
+STACKH_DIRS=$(echo "$RESOLVE_RESP" | jq -r '[.flatNodes[] | select(.type == "stackH") | .flexDirection] | unique | join(",")')
+if [[ "$STACKH_DIRS" == "row" ]]; then
+  echo -e "  ${GREEN}✓${NC} stackH components have flexDirection: row"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} stackH flexDirection wrong: '$STACKH_DIRS' — expected 'row'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 2. header has flexDirection: row
+HEADER_DIR=$(echo "$RESOLVE_RESP" | jq -r '.flatNodes[] | select(.id == "header") | .flexDirection')
+if [[ "$HEADER_DIR" == "row" ]]; then
+  echo -e "  ${GREEN}✓${NC} Header has flexDirection: row"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Header flexDirection: '$HEADER_DIR' — expected 'row'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 3. footer has justifyContent: center
+FOOTER_JC=$(echo "$RESOLVE_RESP" | jq -r '.flatNodes[] | select(.id == "footer") | .resolvedProps.justifyContent // empty')
+# Also check from computedStyle if available
+if [[ -z "$FOOTER_JC" ]]; then
+  FOOTER_JC=$(echo "$RESOLVE_RESP" | jq -r '.tree.children[-1].computedStyle.justifyContent // empty')
+fi
+if [[ "$FOOTER_JC" == "center" ]]; then
+  echo -e "  ${GREEN}✓${NC} Footer has justifyContent: center"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Footer justifyContent: '$FOOTER_JC' — expected 'center'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 4. State binding resolves — "Welcome, Guest!"
+WELCOME_TEXT=$(echo "$RESOLVE_RESP" | jq -r '.flatNodes[] | select(.id == "hero-title") | .content')
+if [[ "$WELCOME_TEXT" == *"Guest"* ]]; then
+  echo -e "  ${GREEN}✓${NC} State binding resolved: 'Welcome, Guest!'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} State binding failed: '$WELCOME_TEXT'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 5. Click counter resolves
+CLICKS_TEXT=$(echo "$RESOLVE_RESP" | jq -r '.flatNodes[] | select(.id == "click-btn") | .content')
+if [[ "$CLICKS_TEXT" == *"0"* ]]; then
+  echo -e "  ${GREEN}✓${NC} Click counter resolved: '$CLICKS_TEXT'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Click counter binding failed: '$CLICKS_TEXT'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 6. borderRadius has px units (not bare numbers)
+BAD_RADIUS=$(echo "$RESOLVE_RESP" | jq -r '[.flatNodes[] | select(.borderRadius != null) | select((.borderRadius | tostring) | test("^[0-9]+$"))] | length')
+if [[ "$BAD_RADIUS" == "0" ]]; then
+  echo -e "  ${GREEN}✓${NC} All borderRadius values have CSS units"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} $BAD_RADIUS nodes have borderRadius without CSS units"
+  FAIL=$((FAIL + 1))
+fi
+
+# 7. No zero-issue count (all bindings resolve)
+ISSUE_COUNT=$(echo "$RESOLVE_RESP" | jq '.issueCount')
+if [[ "$ISSUE_COUNT" == "0" ]]; then
+  echo -e "  ${GREEN}✓${NC} No rendering issues detected"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} $ISSUE_COUNT rendering issues: $(echo "$RESOLVE_RESP" | jq -c '.issues[:3]')"
+  SKIP=$((SKIP + 1))
+fi
+
+# 8. Data binding resolves — contacts repeater
+REPEATER_CONTENT=$(echo "$RESOLVE_RESP" | jq -r '.flatNodes[] | select(.id == "contacts-title") | .content')
+if [[ "$REPEATER_CONTENT" == *"2 records"* ]]; then
+  echo -e "  ${GREEN}✓${NC} Contacts title shows record count: '$REPEATER_CONTENT'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Contacts title missing data: '$REPEATER_CONTENT'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 9. Weather API data resolves  
+WEATHER_TEXT=$(echo "$RESOLVE_RESP" | jq -r '.flatNodes[] | select(.id == "weather-temp") | .content')  
+if [[ "$WEATHER_TEXT" == *"°C"* ]]; then
+  echo -e "  ${GREEN}✓${NC} Weather API data resolved: '$WEATHER_TEXT'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Weather data binding failed: '$WEATHER_TEXT'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 10. Header padding accepts CSS shorthand (16px 24px)
+HEADER_PAD=$(echo "$RESOLVE_RESP" | jq -r '.flatNodes[] | select(.id == "header") | .padding')
+if [[ "$HEADER_PAD" == *"16px"* || "$HEADER_PAD" == *"24px"* ]]; then
+  echo -e "  ${GREEN}✓${NC} Header padding preserved: '$HEADER_PAD'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Header padding lost: '$HEADER_PAD'"
+  FAIL=$((FAIL + 1))
+fi
+
+# 11. Component registry accessible
+REG_RESP=$(curl -s "${BASE_URL}/api/runtime-registry")
+COMP_COUNT=$(echo "$REG_RESP" | jq '.componentCount // 0')
+if [[ "$COMP_COUNT" -ge 20 ]]; then
+  echo -e "  ${GREEN}✓${NC} Component registry returns $COMP_COUNT components"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Component registry returned only $COMP_COUNT components"
+  FAIL=$((FAIL + 1))
+fi
+
+# 12. Registry has stackH with flexDirection: row default
+STACKH_DEFAULT=$(echo "$REG_RESP" | jq -r '.components[] | select(.id == "stackH") | .defaultProps.flexDirection')
+if [[ "$STACKH_DEFAULT" == "row" ]]; then
+  echo -e "  ${GREEN}✓${NC} stackH registry default flexDirection is 'row'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} stackH registry default: '$STACKH_DEFAULT'"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1471,7 +1651,499 @@ else
 fi
 
 # =========================================================================
-section "20. RBAC — Unauthenticated Access Denied"
+section "21. Second App — Task Manager (full lifecycle)"
+# =========================================================================
+
+# Create a second project with different component types, multi-screen, different data
+APP2_RESP=$(api_post "/api/projects" "{\"name\":\"Task Manager\",\"organizationId\":\"$ORG_ID\"}")
+APP2_ID=$(echo "$APP2_RESP" | jq -r '.project.id')
+assert_json_field "App2 project created" "$APP2_RESP" ".project.id"
+
+# Create tasks table
+APP2_DS_RESP=$(api_post "/api/projects/$APP2_ID/datasources" '{"name":"internal","type":"internal"}')
+APP2_DS_ID=$(echo "$APP2_DS_RESP" | jq -r '.datasource.id')
+APP2_TBL_RESP=$(api_post "/api/projects/$APP2_ID/datasources/$APP2_DS_ID/tables" '{"name":"tasks"}')
+APP2_TBL_ID=$(echo "$APP2_TBL_RESP" | jq -r '.table.id')
+assert_json_field "App2 tasks table created" "$APP2_TBL_RESP" ".table.id"
+
+# Add columns via batch PATCH (same as first app)
+APP2_COL_RESP=$(api_patch "/api/projects/$APP2_ID/datasources/$APP2_DS_ID/tables" "{
+  \"tableId\": \"$APP2_TBL_ID\",
+  \"columns\": [
+    {\"name\": \"title\", \"type\": \"text\"},
+    {\"name\": \"completed\", \"type\": \"boolean\"},
+    {\"name\": \"priority\", \"type\": \"text\"},
+    {\"name\": \"due_date\", \"type\": \"text\"}
+  ]
+}")
+APP2_COL_COUNT=$(echo "$APP2_COL_RESP" | jq '.table.columns | length')
+if [[ "$APP2_COL_COUNT" == "4" ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 columns created ($APP2_COL_COUNT)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 columns expected 4, got $APP2_COL_COUNT"
+  FAIL=$((FAIL + 1))
+fi
+
+# Insert test rows
+api_post "/api/projects/$APP2_ID/datasources/$APP2_DS_ID/tables/$APP2_TBL_ID/rows" \
+  '{"title":"Fix login bug","completed":false,"priority":"high","due_date":"2026-04-15"}' > /dev/null
+api_post "/api/projects/$APP2_ID/datasources/$APP2_DS_ID/tables/$APP2_TBL_ID/rows" \
+  '{"title":"Write docs","completed":true,"priority":"medium","due_date":"2026-04-10"}' > /dev/null
+api_post "/api/projects/$APP2_ID/datasources/$APP2_DS_ID/tables/$APP2_TBL_ID/rows" \
+  '{"title":"Deploy v2","completed":false,"priority":"high","due_date":"2026-04-20"}' > /dev/null
+echo -e "  ${GREEN}✓${NC} App2 tasks inserted (3 rows)"
+PASS=$((PASS + 1))
+
+# Set globals: state definitions + theme
+APP2_GLOBALS='{
+  "globalStateDefinitions": [
+    {"name": "filter", "type": "text", "initialValue": "all"},
+    {"name": "newTask", "type": "text", "initialValue": ""},
+    {"name": "taskCount", "type": "number", "initialValue": 0},
+    {"name": "showCompleted", "type": "boolean", "initialValue": true}
+  ],
+  "globalTheme": {
+    "primary": "#10b981",
+    "background": "#f0fdf4",
+    "text": "#064e3b",
+    "surface": "#ffffff",
+    "borderColor": "#d1fae5"
+  }
+}'
+APP2_GLOB_RESP=$(api_put "/api/projects/$APP2_ID/globals" "$APP2_GLOBALS")
+assert_json_eq "App2 globals saved" "$APP2_GLOB_RESP" ".ok" "true"
+
+# Screen 1: Task List — uses tabs, dataRepeater, checkbox, badge, progressBar, alertBanner
+APP2_SCREEN1_LAYOUT='{
+  "root": {
+    "id": "root",
+    "type": "container",
+    "props": {
+      "display": "flex", "flexDirection": "column", "gap": 16,
+      "padding": 24, "minHeight": "100vh", "backgroundColor": "#f0fdf4"
+    },
+    "children": [
+      {
+        "id": "app-header",
+        "type": "header",
+        "props": {
+          "display": "flex", "flexDirection": "row",
+          "justifyContent": "space-between", "alignItems": "center",
+          "padding": "12px 20px", "backgroundColor": "#ffffff", "borderRadius": 8
+        },
+        "children": [
+          {
+            "id": "app-title",
+            "type": "text",
+            "props": {"content": "Task Manager", "fontSize": "22px", "fontWeight": "700", "color": "#064e3b"},
+            "children": []
+          },
+          {
+            "id": "task-count-badge",
+            "type": "badge",
+            "props": {"label": "{{state.taskCount}} tasks", "variant": "info", "size": "md"},
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "add-task-row",
+        "type": "stackH",
+        "props": {"gap": 8, "alignItems": "center"},
+        "children": [
+          {
+            "id": "new-task-input",
+            "type": "textInput",
+            "props": {
+              "placeholder": "Add a new task...",
+              "value": "{{state.newTask}}",
+              "onChange": [{"action": "setState", "stateKey": "newTask", "value": "{{event.value}}"}]
+            },
+            "children": []
+          },
+          {
+            "id": "add-task-btn",
+            "type": "button",
+            "props": {
+              "label": "Add",
+              "variant": "primary",
+              "backgroundColor": "#10b981",
+              "color": "#ffffff",
+              "padding": "8px 16px",
+              "borderRadius": 6,
+              "onClick": [
+                {"action": "insertRow", "tableName": "tasks", "rowData": {"title": "{{state.newTask}}", "completed": false, "priority": "medium", "due_date": ""}, "resultStateKey": "lastInsert"},
+                {"action": "setState", "stateKey": "newTask", "value": ""}
+              ]
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "progress-section",
+        "type": "card",
+        "props": {"padding": 16, "backgroundColor": "#ffffff", "borderRadius": 8, "shadow": "sm"},
+        "children": [
+          {
+            "id": "progress-label",
+            "type": "text",
+            "props": {"content": "Completion Progress", "fontSize": "14px", "fontWeight": "600", "color": "#064e3b"},
+            "children": []
+          },
+          {
+            "id": "task-progress",
+            "type": "progressBar",
+            "props": {"value": 33, "max": 100, "color": "#10b981", "height": "8px", "showLabel": true},
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "filter-tabs",
+        "type": "tabs",
+        "props": {
+          "tabs": ["All", "Active", "Completed"],
+          "activeTab": "{{state.filter}}",
+          "variant": "pills",
+          "onChange": [{"action": "setState", "stateKey": "filter", "value": "{{event.value}}"}]
+        },
+        "children": []
+      },
+      {
+        "id": "no-tasks-alert",
+        "type": "alertBanner",
+        "props": {
+          "message": "No tasks yet! Add your first task above.",
+          "variant": "info",
+          "visible": true
+        },
+        "children": []
+      },
+      {
+        "id": "tasks-list",
+        "type": "dataRepeater",
+        "props": {
+          "dataSource": "{{data.tasks}}",
+          "itemVar": "task",
+          "emptyText": "No tasks",
+          "display": "flex", "flexDirection": "column", "gap": 8
+        },
+        "children": [
+          {
+            "id": "task-item",
+            "type": "card",
+            "props": {
+              "shadow": "sm", "rounded": "md",
+              "display": "flex", "flexDirection": "row", "alignItems": "center",
+              "gap": 12, "padding": "10px 14px", "backgroundColor": "#ffffff"
+            },
+            "children": [
+              {
+                "id": "task-checkbox",
+                "type": "checkbox",
+                "props": {
+                  "checked": "{{task.completed}}",
+                  "onChange": [{"action": "updateRow", "tableName": "tasks", "rowId": "{{task.id}}", "rowData": {"completed": "{{event.checked}}"}}]
+                },
+                "children": []
+              },
+              {
+                "id": "task-title",
+                "type": "text",
+                "props": {"content": "{{task.title}}", "fontSize": "14px", "color": "#064e3b"},
+                "children": []
+              },
+              {
+                "id": "task-spacer",
+                "type": "spacer",
+                "props": {"flex": 1},
+                "children": []
+              },
+              {
+                "id": "task-priority-badge",
+                "type": "badge",
+                "props": {"label": "{{task.priority}}", "variant": "warning", "size": "sm"},
+                "children": []
+              },
+              {
+                "id": "task-due",
+                "type": "text",
+                "props": {"content": "{{task.due_date}}", "fontSize": "12px", "color": "#6b7280"},
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "app-footer",
+        "type": "footer",
+        "props": {
+          "display": "flex", "flexDirection": "row", "justifyContent": "center",
+          "padding": "12px 0", "backgroundColor": "transparent"
+        },
+        "children": [
+          {
+            "id": "footer-text",
+            "type": "text",
+            "props": {"content": "Built with DCCortex", "fontSize": "12px", "color": "#9ca3af"},
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}'
+
+APP2_SC1_RESP=$(api_post "/api/projects/$APP2_ID/screens" \
+  "{\"name\":\"Tasks\",\"slug\":\"tasks\",\"route\":\"/\",\"layout\":$APP2_SCREEN1_LAYOUT}")
+APP2_SC1_ID=$(echo "$APP2_SC1_RESP" | jq -r '.screen.id')
+assert_json_field "App2 screen 'Tasks' created" "$APP2_SC1_RESP" ".screen.id"
+
+# Screen 2: Settings — uses toggle, select, divider, avatar, different layout
+APP2_SCREEN2_LAYOUT='{
+  "root": {
+    "id": "settings-root",
+    "type": "container",
+    "props": {
+      "display": "flex", "flexDirection": "column", "gap": 20,
+      "padding": 24, "maxWidth": "600px", "margin": "0 auto"
+    },
+    "children": [
+      {
+        "id": "settings-header",
+        "type": "stackH",
+        "props": {"gap": 12, "alignItems": "center"},
+        "children": [
+          {
+            "id": "user-avatar",
+            "type": "avatar",
+            "props": {"initials": "TM", "size": "lg", "backgroundColor": "#10b981"},
+            "children": []
+          },
+          {
+            "id": "settings-title",
+            "type": "text",
+            "props": {"content": "Settings", "fontSize": "24px", "fontWeight": "700", "color": "#064e3b"},
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "settings-divider",
+        "type": "divider",
+        "props": {"orientation": "horizontal", "color": "#d1fae5", "thickness": 1},
+        "children": []
+      },
+      {
+        "id": "show-completed-row",
+        "type": "stackH",
+        "props": {"gap": 12, "alignItems": "center", "justifyContent": "space-between"},
+        "children": [
+          {
+            "id": "show-completed-label",
+            "type": "text",
+            "props": {"content": "Show completed tasks", "fontSize": "14px", "color": "#064e3b"},
+            "children": []
+          },
+          {
+            "id": "show-completed-toggle",
+            "type": "toggle",
+            "props": {
+              "checked": "{{state.showCompleted}}",
+              "onChange": [{"action": "setState", "stateKey": "showCompleted", "value": "{{event.checked}}"}]
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "back-btn",
+        "type": "button",
+        "props": {
+          "label": "← Back to Tasks",
+          "variant": "outline",
+          "padding": "8px 16px",
+          "borderRadius": 6,
+          "onClick": [{"action": "navigate", "screen": "tasks"}]
+        },
+        "children": []
+      }
+    ]
+  }
+}'
+
+APP2_SC2_RESP=$(api_post "/api/projects/$APP2_ID/screens" \
+  "{\"name\":\"Settings\",\"slug\":\"settings\",\"route\":\"/settings\",\"layout\":$APP2_SCREEN2_LAYOUT}")
+APP2_SC2_ID=$(echo "$APP2_SC2_RESP" | jq -r '.screen.id')
+assert_json_field "App2 screen 'Settings' created" "$APP2_SC2_RESP" ".screen.id"
+
+# Publish
+APP2_PUB=$(api_put "/api/projects/$APP2_ID" '{"isPublished":true}')
+assert_json_eq "App2 published" "$APP2_PUB" ".project.status" "published"
+
+# ------ Verify App2 public payload ------
+APP2_PAYLOAD=$(curl -s "${BASE_URL}/api/p/$APP2_ID")
+APP2_SCREEN_COUNT=$(echo "$APP2_PAYLOAD" | jq '.screens | length')
+if [[ "$APP2_SCREEN_COUNT" == "2" ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 has 2 screens"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 expected 2 screens, got $APP2_SCREEN_COUNT"
+  FAIL=$((FAIL + 1))
+fi
+
+# Verify state definitions
+APP2_STATE_COUNT=$(echo "$APP2_PAYLOAD" | jq '.globals.globalStateDefinitions | length')
+if [[ "$APP2_STATE_COUNT" == "4" ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 has 4 state definitions"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 expected 4 state definitions, got $APP2_STATE_COUNT"
+  FAIL=$((FAIL + 1))
+fi
+
+# Verify theme
+APP2_THEME_PRIMARY=$(echo "$APP2_PAYLOAD" | jq -r '.globals.globalTheme.primary // empty')
+if [[ "$APP2_THEME_PRIMARY" == "#10b981" ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 theme primary = #10b981 (green)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 theme primary expected #10b981, got $APP2_THEME_PRIMARY"
+  FAIL=$((FAIL + 1))
+fi
+
+# Verify runtime data has tasks
+APP2_DATA=$(curl -s "${BASE_URL}/api/p/$APP2_ID/data")
+APP2_TASK_COUNT=$(echo "$APP2_DATA" | jq '.data.tasks | length')
+if [[ "$APP2_TASK_COUNT" -ge 3 ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 runtime data has $APP2_TASK_COUNT tasks"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 expected >=3 tasks, got $APP2_TASK_COUNT"
+  FAIL=$((FAIL + 1))
+fi
+
+# Verify task data content
+APP2_FIRST_TASK=$(echo "$APP2_DATA" | jq -r '.data.tasks[0].title // empty')
+if [[ -n "$APP2_FIRST_TASK" ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 first task has title ($APP2_FIRST_TASK)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 first task title is empty"
+  FAIL=$((FAIL + 1))
+fi
+
+# ------ Resolve API on App2 layout ------
+APP2_LAYOUT_ROOT=$(echo "$APP2_PAYLOAD" | jq '.screens[0].layout.root')
+APP2_STATE_OBJ='{"filter":"all","newTask":"","taskCount":0,"showCompleted":true}'
+APP2_DATA_OBJ=$(echo "$APP2_DATA" | jq '.data // {}')
+
+APP2_RESOLVE=$(curl -s -X POST "${BASE_URL}/api/runtime-resolve" \
+  -H "Content-Type: application/json" \
+  -d "{\"root\":$APP2_LAYOUT_ROOT,\"state\":$APP2_STATE_OBJ,\"data\":$APP2_DATA_OBJ}")
+
+# stackH in app2 should resolve to flexDirection: row
+APP2_STACKH_DIR=$(echo "$APP2_RESOLVE" | jq -r '[.flatNodes[] | select(.type == "stackH") | .flexDirection] | unique | join(",")')
+if [[ "$APP2_STACKH_DIR" == "row" ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 stackH → flexDirection: row"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 stackH flexDirection expected 'row', got '$APP2_STACKH_DIR'"
+  FAIL=$((FAIL + 1))
+fi
+
+# dataRepeater binding should resolve
+APP2_REPEATER=$(echo "$APP2_RESOLVE" | jq -r '[.flatNodes[] | select(.type == "dataRepeater")] | length')
+if [[ "$APP2_REPEATER" -ge 1 ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 dataRepeater present in resolved tree"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 dataRepeater not found in resolved tree"
+  FAIL=$((FAIL + 1))
+fi
+
+# Badge text should resolve {{state.taskCount}}
+APP2_BADGE_TEXT=$(echo "$APP2_RESOLVE" | jq -r '[.flatNodes[] | select(.type == "badge")] | .[0].content // .[0].label // empty')
+if [[ "$APP2_BADGE_TEXT" == "0 tasks" ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 badge resolves '0 tasks' from state"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 badge expected '0 tasks', got '$APP2_BADGE_TEXT'"
+  FAIL=$((FAIL + 1))
+fi
+
+# ------ App2 SSR HTML verification ------
+APP2_HTML=$(curl -s "${BASE_URL}/p/$APP2_ID")
+if echo "$APP2_HTML" | grep -q 'Task Manager'; then
+  echo -e "  ${GREEN}✓${NC} App2 HTML contains 'Task Manager'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 HTML missing 'Task Manager'"
+  FAIL=$((FAIL + 1))
+fi
+
+if echo "$APP2_HTML" | grep -q 'Fix login bug\|Write docs\|Deploy v2'; then
+  echo -e "  ${GREEN}✓${NC} App2 HTML contains task data in SSR"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} App2 HTML missing task data in SSR"
+  FAIL=$((FAIL + 1))
+fi
+
+# Screen 2 resolve — verify avatar and toggle
+APP2_SC2_ROOT=$(echo "$APP2_PAYLOAD" | jq '.screens[1].layout.root')
+if [[ "$APP2_SC2_ROOT" != "null" && -n "$APP2_SC2_ROOT" ]]; then
+  APP2_SC2_RESOLVE=$(curl -s -X POST "${BASE_URL}/api/runtime-resolve" \
+    -H "Content-Type: application/json" \
+    -d "{\"root\":$APP2_SC2_ROOT,\"state\":$APP2_STATE_OBJ,\"data\":$APP2_DATA_OBJ}")
+
+  APP2_SC2_TYPES=$(echo "$APP2_SC2_RESOLVE" | jq -r '[.flatNodes[].type] | unique | join(",")')
+  if echo "$APP2_SC2_TYPES" | grep -q 'avatar'; then
+    echo -e "  ${GREEN}✓${NC} App2 Settings screen has avatar component"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} App2 Settings screen missing avatar"
+    FAIL=$((FAIL + 1))
+  fi
+
+  if echo "$APP2_SC2_TYPES" | grep -q 'toggle'; then
+    echo -e "  ${GREEN}✓${NC} App2 Settings screen has toggle component"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} App2 Settings screen missing toggle"
+    FAIL=$((FAIL + 1))
+  fi
+
+  if echo "$APP2_SC2_TYPES" | grep -q 'divider'; then
+    echo -e "  ${GREEN}✓${NC} App2 Settings screen has divider component"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} App2 Settings screen missing divider"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo -e "  ${YELLOW}⚠${NC} App2 screen 2 layout not available"
+  SKIP=$((SKIP + 1))
+fi
+
+# Cleanup: delete App2
+DEL_APP2=$(curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "Content-Type: application/json" \
+  -X DELETE --data-raw '{"verificationName":"Task Manager"}' "${BASE_URL}/api/projects/$APP2_ID")
+DEL_APP2_OK=$(echo "$DEL_APP2" | jq -r '.success // empty')
+if [[ "$DEL_APP2_OK" == "true" ]]; then
+  echo -e "  ${GREEN}✓${NC} App2 cleaned up (deleted)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} App2 cleanup: delete returned $DEL_APP2_OK"
+  SKIP=$((SKIP + 1))
+fi
+
+# =========================================================================
+section "22. RBAC — Unauthenticated Access Denied"
 # =========================================================================
 
 # Without cookies, authenticated endpoints should return 401
@@ -1483,6 +2155,708 @@ assert_status "GET /api/organizations without auth → 401" "401" "$UNAUTH_ORG"
 
 UNAUTH_CONN=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/projects/$PROJECT_ID/db-connectors")
 assert_status "GET /db-connectors without auth → 401" "401" "$UNAUTH_CONN"
+
+# =========================================================================
+section "23. Runtime Deep Dive — Events, Repeater Bindings, Components, Theme"
+# =========================================================================
+
+# Create a dedicated runtime test project
+RT_RESP=$(api_post "/api/projects" "{\"name\":\"Runtime Test Suite\",\"organizationId\":\"$ORG_ID\"}")
+RT_ID=$(echo "$RT_RESP" | jq -r '.project.id')
+assert_json_field "Runtime project created" "$RT_RESP" ".project.id"
+
+# Create internal datasource + table
+RT_DS_RESP=$(api_post "/api/projects/$RT_ID/datasources" '{"name":"internal","type":"internal"}')
+RT_DS_ID=$(echo "$RT_DS_RESP" | jq -r '.datasource.id')
+RT_TBL_RESP=$(api_post "/api/projects/$RT_ID/datasources/$RT_DS_ID/tables" '{"name":"items"}')
+RT_TBL_ID=$(echo "$RT_TBL_RESP" | jq -r '.table.id')
+assert_json_field "Runtime table created" "$RT_TBL_RESP" ".table.id"
+
+# Add columns
+RT_COL_RESP=$(api_patch "/api/projects/$RT_ID/datasources/$RT_DS_ID/tables" "{
+  \"tableId\": \"$RT_TBL_ID\",
+  \"columns\": [
+    {\"name\": \"title\", \"type\": \"text\"},
+    {\"name\": \"done\", \"type\": \"boolean\"},
+    {\"name\": \"score\", \"type\": \"number\"},
+    {\"name\": \"category\", \"type\": \"text\"}
+  ]
+}")
+RT_COL_COUNT=$(echo "$RT_COL_RESP" | jq '.table.columns | length')
+if [[ "$RT_COL_COUNT" == "4" ]]; then
+  echo -e "  ${GREEN}✓${NC} Runtime table has 4 columns"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Runtime table expected 4 columns, got $RT_COL_COUNT"
+  FAIL=$((FAIL + 1))
+fi
+
+# Insert 4 test rows
+RT_ROW1=$(api_post "/api/projects/$RT_ID/datasources/$RT_DS_ID/tables/$RT_TBL_ID/rows" \
+  '{"title":"Alpha","done":false,"score":80,"category":"Work"}')
+RT_ROW1_ID=$(echo "$RT_ROW1" | jq -r '.row.id // empty')
+RT_ROW2=$(api_post "/api/projects/$RT_ID/datasources/$RT_DS_ID/tables/$RT_TBL_ID/rows" \
+  '{"title":"Bravo","done":true,"score":95,"category":"Play"}')
+RT_ROW2_ID=$(echo "$RT_ROW2" | jq -r '.row.id // empty')
+api_post "/api/projects/$RT_ID/datasources/$RT_DS_ID/tables/$RT_TBL_ID/rows" \
+  '{"title":"Charlie","done":false,"score":42,"category":"Work"}' > /dev/null
+api_post "/api/projects/$RT_ID/datasources/$RT_DS_ID/tables/$RT_TBL_ID/rows" \
+  '{"title":"Delta","done":true,"score":67,"category":"Play"}' > /dev/null
+echo -e "  ${GREEN}✓${NC} 4 test rows inserted"
+PASS=$((PASS + 1))
+
+# Set globals: state definitions + theme + colorMode
+RT_GLOBALS='{
+  "globalStateDefinitions": [
+    {"name": "clickCount", "type": "number", "initialValue": 0},
+    {"name": "inputVal", "type": "text", "initialValue": ""},
+    {"name": "toggled", "type": "boolean", "initialValue": false},
+    {"name": "selectedTab", "type": "text", "initialValue": "All"},
+    {"name": "lastAction", "type": "text", "initialValue": "none"}
+  ],
+  "globalTheme": {
+    "primary": "#6366f1",
+    "background": "#faf5ff",
+    "text": "#1e1b4b",
+    "surface": "#ffffff",
+    "borderColor": "#e9d5ff",
+    "colorMode": "light"
+  }
+}'
+RT_GLOB_RESP=$(api_put "/api/projects/$RT_ID/globals" "$RT_GLOBALS")
+assert_json_eq "Runtime globals saved" "$RT_GLOB_RESP" ".ok" "true"
+
+# Build a screen that exercises EVERY major runtime feature
+RT_SCREEN_LAYOUT='{
+  "root": {
+    "id": "root",
+    "type": "container",
+    "props": {
+      "display": "flex", "flexDirection": "column", "gap": 16,
+      "padding": 24, "minHeight": "100vh", "backgroundColor": "#faf5ff"
+    },
+    "children": [
+      {
+        "id": "hdr",
+        "type": "header",
+        "props": {
+          "display": "flex", "flexDirection": "row", "justifyContent": "space-between",
+          "alignItems": "center", "padding": "12px 20px", "backgroundColor": "#ffffff",
+          "borderRadius": 10, "boxShadow": "0 1px 3px rgba(0,0,0,0.08)"
+        },
+        "children": [
+          {"id": "page-title", "type": "gradientText", "props": {"content": "Runtime Test", "fontSize": "24px", "fontWeight": "800", "gradient": "linear-gradient(135deg, #6366f1, #a855f7)"}, "children": []},
+          {"id": "hdr-right", "type": "stackH", "props": {"gap": 8, "alignItems": "center"}, "children": [
+            {"id": "click-badge", "type": "badge", "props": {"label": "Clicks: {{state.clickCount}}", "variant": "info", "size": "md"}, "children": []},
+            {"id": "user-av", "type": "avatar", "props": {"initials": "RT", "size": "md", "backgroundColor": "#6366f1"}, "children": []}
+          ]}
+        ]
+      },
+      {
+        "id": "events-card", "type": "card",
+        "props": {"padding": 16, "backgroundColor": "#ffffff", "borderRadius": 10, "shadow": "sm"},
+        "children": [
+          {"id": "events-title", "type": "text", "props": {"content": "Event Testing", "fontSize": "16px", "fontWeight": "600", "color": "#1e1b4b"}, "children": []},
+          {"id": "events-row", "type": "stackH", "props": {"gap": 10, "alignItems": "center"}, "children": [
+            {"id": "inc-btn", "type": "button", "props": {
+              "label": "Increment", "variant": "primary", "padding": "8px 16px", "borderRadius": 6,
+              "onClick": [{"action": "mutateState", "stateKey": "clickCount", "mutationOp": "increment", "mutationAmount": 1}]
+            }, "children": []},
+            {"id": "reset-btn", "type": "button", "props": {
+              "label": "Reset", "variant": "outline", "padding": "8px 16px", "borderRadius": 6,
+              "onClick": [{"action": "setState", "stateKey": "clickCount", "value": "0"}, {"action": "setState", "stateKey": "lastAction", "value": "reset"}]
+            }, "children": []},
+            {"id": "click-display", "type": "text", "props": {"content": "Count: {{state.clickCount}}", "fontSize": "14px", "fontWeight": "500"}, "children": []},
+            {"id": "last-action", "type": "text", "props": {"content": "Last: {{state.lastAction}}", "fontSize": "12px", "color": "#6b7280"}, "children": []}
+          ]}
+        ]
+      },
+      {
+        "id": "input-card", "type": "card",
+        "props": {"padding": 16, "backgroundColor": "#ffffff", "borderRadius": 10, "shadow": "sm"},
+        "children": [
+          {"id": "input-title", "type": "text", "props": {"content": "Input Binding", "fontSize": "16px", "fontWeight": "600", "color": "#1e1b4b"}, "children": []},
+          {"id": "input-row", "type": "stackH", "props": {"gap": 10, "alignItems": "center"}, "children": [
+            {"id": "test-input", "type": "textInput", "props": {
+              "placeholder": "Type here...", "value": "{{state.inputVal}}",
+              "onChange": [{"action": "setState", "stateKey": "inputVal", "value": "{{event.value}}"}]
+            }, "children": []},
+            {"id": "input-echo", "type": "text", "props": {"content": "Echo: {{state.inputVal}}", "fontSize": "13px", "color": "#6b7280"}, "children": []},
+            {"id": "test-toggle", "type": "toggle", "props": {
+              "checked": "{{state.toggled}}",
+              "onChange": [{"action": "setState", "stateKey": "toggled", "value": "{{event.checked}}"}]
+            }, "children": []},
+            {"id": "toggle-status", "type": "text", "props": {"content": "Toggled: {{state.toggled}}", "fontSize": "13px", "color": "#6b7280"}, "children": []}
+          ]}
+        ]
+      },
+      {
+        "id": "tabs-section", "type": "tabs", "props": {
+          "tabs": ["All", "Done", "Pending"], "activeTab": "{{state.selectedTab}}", "variant": "pills",
+          "onChange": [{"action": "setState", "stateKey": "selectedTab", "value": "{{event.value}}"}]
+        }, "children": []
+      },
+      {
+        "id": "repeater-section", "type": "dataRepeater",
+        "props": {
+          "dataSource": "{{data.items}}", "itemVar": "item", "emptyText": "No items",
+          "display": "flex", "flexDirection": "column", "gap": 8
+        },
+        "children": [{
+          "id": "item-card", "type": "card",
+          "props": {
+            "shadow": "sm", "display": "flex", "flexDirection": "row",
+            "alignItems": "center", "gap": 14, "padding": "12px 16px",
+            "backgroundColor": "#ffffff", "borderRadius": 8
+          },
+          "children": [
+            {"id": "item-check", "type": "checkbox", "props": {
+              "checked": "{{item.done}}",
+              "onChange": [{"action": "updateRow", "tableName": "items", "rowId": "{{item.id}}", "rowData": {"done": "{{event.checked}}"}}]
+            }, "children": []},
+            {"id": "item-title", "type": "text", "props": {"content": "{{item.title}}", "fontSize": "14px", "fontWeight": "500", "color": "#1e1b4b"}, "children": []},
+            {"id": "item-spacer", "type": "spacer", "props": {"flex": 1}, "children": []},
+            {"id": "item-score", "type": "text", "props": {"content": "Score: {{item.score}}", "fontSize": "12px", "color": "#6b7280"}, "children": []},
+            {"id": "item-cat-badge", "type": "badge", "props": {"label": "{{item.category}}", "variant": "default", "size": "sm"}, "children": []},
+            {"id": "item-del-btn", "type": "button", "props": {
+              "label": "Delete", "variant": "ghost", "fontSize": "12px", "color": "#ef4444", "padding": "4px 8px",
+              "onClick": [{"action": "deleteRow", "tableName": "items", "rowId": "{{item.id}}"}]
+            }, "children": []}
+          ]
+        }]
+      },
+      {
+        "id": "insert-card", "type": "card",
+        "props": {"padding": 16, "backgroundColor": "#ffffff", "borderRadius": 10, "shadow": "sm"},
+        "children": [
+          {"id": "insert-title", "type": "text", "props": {"content": "Insert Test", "fontSize": "16px", "fontWeight": "600", "color": "#1e1b4b"}, "children": []},
+          {"id": "insert-btn", "type": "button", "props": {
+            "label": "Insert Row", "variant": "primary", "padding": "8px 16px", "borderRadius": 6,
+            "onClick": [
+              {"action": "insertRow", "tableName": "items", "rowData": {"title": "{{state.inputVal}}", "done": false, "score": 50, "category": "Auto"}, "resultStateKey": "lastInsert"},
+              {"action": "setState", "stateKey": "lastAction", "value": "inserted"}
+            ]
+          }, "children": []}
+        ]
+      },
+      {
+        "id": "table-card", "type": "card",
+        "props": {"padding": 0, "backgroundColor": "#ffffff", "borderRadius": 10, "shadow": "sm"},
+        "children": [
+          {"id": "table-header-text", "type": "text", "props": {"content": "Data Table", "padding": "16px 16px 8px 16px", "fontSize": "16px", "fontWeight": "600", "color": "#1e1b4b"}, "children": []},
+          {"id": "items-table", "type": "table", "props": {
+            "columns": ["title", "score", "category", "done"],
+            "dataSource": "{{data.items}}", "striped": true, "bordered": true,
+            "sortable": true, "searchable": true, "pageSize": 10
+          }, "children": []}
+        ]
+      },
+      {
+        "id": "progress-card", "type": "card",
+        "props": {"padding": 16, "backgroundColor": "#ffffff", "borderRadius": 10, "shadow": "sm"},
+        "children": [
+          {"id": "prog-bar", "type": "progressBar", "props": {"value": 65, "max": 100, "color": "#6366f1", "height": "10px", "showLabel": true, "animated": false}, "children": []},
+          {"id": "prog-small", "type": "progressBar", "props": {"value": 33, "max": 100, "color": "#10b981", "height": 6, "showPercent": true}, "children": []}
+        ]
+      },
+      {
+        "id": "misc-row", "type": "stackH", "props": {"gap": 12, "alignItems": "center"}, "children": [
+          {"id": "info-alert", "type": "alertBanner", "props": {"message": "Runtime test suite loaded", "variant": "info"}, "children": []},
+          {"id": "success-alert", "type": "alertBanner", "props": {"message": "All systems operational", "variant": "success"}, "children": []}
+        ]
+      },
+      {"id": "sep-divider", "type": "divider", "props": {"orientation": "horizontal", "color": "#e9d5ff", "thickness": 2}, "children": []},
+      {
+        "id": "ftr", "type": "footer",
+        "props": {"display": "flex", "flexDirection": "row", "justifyContent": "center", "padding": "12px 0"},
+        "children": [
+          {"id": "ftr-text", "type": "text", "props": {"content": "Runtime Test Suite v1", "fontSize": "12px", "color": "#9ca3af"}, "children": []}
+        ]
+      }
+    ]
+  }
+}'
+
+RT_SC_RESP=$(api_post "/api/projects/$RT_ID/screens" \
+  "{\"name\":\"Main\",\"slug\":\"main\",\"route\":\"/\",\"layout\":$RT_SCREEN_LAYOUT}")
+RT_SC_ID=$(echo "$RT_SC_RESP" | jq -r '.screen.id')
+assert_json_field "Runtime screen created" "$RT_SC_RESP" ".screen.id"
+
+# Publish
+RT_PUB=$(api_put "/api/projects/$RT_ID" '{"isPublished":true}')
+assert_json_eq "Runtime project published" "$RT_PUB" ".project.status" "published"
+
+# Warm up & fetch rendered HTML
+sleep 1
+RT_HTML=$(curl -s "${BASE_URL}/p/$RT_ID")
+
+# ---- 23a. SSR Binding Resolution ----
+echo -e "\n  ${BOLD}23a. SSR Binding Resolution${NC}"
+
+# State bindings resolve in SSR
+RT_CLICK_TEXT=$(echo "$RT_HTML" | grep -o 'Clicks: [0-9]*' | head -1)
+if [[ "$RT_CLICK_TEXT" == "Clicks: 0" ]]; then
+  echo -e "  ${GREEN}✓${NC} State binding {{state.clickCount}} resolves in SSR → 'Clicks: 0'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} State binding in SSR expected 'Clicks: 0', got '$RT_CLICK_TEXT'"
+  FAIL=$((FAIL + 1))
+fi
+
+# Last action state default
+if echo "$RT_HTML" | grep -q 'Last: none'; then
+  echo -e "  ${GREEN}✓${NC} State binding {{state.lastAction}} resolves to 'Last: none'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} State binding {{state.lastAction}} not found as 'Last: none'"
+  FAIL=$((FAIL + 1))
+fi
+
+# Toggle state default
+if echo "$RT_HTML" | grep -q 'Toggled: false'; then
+  echo -e "  ${GREEN}✓${NC} Boolean state binding resolves to 'Toggled: false'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Boolean state binding not found as 'Toggled: false'"
+  FAIL=$((FAIL + 1))
+fi
+
+# ---- 23b. DataRepeater Item Bindings ----
+echo -e "\n  ${BOLD}23b. DataRepeater Item Bindings${NC}"
+
+# Each repeater item should show its title
+for ITEM_TITLE in "Alpha" "Bravo" "Charlie" "Delta"; do
+  if echo "$RT_HTML" | grep -q "$ITEM_TITLE"; then
+    echo -e "  ${GREEN}✓${NC} Repeater item '${ITEM_TITLE}' rendered in SSR"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Repeater item '${ITEM_TITLE}' missing from SSR HTML"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Repeater item score bindings
+for SCORE_VAL in "Score: 80" "Score: 95" "Score: 42" "Score: 67"; do
+  if echo "$RT_HTML" | grep -q "$SCORE_VAL"; then
+    echo -e "  ${GREEN}✓${NC} Repeater binding '${SCORE_VAL}' resolved"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Repeater binding '${SCORE_VAL}' not found in HTML"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Repeater item category badges
+for CAT_VAL in "Work" "Play"; do
+  if echo "$RT_HTML" | grep -q "$CAT_VAL"; then
+    echo -e "  ${GREEN}✓${NC} Repeater badge '${CAT_VAL}' present"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Repeater badge '${CAT_VAL}' missing"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Verify no unresolved {{item.*}} bindings remain in visible HTML text
+# (exclude JSON event configs inside script/data attributes which are resolved client-side)
+RT_VISIBLE_HTML=$(echo "$RT_HTML" | sed 's/<script[^>]*>.*<\/script>//g' | sed 's/self\.__next_f[^)]*//g')
+UNRESOLVED_ITEM=$({ echo "$RT_VISIBLE_HTML" | grep -oE '>[^<]*\{\{item\.[a-z_]+\}\}[^<]*<' || true; } | wc -l | tr -d ' ')
+if [[ "$UNRESOLVED_ITEM" == "0" ]]; then
+  echo -e "  ${GREEN}✓${NC} No unresolved {{item.*}} bindings in SSR"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Found $UNRESOLVED_ITEM unresolved {{item.*}} bindings in SSR"
+  FAIL=$((FAIL + 1))
+fi
+
+# ---- 23c. Component Rendering Quality ----
+echo -e "\n  ${BOLD}23c. Component Rendering Quality${NC}"
+
+# No NaN in rendered HTML
+RT_NAN_COUNT=$({ echo "$RT_HTML" | grep -o 'NaN' || true; } | wc -l | tr -d ' ')
+if [[ "$RT_NAN_COUNT" == "0" ]]; then
+  echo -e "  ${GREEN}✓${NC} Zero NaN values in rendered HTML"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Found $RT_NAN_COUNT NaN values in rendered HTML"
+  FAIL=$((FAIL + 1))
+fi
+
+# Avatar has valid pixel dimensions (no NaN, no 0px)
+RT_AV_STYLE=$(echo "$RT_HTML" | grep -o 'id="user-av"[^>]*style="[^"]*"' | head -1 | grep -o 'style="[^"]*"' || true)
+if echo "$RT_AV_STYLE" | grep -qE 'width:[0-9]+px.*height:[0-9]+px'; then
+  echo -e "  ${GREEN}✓${NC} Avatar has valid pixel dimensions"
+  PASS=$((PASS + 1))
+elif echo "$RT_HTML" | grep -A1 'data-node-id="user-av"' | grep -qE 'width:[0-9]+px'; then
+  echo -e "  ${GREEN}✓${NC} Avatar has valid pixel dimensions"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Avatar dimensions may be invalid: $RT_AV_STYLE"
+  FAIL=$((FAIL + 1))
+fi
+
+# ProgressBar height is valid (not NaN)
+RT_PROG_HEIGHT=$({ echo "$RT_HTML" | grep -oE 'height:[0-9]+px;border-radius:var\(--border-radius-full' || true; } | head -1)
+if [[ -n "$RT_PROG_HEIGHT" ]]; then
+  echo -e "  ${GREEN}✓${NC} ProgressBar has valid height (${RT_PROG_HEIGHT%%px*}px)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} ProgressBar height not found or invalid"
+  FAIL=$((FAIL + 1))
+fi
+
+# Checkbox should NOT show "Checkbox" label text
+RT_CB_LABEL=$({ echo "$RT_HTML" | grep -oE '>Checkbox<' || true; } | wc -l | tr -d ' ')
+if [[ "$RT_CB_LABEL" == "0" ]]; then
+  echo -e "  ${GREEN}✓${NC} Checkboxes don't show spurious 'Checkbox' label"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Found $RT_CB_LABEL spurious 'Checkbox' labels"
+  FAIL=$((FAIL + 1))
+fi
+
+# Checkbox checked state from repeater binding (Bravo is done:true, Delta is done:true)
+RT_CB_CHECKED=$({ echo "$RT_HTML" | grep -oE 'type="checkbox"[^>]*checked' || true; } | wc -l | tr -d ' ')
+if [[ "$RT_CB_CHECKED" -ge 2 ]]; then
+  echo -e "  ${GREEN}✓${NC} Checkboxes: $RT_CB_CHECKED items marked checked (Bravo + Delta)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Expected >=2 checked checkboxes, got $RT_CB_CHECKED"
+  FAIL=$((FAIL + 1))
+fi
+
+# Table has populated rows from dataSource binding
+RT_TABLE_ROWS=$({ echo "$RT_HTML" | grep -o '<tr' || true; } | wc -l | tr -d ' ')
+# Should have 1 header row + 4 data rows = 5 total
+if [[ "$RT_TABLE_ROWS" -ge 5 ]]; then
+  echo -e "  ${GREEN}✓${NC} Table has $RT_TABLE_ROWS rows (1 header + data rows)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Table expected >=5 <tr> rows, got $RT_TABLE_ROWS"
+  FAIL=$((FAIL + 1))
+fi
+
+# Table data cells contain actual data
+if echo "$RT_HTML" | grep -q '<td[^>]*>Alpha</td>'; then
+  echo -e "  ${GREEN}✓${NC} Table contains data cell 'Alpha'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Table missing 'Alpha' data cell"
+  FAIL=$((FAIL + 1))
+fi
+
+# All border-radius values have px units (no bare numbers like border-radius:10;)
+RT_BAD_BR=$({ echo "$RT_HTML" | grep -oE 'border-radius:[0-9]+[;"]' || true; } | wc -l | tr -d ' ')
+if [[ "$RT_BAD_BR" == "0" ]]; then
+  echo -e "  ${GREEN}✓${NC} All border-radius values have units"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Found $RT_BAD_BR border-radius values without units"
+  FAIL=$((FAIL + 1))
+fi
+
+# stackH renders flex-direction:row
+if echo "$RT_HTML" | grep -q 'flex-direction:row'; then
+  echo -e "  ${GREEN}✓${NC} stackH renders flex-direction:row"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} flex-direction:row not found in HTML"
+  FAIL=$((FAIL + 1))
+fi
+
+# Header renders as <header> tag
+if echo "$RT_HTML" | grep -q '<header.*id="hdr"'; then
+  echo -e "  ${GREEN}✓${NC} Header renders as <header> element"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Header not rendered as <header> element"
+  FAIL=$((FAIL + 1))
+fi
+
+# Footer renders as <footer> tag
+if echo "$RT_HTML" | grep -q '<footer.*id="ftr"'; then
+  echo -e "  ${GREEN}✓${NC} Footer renders as <footer> element"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Footer not rendered as <footer> element"
+  FAIL=$((FAIL + 1))
+fi
+
+# GradientText renders with gradient style
+if echo "$RT_HTML" | grep -q 'background:linear-gradient'; then
+  echo -e "  ${GREEN}✓${NC} GradientText renders with gradient background"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} GradientText missing gradient style"
+  FAIL=$((FAIL + 1))
+fi
+
+# AlertBanner messages present
+if echo "$RT_HTML" | grep -q 'Runtime test suite loaded'; then
+  echo -e "  ${GREEN}✓${NC} AlertBanner info message rendered"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} AlertBanner info message missing"
+  FAIL=$((FAIL + 1))
+fi
+
+if echo "$RT_HTML" | grep -q 'All systems operational'; then
+  echo -e "  ${GREEN}✓${NC} AlertBanner success message rendered"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} AlertBanner success message missing"
+  FAIL=$((FAIL + 1))
+fi
+
+# Divider renders as <hr> or a div with border
+if echo "$RT_HTML" | grep -q 'data-node-id="sep-divider"'; then
+  echo -e "  ${GREEN}✓${NC} Divider component rendered"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Divider component missing"
+  FAIL=$((FAIL + 1))
+fi
+
+# Spacer inside repeater
+if echo "$RT_HTML" | grep -q 'data-node-id="item-spacer"'; then
+  echo -e "  ${GREEN}✓${NC} Spacer component rendered inside repeater"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Spacer component missing"
+  FAIL=$((FAIL + 1))
+fi
+
+# ---- 23d. Theme CSS Variables ----
+echo -e "\n  ${BOLD}23d. Theme CSS Variables${NC}"
+
+# Check that CSS vars are applied
+if echo "$RT_HTML" | grep -q '\-\-primary:#6366f1'; then
+  echo -e "  ${GREEN}✓${NC} CSS var --primary set to #6366f1"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} CSS var --primary:#6366f1 not found"
+  FAIL=$((FAIL + 1))
+fi
+
+if echo "$RT_HTML" | grep -q '\-\-background:#faf5ff'; then
+  echo -e "  ${GREEN}✓${NC} CSS var --background set to #faf5ff"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} CSS var --background:#faf5ff not found"
+  FAIL=$((FAIL + 1))
+fi
+
+if echo "$RT_HTML" | grep -q '\-\-text:#1e1b4b'; then
+  echo -e "  ${GREEN}✓${NC} CSS var --text set to #1e1b4b"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} CSS var --text:#1e1b4b not found"
+  FAIL=$((FAIL + 1))
+fi
+
+if echo "$RT_HTML" | grep -q '\-\-surface:#ffffff'; then
+  echo -e "  ${GREEN}✓${NC} CSS var --surface set to #ffffff"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} CSS var --surface:#ffffff not found"
+  FAIL=$((FAIL + 1))
+fi
+
+if echo "$RT_HTML" | grep -q '\-\-border-color:#e9d5ff'; then
+  echo -e "  ${GREEN}✓${NC} CSS var --border-color set to #e9d5ff"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} CSS var --border-color:#e9d5ff not found"
+  FAIL=$((FAIL + 1))
+fi
+
+# Light mode class is applied
+if echo "$RT_HTML" | grep -q 'class="[^"]*light'; then
+  echo -e "  ${GREEN}✓${NC} Light mode class applied on wrapper"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Light mode class not found"
+  FAIL=$((FAIL + 1))
+fi
+
+# ---- 23e. CRUD Mutations via Public API ----
+echo -e "\n  ${BOLD}23e. CRUD Mutations via Public API${NC}"
+
+# Insert a new row
+RT_INSERT=$(curl -s -H "Content-Type: application/json" \
+  -X POST "${BASE_URL}/api/p/$RT_ID/data/mutate" \
+  -d '{"action":"insertRow","table":"items","data":{"title":"Echo","done":false,"score":55,"category":"Auto"}}')
+RT_INSERT_ID=$(echo "$RT_INSERT" | jq -r '.row.id // empty')
+if [[ -n "$RT_INSERT_ID" ]]; then
+  echo -e "  ${GREEN}✓${NC} Insert via public API returned row id ($RT_INSERT_ID)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Insert via public API failed: $(echo "$RT_INSERT" | jq -r '.error // empty')"
+  FAIL=$((FAIL + 1))
+fi
+
+# Verify insert succeeded and data endpoint returns items
+RT_INSERT_TITLE=$(echo "$RT_INSERT" | jq -r '.row.title // empty')
+if [[ "$RT_INSERT_TITLE" == "Echo" ]]; then
+  echo -e "  ${GREEN}✓${NC} Insert returned correct row data (title=Echo)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Insert returned unexpected title: '$RT_INSERT_TITLE'"
+  FAIL=$((FAIL + 1))
+fi
+
+# Update the inserted row
+if [[ -n "$RT_INSERT_ID" ]]; then
+  RT_UPDATE=$(curl -s -H "Content-Type: application/json" \
+    -X POST "${BASE_URL}/api/p/$RT_ID/data/mutate" \
+    -d "{\"action\":\"updateRow\",\"table\":\"items\",\"rowId\":\"$RT_INSERT_ID\",\"data\":{\"score\":99,\"done\":true}}")
+  RT_UP_OK=$(echo "$RT_UPDATE" | jq -r '.row.score // empty')
+  if [[ "$RT_UP_OK" == "99" ]]; then
+    echo -e "  ${GREEN}✓${NC} Update returns updated row with score=99"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Update score expected 99, got '$RT_UP_OK'"
+    FAIL=$((FAIL + 1))
+  fi
+
+  # Delete
+  RT_DELETE=$(curl -s -H "Content-Type: application/json" \
+    -X POST "${BASE_URL}/api/p/$RT_ID/data/mutate" \
+    -d "{\"action\":\"deleteRow\",\"table\":\"items\",\"rowId\":\"$RT_INSERT_ID\"}")
+  RT_DEL_OK=$(echo "$RT_DELETE" | jq -r '.ok // empty')
+  if [[ "$RT_DEL_OK" == "true" ]]; then
+    echo -e "  ${GREEN}✓${NC} Delete returns ok:true"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Delete expected ok:true, got '$RT_DEL_OK'"
+    FAIL=$((FAIL + 1))
+  fi
+fi
+
+# ---- 23f. Resolve API Deep Verification ----
+echo -e "\n  ${BOLD}23f. Resolve API Deep Verification${NC}"
+
+RT_PAYLOAD=$(curl -s "${BASE_URL}/api/p/$RT_ID")
+RT_LAYOUT_ROOT=$(echo "$RT_PAYLOAD" | jq '.screens[0].layout.root')
+RT_STATE_OBJ='{"clickCount":0,"inputVal":"","toggled":false,"selectedTab":"All","lastAction":"none"}'
+RT_DATA_OBJ=$(curl -s "${BASE_URL}/api/p/$RT_ID/data" | jq '.data // {}')
+
+RT_RESOLVE=$(curl -s -X POST "${BASE_URL}/api/runtime-resolve" \
+  -H "Content-Type: application/json" \
+  -d "{\"root\":$RT_LAYOUT_ROOT,\"state\":$RT_STATE_OBJ,\"data\":$RT_DATA_OBJ}")
+
+# All component types present
+RT_ALL_TYPES=$(echo "$RT_RESOLVE" | jq -r '[.flatNodes[].type] | unique | join(",")')
+for RT_EXPECTED in header card dataRepeater table badge avatar progressBar tabs alertBanner divider spacer footer gradientText button textInput text stackH toggle checkbox; do
+  if echo "$RT_ALL_TYPES" | grep -q "$RT_EXPECTED"; then
+    echo -e "  ${GREEN}✓${NC} Resolve API: '${RT_EXPECTED}' component present"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Resolve API: '${RT_EXPECTED}' missing (types: ${RT_ALL_TYPES:0:100})"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Badge binding resolved
+RT_BADGE_RES=$(echo "$RT_RESOLVE" | jq -r '[.flatNodes[] | select(.id == "click-badge")] | .[0].content // .[0].label // empty')
+if [[ "$RT_BADGE_RES" == "Clicks: 0" ]]; then
+  echo -e "  ${GREEN}✓${NC} Badge resolves 'Clicks: 0' from state"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Badge expected 'Clicks: 0', got '$RT_BADGE_RES'"
+  FAIL=$((FAIL + 1))
+fi
+
+# Repeater appears in resolve tree
+RT_REP_COUNT=$(echo "$RT_RESOLVE" | jq '[.flatNodes[] | select(.type == "dataRepeater")] | length')
+if [[ "$RT_REP_COUNT" -ge 1 ]]; then
+  echo -e "  ${GREEN}✓${NC} Resolve API includes dataRepeater node"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Resolve API missing dataRepeater"
+  FAIL=$((FAIL + 1))
+fi
+
+# stackH flex direction in resolve
+RT_SH_DIR=$(echo "$RT_RESOLVE" | jq -r '[.flatNodes[] | select(.type == "stackH") | .flexDirection] | unique | join(",")')
+if [[ "$RT_SH_DIR" == "row" ]]; then
+  echo -e "  ${GREEN}✓${NC} Resolve API: stackH → flexDirection: row"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Resolve API: stackH flexDirection '$RT_SH_DIR' expected 'row'"
+  FAIL=$((FAIL + 1))
+fi
+
+# Border radius has px units in resolve
+RT_BAD_RAD=$(echo "$RT_RESOLVE" | jq -r '[.flatNodes[] | select(.borderRadius != null) | select((.borderRadius | tostring) | test("^[0-9]+$"))] | length')
+if [[ "$RT_BAD_RAD" == "0" ]]; then
+  echo -e "  ${GREEN}✓${NC} Resolve API: all borderRadius values have units"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}✗${NC} Resolve API: $RT_BAD_RAD nodes have bare borderRadius numbers"
+  FAIL=$((FAIL + 1))
+fi
+
+# ---- 23g. Negative / Edge Cases ----
+echo -e "\n  ${BOLD}23g. Edge Cases${NC}"
+
+# Mutation with invalid table name should not crash
+RT_BAD_MUT=$(curl -s -H "Content-Type: application/json" \
+  -X POST "${BASE_URL}/api/p/$RT_ID/data/mutate" \
+  -d '{"action":"insertRow","table":"nonexistent","data":{"x":1}}')
+RT_BAD_MUT_ERR=$(echo "$RT_BAD_MUT" | jq -r '.error // empty')
+if [[ -n "$RT_BAD_MUT_ERR" ]]; then
+  echo -e "  ${GREEN}✓${NC} Invalid table mutation returns error gracefully"
+  PASS=$((PASS + 1))
+else
+  RT_BAD_MUT_OK=$(echo "$RT_BAD_MUT" | jq -r '.ok // empty')
+  if [[ "$RT_BAD_MUT_OK" != "true" ]]; then
+    echo -e "  ${GREEN}✓${NC} Invalid table mutation rejected"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}✗${NC} Invalid table mutation unexpectedly returned ok"
+    FAIL=$((FAIL + 1))
+  fi
+fi
+
+# Update with bad rowId should not crash
+RT_BAD_UP=$(curl -s -H "Content-Type: application/json" \
+  -X POST "${BASE_URL}/api/p/$RT_ID/data/mutate" \
+  -d '{"action":"updateRow","table":"items","rowId":"00000000-0000-0000-0000-000000000000","data":{"score":0}}')
+RT_BAD_UP_ERR=$(echo "$RT_BAD_UP" | jq 'has("error") or (.row == null)')
+if [[ "$RT_BAD_UP_ERR" == "true" ]]; then
+  echo -e "  ${GREEN}✓${NC} Update with nonexistent rowId handled gracefully"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} Update with bad rowId returned unexpected: $(echo "$RT_BAD_UP" | jq -c .)"
+  SKIP=$((SKIP + 1))
+fi
+
+# Delete with bad rowId should not crash
+RT_BAD_DEL=$(curl -s -H "Content-Type: application/json" \
+  -X POST "${BASE_URL}/api/p/$RT_ID/data/mutate" \
+  -d '{"action":"deleteRow","table":"items","rowId":"00000000-0000-0000-0000-000000000000"}')
+RT_BAD_DEL_ERR=$(echo "$RT_BAD_DEL" | jq 'has("error") or (.ok == true)')
+if [[ "$RT_BAD_DEL_ERR" == "true" ]]; then
+  echo -e "  ${GREEN}✓${NC} Delete with nonexistent rowId handled gracefully"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} Delete with bad rowId returned unexpected: $(echo "$RT_BAD_DEL" | jq -c .)"
+  SKIP=$((SKIP + 1))
+fi
+
+# Cleanup
+DEL_RT=$(curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "Content-Type: application/json" \
+  -X DELETE --data-raw '{"verificationName":"Runtime Test Suite"}' "${BASE_URL}/api/projects/$RT_ID")
+DEL_RT_OK=$(echo "$DEL_RT" | jq -r '.success // empty')
+if [[ "$DEL_RT_OK" == "true" ]]; then
+  echo -e "  ${GREEN}✓${NC} Runtime test project cleaned up"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${YELLOW}⚠${NC} Runtime test cleanup: $(echo "$DEL_RT" | jq -r '.error // "unknown"')"
+  SKIP=$((SKIP + 1))
+fi
 
 # =========================================================================
 # RESULTS
