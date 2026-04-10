@@ -79,6 +79,8 @@ function resolveNode(
   let resolvedContent: string | null = null
   if ('content' in resolvedProps) resolvedContent = String(resolvedProps.content ?? '')
   else if ('label' in resolvedProps) resolvedContent = String(resolvedProps.label ?? '')
+  else if ('message' in resolvedProps) resolvedContent = String(resolvedProps.message ?? '')
+  else if ('text' in resolvedProps) resolvedContent = String(resolvedProps.text ?? '')
 
   const children = (node.children ?? []).map(child => resolveNode(child, state, data))
 
