@@ -3216,8 +3216,16 @@ export default function ScreenEditPage() {
       }
       if (config.customScript?.trim()) {
         try {
-          const fn = new Function('state', 'event', 'data', config.customScript)
-          fn(runtimeState, eventCtx ?? {}, runtimeData)
+          const fn = new Function('state', 'event', 'data', 'setState', 'setGlobalState', 'alert', 'log', config.customScript)
+          fn(
+            runtimeState,
+            eventCtx ?? {},
+            runtimeData,
+            (key: string, value: unknown) => setRuntimeState((prev) => ({ ...prev, [String(key)]: value })),
+            (key: string, value: unknown) => setRuntimeState((prev) => ({ ...prev, [String(key)]: value })),
+            (msg: unknown) => window.alert(String(msg ?? '')),
+            (...args: unknown[]) => console.log('[CustomScript]', ...args)
+          )
         } catch {}
       }
       return
@@ -3367,11 +3375,71 @@ export default function ScreenEditPage() {
     if (config.action === 'custom' && config.customScript?.trim()) {
       if (!evaluateEventCondition(config.condition, runtimeState, eventCtx)) return
       try {
-        const fn = new Function('state', 'event', 'data', config.customScript)
-        fn(runtimeState, eventCtx ?? {}, runtimeData)
+        const fn = new Function('state', 'event', 'data', 'setState', 'setGlobalState', 'alert', 'log', config.customScript)
+        fn(
+          runtimeState,
+          eventCtx ?? {},
+          runtimeData,
+          (key: string, value: unknown) => setRuntimeState((prev) => ({ ...prev, [String(key)]: value })),
+          (key: string, value: unknown) => setRuntimeState((prev) => ({ ...prev, [String(key)]: value })),
+          (msg: unknown) => window.alert(String(msg ?? '')),
+          (...args: unknown[]) => console.log('[CustomScript]', ...args)
+        )
       } catch {}
     }
-  }, [stateTypeByKey, stateCacheKey, runScript, runtimeState, triggerHaptic, projectId, activeRoot])
+
+    // ── CRUD actions: insertRow / updateRow / deleteRow ──────────────────
+    if (config.action === 'insertRow' || config.action === 'updateRow' || config.action === 'deleteRow') {
+      if (!evaluateEventCondition(config.condition, runtimeState, eventCtx)) return
+      const tbl = resolveBinding(config.tableName ?? '', { state: runtimeState, event: eventCtx as Record<string, unknown> | undefined })
+      if (!tbl) return
+      const rowId = config.rowId ? resolveBinding(config.rowId, { state: runtimeState, event: eventCtx as Record<string, unknown> | undefined }) : undefined
+      let rowData: Record<string, unknown> | undefined
+      if (config.rowData) {
+        const rdCtx = { state: runtimeState, data: runtimeData, event: eventCtx as Record<string, unknown> | undefined, runScript }
+        if (typeof config.rowData === 'object' && !Array.isArray(config.rowData)) {
+          rowData = {}
+          for (const [k, v] of Object.entries(config.rowData as Record<string, unknown>)) {
+            if (typeof v === 'string' && v.includes('{{')) {
+              const resolved = resolveExpression(v, rdCtx)
+              if (resolved === 'true') rowData[k] = true
+              else if (resolved === 'false') rowData[k] = false
+              else if (resolved !== '' && !isNaN(Number(resolved))) rowData[k] = Number(resolved)
+              else rowData[k] = resolved
+            } else {
+              rowData[k] = v
+            }
+          }
+        } else {
+          const resolved = resolveExpression(String(config.rowData), rdCtx)
+          try { rowData = typeof resolved === 'string' ? JSON.parse(resolved) : resolved as Record<string, unknown> } catch { rowData = undefined }
+        }
+      }
+      ;(async () => {
+        try {
+          const res = await fetch(`/api/p/${projectId}/data/mutate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: config.action, table: tbl, data: rowData, rowId }),
+          })
+          const json = await res.json()
+          if (config.resultStateKey) {
+            setRuntimeState((prev) => ({ ...prev, [config.resultStateKey!]: json.ok ? (json.row ?? json.deleted ?? true) : false }))
+          }
+          if (config.refreshStateKey) {
+            setRuntimeState((prev) => ({ ...prev, [config.refreshStateKey!]: (Number(prev[config.refreshStateKey!]) || 0) + 1 }))
+          }
+          // Re-fetch data so bindings update
+          fetchRuntimeData()
+          if (debugHandleRef.current) debugHandleRef.current.push({ level: 'event', label: `${config.action} → ${tbl}`, detail: JSON.stringify(rowData ?? {}).slice(0, 200) })
+        } catch (err) {
+          console.error(`[CRUD ${config.action}] Error:`, err)
+          if (debugHandleRef.current) debugHandleRef.current.push({ level: 'event', label: `${config.action} error`, detail: err instanceof Error ? err.message : 'unknown' })
+        }
+      })()
+      return
+    }
+  }, [stateTypeByKey, stateCacheKey, runScript, runtimeState, runtimeData, triggerHaptic, projectId, activeRoot, fetchRuntimeData])
 
   useEffect(() => {
     if (!activeSelectedId) {
