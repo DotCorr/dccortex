@@ -6,7 +6,7 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   // Allow dev server to accept requests from tunnel domain (hostnames only per Next.js doc)
-  allowedDevOrigins: ['dccortex.com', 'www.dccortex.com', 'active.dccortex.com'],
+  allowedDevOrigins: ['dccortex.com', 'www.dccortex.com', 'active.dccortex.com', 'flow.dccortex.com'],
   env: {
     PLATFORM_API_URL: process.env.PLATFORM_API_URL || 'http://platform-api:3001',
     NEXT_PUBLIC_PLATFORM_API_URL: process.env.NEXT_PUBLIC_PLATFORM_API_URL || 'https://api.dccortex.com',
