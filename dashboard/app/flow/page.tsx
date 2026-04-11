@@ -14,7 +14,8 @@ import {
   ArrowRight, ChevronLeft, ChevronRight, ChevronDown, Check, Menu, X,
   Sparkles, Image, Share2, Wand2, Figma, Quote,
   LayoutDashboard, Zap, Globe, HardDrive, Shield, Users, CreditCard, Settings,
-  Search, SlidersHorizontal, Paperclip, ArrowUp
+  Search, SlidersHorizontal, Paperclip, ArrowUp,
+  Heart, MessageSquare, TrendingUp, Bell, ClipboardList, UtensilsCrossed
 } from 'lucide-react'
 
 /* ───────────── fade-in-on-scroll ───────────── */
@@ -53,20 +54,17 @@ function Reveal({ children, className = '', delay = 0 }: { children: React.React
 
 /* ───────────── Light-theme showcase panels (Banani-style) ───────────── */
 
-/* Panel 1: Calendar / Schedule App */
+const PANEL_SHADOW = 'shadow-[0_8px_40px_-12px_rgba(0,0,0,0.12)]'
+const PANEL_BASE = `bg-white rounded-2xl ${PANEL_SHADOW} border border-gray-100 overflow-hidden`
+
+/* ── SET 0: Calendar + Team + Sidebar + Analytics (SaaS / Productivity) ── */
+
 function CalendarPanel() {
   const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-  const dates = [
-    [1, 2, 3, 4, 5, 6, 7],
-    [8, 9, 10, 11, 12, 13, 14],
-    [15, 16, 17, 18, 19, 20, 21],
-    [22, 23, 24, 25, 26, 27, 28],
-    [29, 30, 31, 0, 0, 0, 0],
-  ]
+  const dates = [[1,2,3,4,5,6,7],[8,9,10,11,12,13,14],[15,16,17,18,19,20,21],[22,23,24,25,26,27,28],[29,30,31,0,0,0,0]]
   return (
-    <div className="bg-white rounded-2xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.12)] border border-gray-100 overflow-hidden" style={{ width: 300, minHeight: 420 }}>
-      {/* Header with photo */}
-      <div className="relative h-14 bg-gradient-to-r from-sky-50 to-indigo-50 overflow-hidden">
+    <div className={PANEL_BASE} style={{ width: 300, minHeight: 420 }}>
+      <div className="relative h-14 bg-gradient-to-r from-sky-50 to-indigo-50">
         <div className="absolute top-2 left-3 right-3 flex items-center justify-between">
           <div className="text-[11px] font-semibold text-gray-800">Sep 2025</div>
           <div className="flex gap-1.5">
@@ -76,47 +74,24 @@ function CalendarPanel() {
         </div>
       </div>
       <div className="px-3 py-2">
-        {/* Day headers */}
         <div className="grid grid-cols-7 gap-0.5 mb-1">
-          {days.map(d => (
-            <div key={d} className="text-center text-[8px] font-semibold text-gray-400 py-1">{d}</div>
-          ))}
+          {days.map(d => <div key={d} className="text-center text-[8px] font-semibold text-gray-400 py-1">{d}</div>)}
         </div>
-        {/* Dates */}
         {dates.map((week, wi) => (
           <div key={wi} className="grid grid-cols-7 gap-0.5">
             {week.map((d, di) => (
-              <div
-                key={di}
-                className={`text-center text-[10px] py-1.5 rounded-lg font-medium ${
-                  d === 0 ? '' :
-                  d === 18 ? 'bg-sky-500 text-white' :
-                  d === 15 ? 'bg-emerald-100 text-emerald-700' :
-                  'text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {d || ''}
-              </div>
+              <div key={di} className={`text-center text-[10px] py-1.5 rounded-lg font-medium ${d===0?'':d===18?'bg-sky-500 text-white':d===15?'bg-emerald-100 text-emerald-700':'text-gray-700'}`}>{d||''}</div>
             ))}
           </div>
         ))}
       </div>
-      {/* Schedule items */}
       <div className="px-3 pb-3 mt-1 space-y-1.5">
         <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider">Wednesday, Sep 18</div>
-        {[
-          { time: '09:30', title: 'Product Design Sync', sub: 'Meeting Room B · Work', color: 'bg-sky-400' },
-          { time: '12:00', title: 'Lunch with Sarah', sub: 'Sushi Place · Personal', color: 'bg-emerald-400' },
-          { time: '14:00', title: 'Client Presentation', sub: 'Zoom Call · Work', color: 'bg-violet-400' },
-          { time: '17:00', title: 'Gym Session', sub: 'City Gym · Health', color: 'bg-amber-400' },
-        ].map(({ time, title, sub, color }) => (
+        {[{time:'09:30',title:'Product Design Sync',sub:'Meeting Room B · Work',color:'bg-sky-400'},{time:'12:00',title:'Lunch with Sarah',sub:'Sushi Place · Personal',color:'bg-emerald-400'},{time:'14:00',title:'Client Presentation',sub:'Zoom Call · Work',color:'bg-violet-400'},{time:'17:00',title:'Gym Session',sub:'City Gym · Health',color:'bg-amber-400'}].map(({time,title,sub,color})=>(
           <div key={title} className="flex items-start gap-2.5 py-1.5">
             <div className="text-[10px] text-gray-400 font-medium w-9 pt-0.5 flex-shrink-0">{time}</div>
             <div className={`w-[3px] h-8 ${color} rounded-full flex-shrink-0 mt-0.5`} />
-            <div>
-              <div className="text-[10px] font-semibold text-gray-800">{title}</div>
-              <div className="text-[9px] text-gray-400">{sub}</div>
-            </div>
+            <div><div className="text-[10px] font-semibold text-gray-800">{title}</div><div className="text-[9px] text-gray-400">{sub}</div></div>
           </div>
         ))}
       </div>
@@ -124,31 +99,18 @@ function CalendarPanel() {
   )
 }
 
-/* Panel 2: Team / Members settings */
 function TeamPanel() {
   return (
-    <div className="bg-white rounded-2xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.12)] border border-gray-100 overflow-hidden" style={{ width: 340, minHeight: 380 }}>
-      {/* Sidebar + content */}
+    <div className={PANEL_BASE} style={{ width: 340, minHeight: 380 }}>
       <div className="flex h-full">
-        {/* Mini sidebar */}
         <div className="w-[72px] bg-gray-50 border-r border-gray-100 py-4 px-2 space-y-0.5 hidden sm:block">
-          {[
-            { label: 'Account', active: false },
-            { label: 'Preferences', active: false },
-            { label: 'Plan & Billing', active: false },
-            { label: 'Team', active: true },
-            { label: 'Security', active: false },
-          ].map(({ label, active }) => (
-            <div key={label} className={`px-2 py-1.5 rounded-md text-[8px] font-medium ${active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'}`}>
-              {label}
-            </div>
+          {[{l:'Account',a:false},{l:'Preferences',a:false},{l:'Plan & Billing',a:false},{l:'Team',a:true},{l:'Security',a:false}].map(({l,a})=>(
+            <div key={l} className={`px-2 py-1.5 rounded-md text-[8px] font-medium ${a?'bg-white text-gray-900 shadow-sm':'text-gray-400'}`}>{l}</div>
           ))}
         </div>
-        {/* Main */}
         <div className="flex-1 p-4">
           <div className="text-[13px] font-bold text-gray-900 mb-0.5">Team</div>
           <div className="text-[10px] text-gray-400 mb-4">Manage members</div>
-          {/* Invite */}
           <div className="mb-4">
             <div className="text-[10px] font-semibold text-gray-600 mb-1.5">Invite members</div>
             <div className="flex gap-1.5">
@@ -156,34 +118,20 @@ function TeamPanel() {
               <div className="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-[9px] font-medium">Send Invites</div>
             </div>
           </div>
-          {/* Members */}
           <div className="text-[10px] font-semibold text-gray-600 mb-2">Members</div>
           <div className="space-y-2">
-            {[
-              { name: 'Alex Smith', email: 'alex@acme.com', role: 'Owner', avatar: 'bg-sky-500' },
-              { name: 'Priya Patel', email: 'priya@acme.com', role: 'Admin', avatar: 'bg-violet-500' },
-              { name: 'Diego Ramirez', email: 'diego@acme.com', role: 'Editor', avatar: 'bg-emerald-500' },
-              { name: 'Hana Kim', email: 'hana@acme.com', role: 'Viewer', avatar: 'bg-pink-500' },
-            ].map(({ name, email, role, avatar }) => (
+            {[{name:'Alex Smith',email:'alex@acme.com',role:'Owner',av:'bg-sky-500'},{name:'Priya Patel',email:'priya@acme.com',role:'Admin',av:'bg-violet-500'},{name:'Diego Ramirez',email:'diego@acme.com',role:'Editor',av:'bg-emerald-500'},{name:'Hana Kim',email:'hana@acme.com',role:'Viewer',av:'bg-pink-500'}].map(({name,email,role,av})=>(
               <div key={name} className="flex items-center gap-2.5">
-                <div className={`w-7 h-7 rounded-full ${avatar} flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0`}>
-                  {name.split(' ').map(n => n[0]).join('')}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[10px] font-semibold text-gray-800">{name}</div>
-                  <div className="text-[8px] text-gray-400 truncate">{email}</div>
-                </div>
+                <div className={`w-7 h-7 rounded-full ${av} flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0`}>{name.split(' ').map(n=>n[0]).join('')}</div>
+                <div className="flex-1 min-w-0"><div className="text-[10px] font-semibold text-gray-800">{name}</div><div className="text-[8px] text-gray-400 truncate">{email}</div></div>
                 <div className="text-[9px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{role}</div>
               </div>
             ))}
           </div>
-          {/* Pending */}
           <div className="text-[10px] font-semibold text-gray-600 mt-4 mb-1">Pending invites</div>
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-[10px] text-gray-400 flex-shrink-0">?</div>
-            <div className="flex-1">
-              <div className="text-[9px] text-gray-400">jordan@acme.com</div>
-            </div>
+            <div className="text-[9px] text-gray-400">jordan@acme.com</div>
           </div>
         </div>
       </div>
@@ -191,45 +139,22 @@ function TeamPanel() {
   )
 }
 
-/* Panel 3: Sidebar navigation */
 function SidebarPanel() {
   return (
-    <div className="bg-white rounded-2xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.12)] border border-gray-100 overflow-hidden" style={{ width: 180, minHeight: 340 }}>
+    <div className={PANEL_BASE} style={{ width: 180, minHeight: 340 }}>
       <div className="p-3 space-y-0.5">
-        <div className="text-[11px] font-bold text-gray-900 mb-3 px-1">Acme Corp ✦</div>
+        <div className="text-[11px] font-bold text-gray-900 mb-3 px-1">Acme Corp</div>
         <div className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider px-1 mb-1">Workspace</div>
-        {[
-          { label: 'Overview', active: true, icon: LayoutDashboard },
-          { label: 'Activity', active: false, icon: Zap },
-          { label: 'Domains', active: false, icon: Globe },
-          { label: 'Storage', active: false, icon: HardDrive },
-          { label: 'Security', active: false, icon: Shield },
-        ].map(({ label, active, icon: Icon }) => (
-          <div key={label} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-medium ${active ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
-            <Icon className="w-3 h-3" /> {label}
-          </div>
+        {[{l:'Overview',a:true,I:LayoutDashboard},{l:'Activity',a:false,I:Zap},{l:'Domains',a:false,I:Globe},{l:'Storage',a:false,I:HardDrive},{l:'Security',a:false,I:Shield}].map(({l,a,I:Icon})=>(
+          <div key={l} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-medium ${a?'bg-gray-900 text-white':'text-gray-500'}`}><Icon className="w-3 h-3" />{l}</div>
         ))}
         <div className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider px-1 mt-3 mb-1">Settings</div>
-        {[
-          { label: 'Team Members', icon: Users },
-          { label: 'Billing', icon: CreditCard },
-          { label: 'General', icon: Settings },
-        ].map(({ label, icon: Icon }) => (
-          <div key={label} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-medium text-gray-500 hover:bg-gray-50">
-            <Icon className="w-3 h-3" /> {label}
-          </div>
+        {[{l:'Team Members',I:Users},{l:'Billing',I:CreditCard},{l:'General',I:Settings}].map(({l,I:Icon})=>(
+          <div key={l} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-medium text-gray-500"><Icon className="w-3 h-3" />{l}</div>
         ))}
-        {/* Usage bar */}
         <div className="mt-4 px-1">
-          <div className="flex items-center justify-between text-[8px] text-gray-400 mb-1">
-            <span>Hobby Plan</span><span>Free</span>
-          </div>
-          <div className="flex items-center justify-between text-[8px] text-gray-400 mb-1">
-            <span>Bandwidth</span><span>75%</span>
-          </div>
-          <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="w-3/4 h-full bg-gradient-to-r from-sky-400 to-indigo-500 rounded-full" />
-          </div>
+          <div className="flex items-center justify-between text-[8px] text-gray-400 mb-1"><span>Hobby Plan</span><span>Free</span></div>
+          <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="w-3/4 h-full bg-gradient-to-r from-sky-400 to-indigo-500 rounded-full" /></div>
           <div className="text-[7px] text-gray-300 mt-1">75GB / 100GB used</div>
         </div>
       </div>
@@ -237,74 +162,37 @@ function SidebarPanel() {
   )
 }
 
-/* Panel 4: Overview / Analytics dashboard */
 function AnalyticsPanel() {
   return (
-    <div className="bg-white rounded-2xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.12)] border border-gray-100 overflow-hidden" style={{ width: 420, minHeight: 380 }}>
+    <div className={PANEL_BASE} style={{ width: 420, minHeight: 380 }}>
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-        <div>
-          <div className="text-[13px] font-bold text-gray-900">Overview</div>
-          <div className="text-[9px] text-gray-400">Last 4 weeks</div>
-        </div>
+        <div><div className="text-[13px] font-bold text-gray-900">Overview</div><div className="text-[9px] text-gray-400">Last 4 weeks</div></div>
         <div className="flex gap-1.5">
           <div className="px-2 py-1 rounded-md bg-gray-100 text-[8px] font-medium text-gray-500">Live</div>
           <div className="px-2 py-1 rounded-md bg-gray-900 text-[8px] font-medium text-white">4 Changes</div>
         </div>
       </div>
-      {/* Stats row */}
       <div className="px-4 pb-3 grid grid-cols-3 gap-3">
-        {[
-          { label: 'Total Load (24h)', value: '2.4M', change: '+6%', up: true },
-          { label: 'Current Charges', value: '$45.20', change: '-$3', up: false },
-          { label: 'Success Rate', value: '99.98%', change: '0%', up: true },
-        ].map(({ label, value, change, up }) => (
-          <div key={label}>
-            <div className="text-[8px] text-gray-400 mb-0.5">{label}</div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-[15px] font-bold text-gray-900">{value}</span>
-              <span className={`text-[8px] font-semibold ${up ? 'text-emerald-500' : 'text-red-400'}`}>{change}</span>
-            </div>
-          </div>
+        {[{l:'Total Load (24h)',v:'2.4M',c:'+6%',u:true},{l:'Current Charges',v:'$45.20',c:'-$3',u:false},{l:'Success Rate',v:'99.98%',c:'0%',u:true}].map(({l,v,c,u})=>(
+          <div key={l}><div className="text-[8px] text-gray-400 mb-0.5">{l}</div><div className="flex items-baseline gap-1.5"><span className="text-[15px] font-bold text-gray-900">{v}</span><span className={`text-[8px] font-semibold ${u?'text-emerald-500':'text-red-400'}`}>{c}</span></div></div>
         ))}
       </div>
-      {/* Chart */}
       <div className="mx-4 mb-3 h-[72px] bg-gray-50 rounded-xl p-2 flex items-end gap-[3px]">
-        {[20, 35, 28, 45, 38, 55, 42, 60, 48, 65, 52, 70, 58, 75, 62, 68, 55, 72, 60, 78, 65, 80, 70, 85, 72, 82, 68, 90].map((h, i) => (
-          <div
-            key={i}
-            className="flex-1 rounded-t bg-gradient-to-t from-sky-500 to-indigo-400"
-            style={{ height: `${h}%` }}
-          />
+        {[20,35,28,45,38,55,42,60,48,65,52,70,58,75,62,68,55,72,60,78,65,80,70,85,72,82,68,90].map((h,i)=>(
+          <div key={i} className="flex-1 rounded-t bg-gradient-to-t from-sky-500 to-indigo-400" style={{height:`${h}%`}} />
         ))}
       </div>
-      {/* Search */}
-      <div className="mx-4 mb-3 px-3 py-2 bg-gray-50 rounded-lg text-[9px] text-gray-300 flex items-center gap-2">
-        <Search className="w-3 h-3" /> Filter projects...
-      </div>
-      {/* Project cards */}
+      <div className="mx-4 mb-3 px-3 py-2 bg-gray-50 rounded-lg text-[9px] text-gray-300 flex items-center gap-2"><Search className="w-3 h-3" /> Filter projects...</div>
       <div className="px-4 pb-4 grid grid-cols-2 gap-2">
-        {[
-          { name: 'marketing-site', domain: 'www.acme.com', status: 'Ready', time: '2m ago', color: 'bg-emerald-500', tech: 'Next.js' },
-          { name: 'api-gateway', domain: 'api.acme.com', status: 'Building', time: '11s ago', color: 'bg-amber-500', tech: 'Node.js' },
-          { name: 'analytics-engine', domain: 'data.acme.com', status: 'Ready', time: '1d ago', color: 'bg-emerald-500', tech: 'Python' },
-          { name: 'documentation', domain: 'docs.acme.com', status: 'Error', time: '4h ago', color: 'bg-red-400', tech: 'Vue.js' },
-        ].map(({ name, domain, status, time, color, tech }) => (
-          <div key={name} className="p-2.5 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors">
+        {[{n:'marketing-site',d:'www.acme.com',s:'Ready',t:'2m ago',c:'bg-emerald-500',tech:'Next.js'},{n:'api-gateway',d:'api.acme.com',s:'Building',t:'11s ago',c:'bg-amber-500',tech:'Node.js'},{n:'analytics-engine',d:'data.acme.com',s:'Ready',t:'1d ago',c:'bg-emerald-500',tech:'Python'},{n:'documentation',d:'docs.acme.com',s:'Error',t:'4h ago',c:'bg-red-400',tech:'Vue.js'}].map(({n,d,s,t,c,tech})=>(
+          <div key={n} className="p-2.5 rounded-xl border border-gray-100">
             <div className="flex items-center gap-1.5 mb-1">
-              <div className={`w-4 h-4 rounded-full ${color === 'bg-emerald-500' ? 'bg-gradient-to-br from-sky-400 to-indigo-500' : color === 'bg-amber-500' ? 'bg-gradient-to-br from-amber-400 to-orange-500' : color === 'bg-red-400' ? 'bg-gradient-to-br from-rose-400 to-red-500' : 'bg-gradient-to-br from-emerald-400 to-green-500'} flex items-center justify-center text-[7px] text-white font-bold`}>
-                {name[0].toUpperCase()}
-              </div>
-              <div className="text-[10px] font-bold text-gray-800">{name}</div>
+              <div className={`w-4 h-4 rounded-full ${c==='bg-emerald-500'?'bg-gradient-to-br from-sky-400 to-indigo-500':c==='bg-amber-500'?'bg-gradient-to-br from-amber-400 to-orange-500':'bg-gradient-to-br from-rose-400 to-red-500'} flex items-center justify-center text-[7px] text-white font-bold`}>{n[0].toUpperCase()}</div>
+              <div className="text-[10px] font-bold text-gray-800">{n}</div>
             </div>
-            <div className="text-[8px] text-gray-400 mb-1">{domain}</div>
-            <div className="flex items-center gap-1 mb-1.5">
-              <div className={`w-1.5 h-1.5 rounded-full ${color}`} />
-              <span className="text-[8px] font-medium text-gray-500">{status} · {time}</span>
-            </div>
-            <div className="text-[8px] text-gray-400 truncate">Updated recently</div>
-            <div className="mt-1.5 flex items-center gap-1 text-[8px] text-gray-400">
-              <span>●</span> {tech}
-            </div>
+            <div className="text-[8px] text-gray-400 mb-1">{d}</div>
+            <div className="flex items-center gap-1 mb-1"><div className={`w-1.5 h-1.5 rounded-full ${c}`}/><span className="text-[8px] font-medium text-gray-500">{s} · {t}</span></div>
+            <div className="mt-1 text-[8px] text-gray-400">● {tech}</div>
           </div>
         ))}
       </div>
@@ -312,34 +200,451 @@ function AnalyticsPanel() {
   )
 }
 
-/* Floating prompt bar for hero (Banani-style with typing animation) */
-function HeroPromptBar() {
-  const [text, setText] = useState('')
-  const [promptIdx, setPromptIdx] = useState(0)
-  const prompts = [
-    'A fitness tracking app with workout stats and progress charts',
-    'Dashboard for a SaaS product with revenue metrics',
-    'Food delivery app with restaurant listings and cart',
-    'Social media profile with posts, followers and stories',
-  ]
+/* ── SET 1: Fitness Tracker ── */
 
-  useEffect(() => {
-    const prompt = prompts[promptIdx]
-    let i = 0
-    setText('')
-    const typeTimer = setInterval(() => {
-      if (i < prompt.length) {
-        setText(prompt.slice(0, i + 1))
-        i++
-      } else {
-        clearInterval(typeTimer)
-        setTimeout(() => setPromptIdx(idx => (idx + 1) % prompts.length), 3000)
-      }
-    }, 35)
-    return () => clearInterval(typeTimer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promptIdx])
+function FitnessPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 300, minHeight: 420 }}>
+      <div className="bg-gradient-to-r from-orange-50 to-rose-50 px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[11px] font-bold text-gray-800">FitTrack</div>
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-400 to-rose-500 flex items-center justify-center text-[10px] text-white font-bold">A</div>
+        </div>
+        <div className="text-[22px] font-black text-gray-900">8,432</div>
+        <div className="text-[9px] text-gray-500">steps today</div>
+        <div className="mt-2 w-full h-2 bg-white/60 rounded-full overflow-hidden"><div className="w-[68%] h-full bg-gradient-to-r from-orange-400 to-rose-500 rounded-full" /></div>
+        <div className="text-[8px] text-gray-400 mt-1">68% of daily goal</div>
+      </div>
+      <div className="p-3 space-y-2">
+        <div className="grid grid-cols-3 gap-2">
+          {[{v:'342',l:'Calories',c:'text-orange-500'},{v:'4.2km',l:'Distance',c:'text-rose-500'},{v:'52',l:'Minutes',c:'text-violet-500'}].map(({v,l,c})=>(
+            <div key={l} className="text-center p-2 bg-gray-50 rounded-xl">
+              <div className={`text-[13px] font-bold ${c}`}>{v}</div>
+              <div className="text-[8px] text-gray-400">{l}</div>
+            </div>
+          ))}
+        </div>
+        <div className="text-[10px] font-semibold text-gray-700 mt-2">This Week</div>
+        <div className="h-16 flex items-end gap-1 px-1">
+          {[{d:'M',h:45},{d:'T',h:80},{d:'W',h:60},{d:'T',h:90},{d:'F',h:68},{d:'S',h:40},{d:'S',h:20}].map(({d,h},i)=>(
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div className="w-full rounded-t bg-gradient-to-t from-orange-400 to-rose-400" style={{height:`${h}%`}} />
+              <div className="text-[7px] text-gray-400">{d}</div>
+            </div>
+          ))}
+        </div>
+        <div className="text-[10px] font-semibold text-gray-700 mt-2">Recent Workouts</div>
+        {[{t:'Morning Run',d:'5.2km · 32 min',c:'bg-orange-400'},{t:'HIIT Session',d:'450 cal · 28 min',c:'bg-rose-400'},{t:'Yoga Flow',d:'Flexibility · 45 min',c:'bg-violet-400'}].map(({t,d,c})=>(
+          <div key={t} className="flex items-center gap-2.5 py-1.5">
+            <div className={`w-8 h-8 rounded-xl ${c} flex items-center justify-center`}><Zap className="w-3.5 h-3.5 text-white" /></div>
+            <div><div className="text-[10px] font-semibold text-gray-800">{t}</div><div className="text-[8px] text-gray-400">{d}</div></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
+function FitnessStatsPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 420, minHeight: 380 }}>
+      <div className="px-4 pt-4 pb-2">
+        <div className="text-[13px] font-bold text-gray-900 mb-0.5">Weekly Progress</div>
+        <div className="text-[9px] text-gray-400">Your fitness journey at a glance</div>
+      </div>
+      <div className="px-4 pb-3 grid grid-cols-4 gap-2">
+        {[{v:'58,294',l:'Steps',c:'from-orange-400 to-rose-500'},{v:'2,180',l:'Calories',c:'from-rose-400 to-pink-500'},{v:'24.8km',l:'Distance',c:'from-violet-400 to-purple-500'},{v:'6.2h',l:'Active',c:'from-sky-400 to-blue-500'}].map(({v,l,c})=>(
+          <div key={l} className="p-2.5 rounded-xl bg-gray-50">
+            <div className={`text-[12px] font-bold bg-gradient-to-r ${c} bg-clip-text text-transparent`}>{v}</div>
+            <div className="text-[8px] text-gray-400 mt-0.5">{l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mx-4 mb-3 h-[80px] bg-gray-50 rounded-xl p-3 flex items-end gap-[4px]">
+        {[35,55,45,70,60,85,50,90,65,80,55,75,60,88,70,82,58,92,68,78].map((h,i)=>(
+          <div key={i} className="flex-1 rounded-t bg-gradient-to-t from-orange-400 to-rose-400" style={{height:`${h}%`}} />
+        ))}
+      </div>
+      <div className="px-4 pb-4">
+        <div className="text-[10px] font-semibold text-gray-700 mb-2">Achievements</div>
+        <div className="grid grid-cols-2 gap-2">
+          {[{t:'7-Day Streak',s:'Completed!',c:'bg-amber-100 text-amber-700'},{t:'Marathon Prep',s:'68% complete',c:'bg-sky-100 text-sky-700'},{t:'Calorie Goal',s:'5 of 7 days',c:'bg-emerald-100 text-emerald-700'},{t:'Early Bird',s:'3 workouts before 8am',c:'bg-violet-100 text-violet-700'}].map(({t,s,c})=>(
+            <div key={t} className="p-2.5 rounded-xl border border-gray-100">
+              <div className={`inline-block text-[8px] font-bold px-1.5 py-0.5 rounded ${c} mb-1.5`}>{t}</div>
+              <div className="text-[9px] text-gray-500">{s}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FitnessNavPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 180, minHeight: 340 }}>
+      <div className="p-3 space-y-0.5">
+        <div className="flex items-center gap-2 mb-3 px-1">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-orange-400 to-rose-500 flex items-center justify-center"><Zap className="w-3 h-3 text-white" /></div>
+          <div className="text-[11px] font-bold text-gray-900">FitTrack</div>
+        </div>
+        {[{l:'Dashboard',a:true,I:LayoutDashboard},{l:'Workouts',a:false,I:Zap},{l:'Nutrition',a:false,I:Heart},{l:'Progress',a:false,I:TrendingUp},{l:'Community',a:false,I:Users}].map(({l,a,I:Icon})=>(
+          <div key={l} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-medium ${a?'bg-gradient-to-r from-orange-500 to-rose-500 text-white':'text-gray-500'}`}><Icon className="w-3 h-3" />{l}</div>
+        ))}
+        <div className="mt-4 px-1">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-50 to-rose-50 border border-orange-100">
+            <div className="text-[9px] font-bold text-gray-800">Today&apos;s Goal</div>
+            <div className="text-[14px] font-black text-orange-500 mt-0.5">68%</div>
+            <div className="text-[8px] text-gray-400">Keep going!</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FitnessLeaderboard() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 340, minHeight: 380 }}>
+      <div className="p-4">
+        <div className="text-[13px] font-bold text-gray-900 mb-0.5">Leaderboard</div>
+        <div className="text-[10px] text-gray-400 mb-4">This week&apos;s top performers</div>
+        <div className="space-y-2.5">
+          {[{n:'Sarah Chen',s:'58,430 steps',r:1,av:'bg-rose-500'},{n:'Alex Rivera',s:'52,180 steps',r:2,av:'bg-orange-500'},{n:'You',s:'48,294 steps',r:3,av:'bg-violet-500',me:true},{n:'Maya Patel',s:'45,920 steps',r:4,av:'bg-sky-500'},{n:'Liam Osei',s:'41,800 steps',r:5,av:'bg-emerald-500'},{n:'Jayda Moore',s:'38,650 steps',r:6,av:'bg-pink-500'}].map(({n,s,r,av,me})=>(
+            <div key={n} className={`flex items-center gap-2.5 p-2 rounded-xl ${me?'bg-orange-50 border border-orange-200':'bg-gray-50'}`}>
+              <div className={`text-[11px] font-bold w-5 text-center ${r<=3?'text-orange-500':'text-gray-400'}`}>{r}</div>
+              <div className={`w-7 h-7 rounded-full ${av} flex items-center justify-center text-[10px] font-bold text-white`}>{n[0]}</div>
+              <div className="flex-1"><div className="text-[10px] font-semibold text-gray-800">{n}{me?<span className="text-[8px] text-orange-500 ml-1">You</span>:null}</div><div className="text-[8px] text-gray-400">{s}</div></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── SET 2: E-commerce / Food Delivery ── */
+
+function FoodMenuPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 300, minHeight: 420 }}>
+      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between mb-2">
+          <div><div className="text-[11px] font-bold text-gray-800">FoodDash</div><div className="text-[9px] text-gray-400">Order from top restaurants</div></div>
+          <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center"><Search className="w-3.5 h-3.5 text-gray-400" /></div>
+        </div>
+        <div className="flex gap-2 mt-2">
+          {['All','Pizza','Sushi','Burger','Thai'].map((c,i)=>(
+            <div key={c} className={`px-2.5 py-1 rounded-full text-[9px] font-medium ${i===0?'bg-emerald-500 text-white':'bg-white text-gray-500 shadow-sm'}`}>{c}</div>
+          ))}
+        </div>
+      </div>
+      <div className="p-3 space-y-2.5">
+        {[{n:'Sakura Sushi Bar',r:'4.9',t:'25-35 min',p:'$$',tag:'Popular',color:'bg-rose-100 text-rose-600'},{n:'Mario\'s Pizzeria',r:'4.7',t:'20-30 min',p:'$',tag:'Free delivery',color:'bg-emerald-100 text-emerald-600'},{n:'Thai Orchid',r:'4.8',t:'30-40 min',p:'$$',tag:'New',color:'bg-amber-100 text-amber-600'}].map(({n,r,t,p,tag,color})=>(
+          <div key={n} className="flex gap-3">
+            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center flex-shrink-0">
+              <div className={`w-8 h-8 rounded-lg ${n.includes('Sushi')?'bg-rose-100':'bg-emerald-100'} flex items-center justify-center`}>
+                <UtensilsCrossed className="w-4 h-4 text-gray-400" />
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="text-[10px] font-bold text-gray-800">{n}</div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[9px] font-semibold text-amber-500">★ {r}</span>
+                <span className="text-[8px] text-gray-400">{t}</span>
+                <span className="text-[8px] text-gray-400">{p}</span>
+              </div>
+              <div className={`inline-block text-[7px] font-bold px-1.5 py-0.5 rounded mt-1 ${color}`}>{tag}</div>
+            </div>
+          </div>
+        ))}
+        <div className="text-[10px] font-semibold text-gray-700 mt-2">Your Cart</div>
+        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-[9px] font-semibold text-gray-800">2 items</div>
+            <div className="text-[11px] font-bold text-emerald-600">$28.50</div>
+          </div>
+          <div className="px-3 py-1.5 bg-emerald-500 rounded-lg text-white text-[10px] font-semibold text-center">Checkout</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FoodOrderPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 420, minHeight: 380 }}>
+      <div className="px-4 pt-4 pb-2">
+        <div className="text-[13px] font-bold text-gray-900 mb-0.5">Restaurant Dashboard</div>
+        <div className="text-[9px] text-gray-400">Manage orders and menu</div>
+      </div>
+      <div className="px-4 pb-3 grid grid-cols-3 gap-2">
+        {[{v:'84',l:'Active Orders',c:'from-emerald-400 to-teal-500'},{v:'$3,420',l:'Today Revenue',c:'from-sky-400 to-blue-500'},{v:'4.8',l:'Avg Rating',c:'from-amber-400 to-orange-500'}].map(({v,l,c})=>(
+          <div key={l} className="p-2.5 rounded-xl bg-gray-50">
+            <div className={`text-[14px] font-bold bg-gradient-to-r ${c} bg-clip-text text-transparent`}>{v}</div>
+            <div className="text-[8px] text-gray-400 mt-0.5">{l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="px-4 pb-3">
+        <div className="text-[10px] font-semibold text-gray-700 mb-2">Recent Orders</div>
+        <div className="space-y-1.5">
+          {[{id:'#2847',c:'Sarah M.',items:'2x Salmon Roll, Miso Soup',total:'$34.50',st:'Preparing',sc:'bg-amber-100 text-amber-700'},{id:'#2846',c:'Alex K.',items:'Large Pepperoni, Garlic Bread',total:'$22.00',st:'Ready',sc:'bg-emerald-100 text-emerald-700'},{id:'#2845',c:'Nena R.',items:'Pad Thai, Spring Rolls',total:'$18.90',st:'Delivered',sc:'bg-sky-100 text-sky-700'},{id:'#2844',c:'Jake W.',items:'3x Taco, Guacamole',total:'$26.80',st:'Preparing',sc:'bg-amber-100 text-amber-700'}].map(({id,c,items,total,st,sc})=>(
+            <div key={id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
+              <div className="text-[9px] font-bold text-gray-500 w-10">{id}</div>
+              <div className="flex-1 min-w-0"><div className="text-[9px] font-semibold text-gray-800">{c}</div><div className="text-[8px] text-gray-400 truncate">{items}</div></div>
+              <div className="text-[9px] font-bold text-gray-800">{total}</div>
+              <div className={`text-[7px] font-bold px-1.5 py-0.5 rounded ${sc}`}>{st}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FoodNavPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 180, minHeight: 340 }}>
+      <div className="p-3 space-y-0.5">
+        <div className="flex items-center gap-2 mb-3 px-1">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center"><Globe className="w-3 h-3 text-white" /></div>
+          <div className="text-[11px] font-bold text-gray-900">FoodDash</div>
+        </div>
+        {[{l:'Dashboard',a:true,I:LayoutDashboard},{l:'Orders',a:false,I:ClipboardList},{l:'Menu',a:false,I:UtensilsCrossed},{l:'Customers',a:false,I:Users},{l:'Analytics',a:false,I:TrendingUp}].map(({l,a,I:Icon})=>(
+          <div key={l} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-medium ${a?'bg-gradient-to-r from-emerald-500 to-teal-500 text-white':'text-gray-500'}`}><Icon className="w-3 h-3" />{l}</div>
+        ))}
+        <div className="mt-4 px-1">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100">
+            <div className="text-[9px] font-bold text-gray-800">Active Orders</div>
+            <div className="text-[14px] font-black text-emerald-500 mt-0.5">84</div>
+            <div className="text-[8px] text-gray-400">12 need attention</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FoodDeliveryMap() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 340, minHeight: 380 }}>
+      <div className="p-4">
+        <div className="text-[13px] font-bold text-gray-900 mb-0.5">Live Deliveries</div>
+        <div className="text-[10px] text-gray-400 mb-3">Tracking 8 active orders</div>
+        <div className="h-[140px] rounded-xl bg-gradient-to-br from-emerald-50 via-sky-50 to-teal-50 border border-gray-100 relative overflow-hidden mb-3">
+          <div className="absolute inset-0 opacity-20" style={{backgroundImage:'linear-gradient(90deg, transparent 49%, #e5e7eb 49%, #e5e7eb 51%, transparent 51%), linear-gradient(0deg, transparent 49%, #e5e7eb 49%, #e5e7eb 51%, transparent 51%)',backgroundSize:'30px 30px'}} />
+          {[{t:30,l:25},{t:50,l:65},{t:70,l:40},{t:25,l:80}].map(({t,l},i)=>(
+            <div key={i} className="absolute w-4 h-4 rounded-full bg-emerald-500 border-2 border-white shadow-md" style={{top:`${t}%`,left:`${l}%`}} />
+          ))}
+        </div>
+        <div className="text-[10px] font-semibold text-gray-700 mb-2">Active Drivers</div>
+        <div className="space-y-2">
+          {[{n:'Marcus J.',o:'#2847 · Sakura Sushi',eta:'8 min',av:'bg-emerald-500'},{n:'Leila T.',o:'#2846 · Mario\'s Pizza',eta:'3 min',av:'bg-sky-500'},{n:'Sam R.',o:'#2845 · Thai Orchid',eta:'12 min',av:'bg-violet-500'}].map(({n,o,eta,av})=>(
+            <div key={n} className="flex items-center gap-2.5">
+              <div className={`w-7 h-7 rounded-full ${av} flex items-center justify-center text-[10px] font-bold text-white`}>{n[0]}</div>
+              <div className="flex-1"><div className="text-[10px] font-semibold text-gray-800">{n}</div><div className="text-[8px] text-gray-400">{o}</div></div>
+              <div className="text-[9px] font-semibold text-emerald-500">{eta}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── SET 3: Social Media / Content Platform ── */
+
+function SocialFeedPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 300, minHeight: 420 }}>
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center"><Heart className="w-3.5 h-3.5 text-white" /></div>
+          <div className="text-[12px] font-bold text-gray-900">Pulse</div>
+        </div>
+        <div className="flex gap-1.5">
+          <div className="w-7 h-7 rounded-full bg-gray-50 flex items-center justify-center"><Bell className="w-3.5 h-3.5 text-gray-400" /></div>
+          <div className="w-7 h-7 rounded-full bg-gray-50 flex items-center justify-center"><MessageSquare className="w-3.5 h-3.5 text-gray-400" /></div>
+        </div>
+      </div>
+      {/* Stories row */}
+      <div className="px-4 py-2.5 flex gap-3 border-b border-gray-100">
+        {[{n:'Your story',c:'from-violet-400 to-pink-500',add:true},{n:'Sarah C.',c:'from-sky-400 to-blue-500'},{n:'Alex R.',c:'from-emerald-400 to-teal-500'},{n:'Maya P.',c:'from-amber-400 to-orange-500'}].map(({n,c,add})=>(
+          <div key={n} className="flex flex-col items-center gap-1 flex-shrink-0">
+            <div className={`w-11 h-11 rounded-full bg-gradient-to-br ${c} p-[2px]`}>
+              <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
+                {add
+                  ? <div className="w-full h-full rounded-full bg-gray-50 flex items-center justify-center text-gray-400 text-[14px] font-light">+</div>
+                  : <div className={`w-full h-full rounded-full bg-gradient-to-br ${c} flex items-center justify-center text-[10px] font-bold text-white`}>{n[0]}</div>
+                }
+              </div>
+            </div>
+            <div className="text-[7px] text-gray-400 font-medium max-w-[40px] truncate text-center">{n}</div>
+          </div>
+        ))}
+      </div>
+      {/* Post 1 */}
+      <div className="px-4 pt-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center text-[10px] font-bold text-white">NK</div>
+          <div className="flex-1"><div className="text-[10px] font-semibold text-gray-800">Nena Kim</div><div className="text-[8px] text-gray-400">Designer at Figma · 2h</div></div>
+          <div className="text-gray-300"><ChevronDown className="w-3 h-3" /></div>
+        </div>
+        <div className="text-[10px] text-gray-700 leading-relaxed">Just shipped the new design system at work. 6 months of work, 200+ components. So proud of the team!</div>
+        <div className="h-32 rounded-xl relative overflow-hidden bg-gray-100">
+          <img src="https://images.pexels.com/photos/196644/pexels-photo-196644.jpeg?auto=compress&cs=tinysrgb&w=600&h=300&dpr=2" alt="" className="w-full h-full object-cover" loading="lazy" />
+          <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/40 rounded text-[7px] text-white font-medium backdrop-blur-sm">1 / 3</div>
+        </div>
+        <div className="flex items-center justify-between pt-1 pb-2">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 text-[9px] text-gray-500 font-medium"><Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" /> 2,847</div>
+            <div className="flex items-center gap-1 text-[9px] text-gray-500 font-medium"><MessageSquare className="w-3.5 h-3.5" /> 184</div>
+            <div className="flex items-center gap-1 text-[9px] text-gray-500 font-medium"><Share2 className="w-3.5 h-3.5" /> 52</div>
+          </div>
+          <div className="flex -space-x-1.5">
+            {['bg-sky-500','bg-emerald-500','bg-amber-500'].map((c,i)=>(
+              <div key={i} className={`w-4 h-4 rounded-full ${c} border border-white text-[6px] text-white font-bold flex items-center justify-center`}>{['S','A','M'][i]}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* Post 2 preview */}
+      <div className="px-4 pt-2 pb-3 border-t border-gray-50">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-full bg-sky-500 flex items-center justify-center text-[9px] font-bold text-white">JM</div>
+          <div className="flex-1"><div className="text-[10px] font-semibold text-gray-800">Jake Martinez</div><div className="text-[8px] text-gray-400">Engineer · 4h</div></div>
+        </div>
+        <div className="text-[10px] text-gray-600 mt-1.5 leading-relaxed">Open-sourced our internal tool. 1.2k stars in the first day...</div>
+      </div>
+    </div>
+  )
+}
+
+function SocialProfilePanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 420, minHeight: 380 }}>
+      {/* Cover */}
+      <div className="h-24 bg-gradient-to-r from-violet-500 via-pink-500 to-rose-400 relative">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjEpIi8+PC9zdmc+')] opacity-50" />
+      </div>
+      <div className="px-5 pb-4 -mt-10">
+        <div className="flex items-end justify-between mb-3">
+          <div className="w-[72px] h-[72px] rounded-2xl bg-white shadow-lg p-1">
+            <div className="w-full h-full rounded-xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center text-[22px] font-bold text-white">N</div>
+          </div>
+          <div className="flex gap-2 mb-1">
+            <div className="px-3 py-1.5 rounded-lg border border-gray-200 text-[9px] font-semibold text-gray-600">Message</div>
+            <div className="px-4 py-1.5 rounded-lg bg-violet-500 text-white text-[9px] font-semibold">Follow</div>
+          </div>
+        </div>
+        <div className="mb-3">
+          <div className="text-[14px] font-bold text-gray-900">Nena Rodriguez</div>
+          <div className="text-[10px] text-gray-400">@nena.creates</div>
+          <div className="text-[10px] text-gray-600 mt-1.5 leading-relaxed">Product Designer at Figma. Building design tools. Previously at Stripe.</div>
+          <div className="flex items-center gap-3 mt-1.5">
+            <div className="text-[9px] text-gray-400"><span className="font-semibold text-gray-700">12.4K</span> followers</div>
+            <div className="text-[9px] text-gray-400"><span className="font-semibold text-gray-700">842</span> following</div>
+          </div>
+        </div>
+        {/* Tabs */}
+        <div className="flex gap-4 border-b border-gray-100 mb-3">
+          {['Posts','Replies','Media','Likes'].map((t,i)=>(
+            <div key={t} className={`pb-2 text-[10px] font-semibold ${i===0?'text-violet-500 border-b-2 border-violet-500':'text-gray-400'}`}>{t}</div>
+          ))}
+        </div>
+        {/* Posts grid */}
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            {src:'https://images.pexels.com/photos/196644/pexels-photo-196644.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&dpr=2',likes:'2.8K'},
+            {src:'https://images.pexels.com/photos/1779487/pexels-photo-1779487.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&dpr=2'},
+            {src:'https://images.pexels.com/photos/3861969/pexels-photo-3861969.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&dpr=2'},
+            {src:'https://images.pexels.com/photos/3182812/pexels-photo-3182812.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&dpr=2'},
+            {src:'https://images.pexels.com/photos/1181671/pexels-photo-1181671.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&dpr=2'},
+            {src:'https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&dpr=2'},
+          ].map(({src,likes},i)=>(
+            <div key={i} className="aspect-square rounded-lg relative overflow-hidden bg-gray-100">
+              <img src={src} alt="" className="w-full h-full object-cover" loading="lazy" />
+              {likes&&<div className="absolute bottom-1 right-1 flex items-center gap-0.5 text-[7px] text-white font-medium bg-black/30 rounded px-1 py-0.5 backdrop-blur-sm"><Heart className="w-2 h-2" /> {likes}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SocialNavPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 180, minHeight: 340 }}>
+      <div className="p-3 space-y-0.5">
+        <div className="flex items-center gap-2 mb-4 px-1">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center"><Heart className="w-3 h-3 text-white" /></div>
+          <div className="text-[11px] font-bold text-gray-900">Pulse</div>
+        </div>
+        {[{l:'Home',a:true,I:LayoutDashboard},{l:'Explore',a:false,I:Search},{l:'Notifications',a:false,I:Bell,badge:3},{l:'Messages',a:false,I:MessageSquare,badge:12},{l:'Bookmarks',a:false,I:HardDrive},{l:'Profile',a:false,I:Users}].map(({l,a,I:Icon,badge})=>(
+          <div key={l} className={`flex items-center gap-2 px-2 py-2 rounded-xl text-[10px] font-medium ${a?'bg-gradient-to-r from-violet-500 to-pink-500 text-white':'text-gray-600'}`}>
+            <Icon className="w-3.5 h-3.5" />
+            <span className="flex-1">{l}</span>
+            {badge&&!a?<div className="w-4 h-4 rounded-full bg-violet-500 text-white text-[7px] font-bold flex items-center justify-center">{badge}</div>:null}
+          </div>
+        ))}
+        <div className="mt-4 px-1">
+          <div className="w-full py-2 rounded-xl bg-gradient-to-r from-violet-500 to-pink-500 text-white text-[10px] font-semibold text-center shadow-lg shadow-violet-500/20">New Post</div>
+        </div>
+        <div className="mt-3 px-1">
+          <div className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Trending</div>
+          {[{t:'#DesignSystems',p:'12.4K posts'},{t:'#OpenSource',p:'8.2K posts'},{t:'#ProductHunt',p:'5.1K posts'}].map(({t,p})=>(
+            <div key={t} className="py-1"><div className="text-[9px] font-semibold text-violet-500">{t}</div><div className="text-[7px] text-gray-400">{p}</div></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SocialNotificationsPanel() {
+  return (
+    <div className={PANEL_BASE} style={{ width: 340, minHeight: 380 }}>
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+        <div><div className="text-[13px] font-bold text-gray-900">Notifications</div><div className="text-[9px] text-gray-400">You have 6 new notifications</div></div>
+        <div className="text-[9px] font-medium text-violet-500">Mark all read</div>
+      </div>
+      <div className="px-4 pb-4 space-y-1">
+        {[{n:'Sarah Chen',a:'followed you',t:'2m ago',av:'bg-rose-500',type:'follow',unread:true},
+          {n:'Alex Rivera',a:'liked your post',t:'8m ago',av:'bg-sky-500',type:'like',unread:true},
+          {n:'Design Team',a:'mentioned you in a comment',t:'15m ago',av:'bg-violet-500',type:'mention',unread:true},
+          {n:'Maya Patel',a:'shared your post',t:'1h ago',av:'bg-emerald-500',type:'share',unread:false},
+          {n:'Liam Osei',a:'started following you',t:'2h ago',av:'bg-amber-500',type:'follow',unread:false},
+          {n:'Jake Martinez',a:'replied to your comment',t:'3h ago',av:'bg-indigo-500',type:'reply',unread:false},
+          {n:'Kate Liu',a:'liked your photo',t:'5h ago',av:'bg-pink-500',type:'like',unread:false},
+        ].map(({n,a,t,av,unread})=>(
+          <div key={n+a} className={`flex items-start gap-2.5 p-2.5 rounded-xl ${unread?'bg-violet-50/70':'hover:bg-gray-50'} transition-colors`}>
+            <div className={`w-8 h-8 rounded-full ${av} flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0`}>{n[0]}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] text-gray-700"><span className="font-semibold text-gray-900">{n}</span> {a}</div>
+              <div className="text-[8px] text-gray-400 mt-0.5">{t}</div>
+            </div>
+            {unread&&<div className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0 mt-2" />}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── Panel sets for rotation ── */
+type PanelSet = { left: React.ReactNode; centerLeft: React.ReactNode; centerRight: React.ReactNode; right: React.ReactNode }
+
+const PANEL_SETS: { panels: () => PanelSet; prompt: string }[] = [
+  { panels: () => ({ left: <CalendarPanel />, centerLeft: <TeamPanel />, centerRight: <SidebarPanel />, right: <AnalyticsPanel /> }), prompt: 'Dashboard for a SaaS product with calendar and analytics' },
+  { panels: () => ({ left: <FitnessPanel />, centerLeft: <FitnessLeaderboard />, centerRight: <FitnessNavPanel />, right: <FitnessStatsPanel /> }), prompt: 'A fitness tracking app with workout stats and progress charts' },
+  { panels: () => ({ left: <FoodMenuPanel />, centerLeft: <FoodDeliveryMap />, centerRight: <FoodNavPanel />, right: <FoodOrderPanel /> }), prompt: 'Food delivery app with restaurant listings and live tracking' },
+  { panels: () => ({ left: <SocialFeedPanel />, centerLeft: <SocialNotificationsPanel />, centerRight: <SocialNavPanel />, right: <SocialProfilePanel /> }), prompt: 'Social media platform with feed, profiles and notifications' },
+]
+
+/* Floating prompt bar for hero (typing synced to panel rotation) */
+function HeroPromptBar({ text }: { text: string }) {
   return (
     <div className="bg-white rounded-2xl shadow-[0_8px_30px_-8px_rgba(0,0,0,0.15)] border border-gray-100 px-4 py-3 flex items-center gap-3" style={{ width: 480, maxWidth: '90vw' }}>
       <Sparkles className="w-4 h-4 text-gray-300 flex-shrink-0" />
@@ -355,46 +660,104 @@ function HeroPromptBar() {
   )
 }
 
-/* The big hero showcase — overlapping panels like Banani */
-function HeroShowcase() {
+/* All panel sets pre-rendered, crossfade via opacity for buttery animation */
+function PanelLayer({ panels, style }: { panels: PanelSet; style?: React.CSSProperties }) {
   return (
-    <div className="relative w-full" style={{ height: 520 }}>
-      {/* Soft gradient backdrop */}
-      <div className="absolute inset-0 bg-gradient-to-b from-gray-50/80 to-transparent rounded-3xl" />
-
-      {/* Panel 1 — Calendar (left) */}
+    <div className="absolute inset-0" style={style}>
       <div className="absolute hidden md:block" style={{ left: '-2%', top: 40, transform: 'rotate(-2deg)', zIndex: 1 }}>
-        <CalendarPanel />
+        {panels.left}
       </div>
-
-      {/* Panel 2 — Team settings (center-left) */}
       <div className="absolute hidden lg:block" style={{ left: '18%', top: 10, transform: 'rotate(-0.5deg)', zIndex: 3 }}>
-        <TeamPanel />
+        {panels.centerLeft}
       </div>
-
-      {/* Floating prompt bar (center top) */}
-      <div className="absolute hidden md:block" style={{ left: '50%', top: -10, transform: 'translateX(-50%)', zIndex: 10 }}>
-        <HeroPromptBar />
-      </div>
-
-      {/* Panel 3 — Sidebar (center-right) */}
       <div className="absolute hidden lg:block" style={{ right: '30%', top: 30, transform: 'rotate(0.5deg)', zIndex: 2 }}>
-        <SidebarPanel />
+        {panels.centerRight}
       </div>
-
-      {/* Panel 4 — Analytics dashboard (right) */}
       <div className="absolute hidden md:block" style={{ right: '-3%', top: 20, transform: 'rotate(1deg)', zIndex: 4 }}>
-        <AnalyticsPanel />
-      </div>
-
-      {/* Mobile: show stacked panels */}
-      <div className="md:hidden flex flex-col items-center gap-4 relative z-10 pt-4">
-        <HeroPromptBar />
-        <CalendarPanel />
+        {panels.right}
       </div>
     </div>
   )
 }
+
+function HeroShowcase() {
+  const [activeIdx, setActiveIdx] = useState(0)
+  const [typedText, setTypedText] = useState('')
+
+  // Pre-render all panel sets once
+  const allSets = useRef(PANEL_SETS.map(s => s.panels())).current
+
+  useEffect(() => {
+    const prompt = PANEL_SETS[activeIdx].prompt
+    let charIdx = 0
+    setTypedText('')
+
+    const typeTimer = setInterval(() => {
+      if (charIdx < prompt.length) {
+        setTypedText(prompt.slice(0, charIdx + 1))
+        charIdx++
+      } else {
+        clearInterval(typeTimer)
+      }
+    }, 35)
+
+    // Switch after typing + 3s dwell
+    const switchTimer = setTimeout(() => {
+      setActiveIdx(idx => (idx + 1) % PANEL_SETS.length)
+    }, prompt.length * 35 + 3500)
+
+    return () => {
+      clearInterval(typeTimer)
+      clearTimeout(switchTimer)
+    }
+  }, [activeIdx])
+
+  return (
+    <div className="relative w-full" style={{ height: 520 }}>
+      <div className="absolute inset-0 bg-gradient-to-b from-gray-50/80 to-transparent rounded-3xl" />
+
+      {/* All panel sets stacked — only active one is visible via CSS opacity (no mount/unmount) */}
+      {allSets.map((panels, i) => (
+        <PanelLayer
+          key={i}
+          panels={panels}
+          style={{
+            opacity: i === activeIdx ? 1 : 0,
+            transition: 'opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+            pointerEvents: i === activeIdx ? 'auto' : 'none',
+          }}
+        />
+      ))}
+
+      {/* Floating prompt bar */}
+      <div className="absolute hidden md:block" style={{ left: '50%', top: -10, transform: 'translateX(-50%)', zIndex: 10 }}>
+        <HeroPromptBar text={typedText} />
+      </div>
+
+      {/* Mobile: crossfade left panel only */}
+      <div className="md:hidden flex flex-col items-center gap-4 relative z-10 pt-4">
+        <HeroPromptBar text={typedText} />
+        <div className="relative" style={{ minHeight: 420, width: 300 }}>
+          {allSets.map((panels, i) => (
+            <div
+              key={i}
+              style={{
+                position: i === 0 ? 'relative' : 'absolute',
+                top: 0, left: 0,
+                opacity: i === activeIdx ? 1 : 0,
+                transition: 'opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+                pointerEvents: i === activeIdx ? 'auto' : 'none',
+              }}
+            >
+              {panels.left}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 /* ───────────── FAQ Accordion ───────────── */
 function FAQ({ items }: { items: { q: string; a: string }[] }) {
