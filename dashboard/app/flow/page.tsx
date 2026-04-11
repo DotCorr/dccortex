@@ -11,8 +11,10 @@ import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { Logo } from '@/components/ui/logo'
 import {
-  ArrowRight, ChevronRight, ChevronDown, Check, Menu, X,
-  Sparkles, Image, Share2, Wand2, Figma, Quote
+  ArrowRight, ChevronLeft, ChevronRight, ChevronDown, Check, Menu, X,
+  Sparkles, Image, Share2, Wand2, Figma, Quote,
+  LayoutDashboard, Zap, Globe, HardDrive, Shield, Users, CreditCard, Settings,
+  Search, SlidersHorizontal, Paperclip, ArrowUp
 } from 'lucide-react'
 
 /* ───────────── fade-in-on-scroll ───────────── */
@@ -68,8 +70,8 @@ function CalendarPanel() {
         <div className="absolute top-2 left-3 right-3 flex items-center justify-between">
           <div className="text-[11px] font-semibold text-gray-800">Sep 2025</div>
           <div className="flex gap-1.5">
-            <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center text-[10px] text-gray-400">◀</div>
-            <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center text-[10px] text-gray-400">▶</div>
+            <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center text-gray-400"><ChevronLeft className="w-3 h-3" /></div>
+            <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center text-gray-400"><ChevronRight className="w-3 h-3" /></div>
           </div>
         </div>
       </div>
@@ -197,24 +199,24 @@ function SidebarPanel() {
         <div className="text-[11px] font-bold text-gray-900 mb-3 px-1">Acme Corp ✦</div>
         <div className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider px-1 mb-1">Workspace</div>
         {[
-          { label: 'Overview', active: true, icon: '◉' },
-          { label: 'Activity', active: false, icon: '⚡' },
-          { label: 'Domains', active: false, icon: '🌐' },
-          { label: 'Storage', active: false, icon: '📦' },
-          { label: 'Security', active: false, icon: '🔒' },
-        ].map(({ label, active, icon }) => (
+          { label: 'Overview', active: true, icon: LayoutDashboard },
+          { label: 'Activity', active: false, icon: Zap },
+          { label: 'Domains', active: false, icon: Globe },
+          { label: 'Storage', active: false, icon: HardDrive },
+          { label: 'Security', active: false, icon: Shield },
+        ].map(({ label, active, icon: Icon }) => (
           <div key={label} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-medium ${active ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
-            <span className="text-[8px]">{icon}</span> {label}
+            <Icon className="w-3 h-3" /> {label}
           </div>
         ))}
         <div className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider px-1 mt-3 mb-1">Settings</div>
         {[
-          { label: 'Team Members', icon: '👥' },
-          { label: 'Billing', icon: '💳' },
-          { label: 'General', icon: '⚙️' },
-        ].map(({ label, icon }) => (
+          { label: 'Team Members', icon: Users },
+          { label: 'Billing', icon: CreditCard },
+          { label: 'General', icon: Settings },
+        ].map(({ label, icon: Icon }) => (
           <div key={label} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-medium text-gray-500 hover:bg-gray-50">
-            <span className="text-[8px]">{icon}</span> {label}
+            <Icon className="w-3 h-3" /> {label}
           </div>
         ))}
         {/* Usage bar */}
@@ -277,7 +279,7 @@ function AnalyticsPanel() {
       </div>
       {/* Search */}
       <div className="mx-4 mb-3 px-3 py-2 bg-gray-50 rounded-lg text-[9px] text-gray-300 flex items-center gap-2">
-        <span>🔍</span> Filter projects...
+        <Search className="w-3 h-3" /> Filter projects...
       </div>
       {/* Project cards */}
       <div className="px-4 pb-4 grid grid-cols-2 gap-2">
@@ -310,15 +312,44 @@ function AnalyticsPanel() {
   )
 }
 
-/* Floating prompt bar for hero (Banani-style) */
+/* Floating prompt bar for hero (Banani-style with typing animation) */
 function HeroPromptBar() {
+  const [text, setText] = useState('')
+  const [promptIdx, setPromptIdx] = useState(0)
+  const prompts = [
+    'A fitness tracking app with workout stats and progress charts',
+    'Dashboard for a SaaS product with revenue metrics',
+    'Food delivery app with restaurant listings and cart',
+    'Social media profile with posts, followers and stories',
+  ]
+
+  useEffect(() => {
+    const prompt = prompts[promptIdx]
+    let i = 0
+    setText('')
+    const typeTimer = setInterval(() => {
+      if (i < prompt.length) {
+        setText(prompt.slice(0, i + 1))
+        i++
+      } else {
+        clearInterval(typeTimer)
+        setTimeout(() => setPromptIdx(idx => (idx + 1) % prompts.length), 3000)
+      }
+    }, 35)
+    return () => clearInterval(typeTimer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptIdx])
+
   return (
-    <div className="bg-white rounded-2xl shadow-[0_8px_30px_-8px_rgba(0,0,0,0.15)] border border-gray-100 px-4 py-3 flex items-center gap-3" style={{ width: 320 }}>
-      <div className="flex-1" />
-      <div className="flex items-center gap-2">
-        <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-[11px]">⊞</div>
-        <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-[11px]">📎</div>
-        <div className="w-9 h-9 rounded-xl bg-sky-500 flex items-center justify-center text-white text-sm font-bold shadow-lg shadow-sky-500/30">↑</div>
+    <div className="bg-white rounded-2xl shadow-[0_8px_30px_-8px_rgba(0,0,0,0.15)] border border-gray-100 px-4 py-3 flex items-center gap-3" style={{ width: 480, maxWidth: '90vw' }}>
+      <Sparkles className="w-4 h-4 text-gray-300 flex-shrink-0" />
+      <div className="flex-1 text-[12px] text-gray-500 min-h-[20px] truncate">
+        {text}<span className="animate-pulse text-gray-400">|</span>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400"><SlidersHorizontal className="w-3.5 h-3.5" /></div>
+        <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400"><Paperclip className="w-3.5 h-3.5" /></div>
+        <div className="w-9 h-9 rounded-xl bg-sky-500 flex items-center justify-center text-white shadow-lg shadow-sky-500/30"><ArrowUp className="w-4 h-4" /></div>
       </div>
     </div>
   )
@@ -360,51 +391,6 @@ function HeroShowcase() {
       <div className="md:hidden flex flex-col items-center gap-4 relative z-10 pt-4">
         <HeroPromptBar />
         <CalendarPanel />
-      </div>
-    </div>
-  )
-}
-
-/* ───────────── Animated prompt input ───────────── */
-function AnimatedPrompt() {
-  const [text, setText] = useState('')
-  const [promptIdx, setPromptIdx] = useState(0)
-  const prompts = [
-    'A fitness tracking app with workout stats and progress charts',
-    'Dashboard for a SaaS product with revenue metrics',
-    'Food delivery app with restaurant listings and cart',
-    'Social media profile with posts, followers and stories',
-  ]
-
-  useEffect(() => {
-    const prompt = prompts[promptIdx]
-    let i = 0
-    setText('')
-    const typeTimer = setInterval(() => {
-      if (i < prompt.length) {
-        setText(prompt.slice(0, i + 1))
-        i++
-      } else {
-        clearInterval(typeTimer)
-        setTimeout(() => setPromptIdx(idx => (idx + 1) % prompts.length), 3000)
-      }
-    }, 35)
-    return () => clearInterval(typeTimer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promptIdx])
-
-  return (
-    <div className="w-full max-w-2xl mx-auto">
-      <div className="relative bg-card border border-border shadow-xl shadow-black/10 dark:shadow-black/30 overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-4">
-          <Sparkles className="w-5 h-5 text-primary flex-shrink-0" />
-          <div className="flex-1 text-sm text-foreground min-h-[24px]">
-            {text}<span className="animate-pulse text-primary">|</span>
-          </div>
-          <div className="px-4 py-1.5 bg-foreground text-background text-xs font-semibold flex-shrink-0">
-            Generate
-          </div>
-        </div>
       </div>
     </div>
   )
@@ -542,11 +528,6 @@ export default function FlowLanding() {
               </div>
             </Reveal>
           </div>
-
-          {/* Animated prompt input */}
-          <Reveal delay={350}>
-            <AnimatedPrompt />
-          </Reveal>
 
           {/* Hero showcase — overlapping light-theme panels */}
           <Reveal delay={450}>
