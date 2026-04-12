@@ -11,6 +11,7 @@ import { useSession, signOut } from 'next-auth/react'
 import Link from 'next/link'
 import { LogOut, Settings } from 'lucide-react'
 import { Logo } from '@/components/ui/logo'
+import { ProductSwitcher } from '@/components/product-switcher'
 import { useEffect, useState } from 'react'
 import { detectDesktopShell, detectPlatform } from '@/components/tauri-detector'
 
@@ -72,6 +73,7 @@ export function DashboardLayout({ children, hideSidebar }: { children: React.Rea
               <Logo />
               <span className="text-base sm:text-lg font-bold tracking-tight text-black dark:text-white">DCCortex</span>
             </Link>
+            <ProductSwitcher current="dccortex" />
             
             <div className="flex items-center gap-3 sm:gap-6">
               <span className="hidden sm:inline-block text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate max-w-[150px] sm:max-w-none">

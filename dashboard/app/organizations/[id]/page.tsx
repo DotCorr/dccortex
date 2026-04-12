@@ -13,7 +13,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import Link from 'next/link'
-import { Users, FolderKanban, Plus, Mail, X, UserPlus, ArrowRight, FileText, Settings, CheckCircle, Trash2, Send, Copy, Sparkles, Paintbrush, Hammer, Container, Cpu, HardDrive, Activity, Server, RefreshCw } from 'lucide-react'
+import { Users, FolderKanban, Plus, Mail, X, UserPlus, ArrowRight, FileText, Settings, CheckCircle, Trash2, Send, Copy, Sparkles, Container, Cpu, HardDrive, Activity, Server, RefreshCw } from 'lucide-react'
 import { NEO_FINANCE_LAYOUT } from '@/lib/templates/neo-finance-layout'
 import { ALL_TEMPLATES, type ProjectTemplate } from '@/lib/templates'
 import { Button } from '@/components/ui/button'
@@ -475,19 +475,7 @@ export default function OrganizationDetailPage() {
                 { label: organization.name },
               ]}
             />
-            <div className="inline-flex items-center bg-gray-100 dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] p-0.5 gap-0.5">
-              <a
-                href={`${typeof window !== 'undefined' && window.location.hostname === 'localhost' ? '' : 'https://flow.dccortex.com'}/organizations/${orgId}/design`}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white transition-colors"
-              >
-                <Paintbrush size={13} />
-                Design
-              </a>
-              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium bg-black dark:bg-white text-white dark:text-black shadow-sm">
-                <Hammer size={13} />
-                Build
-              </span>
-            </div>
+
           </div>
           <div className="mt-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-3">

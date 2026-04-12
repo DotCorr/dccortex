@@ -454,3 +454,44 @@ model CortexMessage {
   @@index([threadId, createdAt])
   @@map("viber_messages")
 }
+
+// ─── DCFlow: AI Design Platform ───────────────────────────────
+
+model FlowProject {
+  id             String   @id @default(uuid())
+  name           String
+  description    String?
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  themeConfig    Json?    @map("theme_config")
+  modelId        String   @default("gemini-2.5-flash") @map("model_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  screens FlowScreen[]
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("flow_projects")
+}
+
+model FlowScreen {
+  id           String   @id @default(uuid())
+  projectId    String   @map("project_id")
+  project      FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  prompt       String?  @db.Text
+  html         String?  @db.Text
+  thumbnailUrl String?  @map("thumbnail_url")
+  version      Int      @default(1)
+  sortOrder    Int      @default(0) @map("sort_order")
+  posX         Float    @default(0) @map("pos_x")
+  posY         Float    @default(0) @map("pos_y")
+  width        Int      @default(1440)
+  height       Int      @default(900)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([projectId])
+  @@map("flow_screens")
+}

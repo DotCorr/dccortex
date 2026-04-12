@@ -78,6 +78,7 @@ services:
       - NEXTAUTH_URL=https://flow.dccortex.com
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - DATABASE_URL=postgresql://dccortex:dccortex_dev@postgres:5432/dccortex_dashboard
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - ../DCFlow:/app
       - /app/node_modules

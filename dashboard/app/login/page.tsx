@@ -40,8 +40,7 @@ export default function LoginPage() {
       setCallbackUrl(cb)
     } else if (product === 'flow') {
       // After login, send flow users to the flow subdomain dashboard
-      const isLocal = window.location.hostname === 'localhost'
-      setCallbackUrl(isLocal ? '/dashboard?product=flow' : 'https://flow.dccortex.com/dashboard')
+      setCallbackUrl('https://flow.dccortex.com/dashboard')
     }
     if (product) {
       setRegisterHref(`/register?product=${product}`)

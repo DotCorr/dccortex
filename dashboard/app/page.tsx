@@ -419,15 +419,15 @@ export default function Home() {
             </Reveal>
             <Reveal delay={100}>
               <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight text-foreground leading-[1.08] mb-6">
-                Describe it. Build it.<br />
-                Ship it. Own it.
+                Full-stack apps,<br />
+                ridiculously simple.
               </h1>
             </Reveal>
             <Reveal delay={200}>
               <p className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-10">
-                Tell AI what you want. Get a working app — screens, database, API, everything.
-                Customize with drag-and-drop. Go live in one click.
-                And unlike other tools, you keep full control of your data and servers.
+                Describe what you want. AI builds the screens, database, and API.
+                Customize visually. Deploy in one click — to containers you own.
+                No vendor lock-in. No surprise bills. No dependencies.
               </p>
             </Reveal>
             <Reveal delay={300}>
@@ -943,6 +943,120 @@ export default function Home() {
             </Reveal>
           </div>
         </div>
+      </section>
+
+      {/* ── CHAOS CLOUD TWIST ── */}
+      <section className="py-24 md:py-36 bg-background overflow-hidden relative">
+        <div
+          className="absolute inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.06]"
+          style={{
+            backgroundImage: 'radial-gradient(circle at 1px 1px, currentColor 0.5px, transparent 0)',
+            backgroundSize: '32px 32px',
+          }}
+        />
+        <div className="relative max-w-5xl mx-auto px-6 text-center">
+          <Reveal>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">The old way</p>
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-foreground mb-4 leading-tight">
+              You don&apos;t have to care<br className="hidden sm:block" /> about any of this.
+            </h2>
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto mb-16">
+              Every external service, bill, outage, and migration that used to be your problem &mdash; isn&apos;t anymore.
+            </p>
+          </Reveal>
+
+          <Reveal delay={100}>
+            <div className="relative mb-16 select-none">
+              <div className="absolute left-0 top-0 bottom-0 w-24 z-10 bg-gradient-to-r from-background to-transparent pointer-events-none" />
+              <div className="absolute right-0 top-0 bottom-0 w-24 z-10 bg-gradient-to-l from-background to-transparent pointer-events-none" />
+
+              <div className="overflow-hidden">
+                <div
+                  className="flex gap-3 w-max"
+                  style={{ animation: 'dcc-marquee 28s linear infinite' }}
+                >
+                  {[
+                    'AWS EC2','Firebase','Vercel','Supabase','Auth0','Stripe Billing',
+                    'Cloudflare','SendGrid','Twilio','MongoDB Atlas','Redis Cloud',
+                    'Datadog','PagerDuty','Heroku','Netlify','Render','Railway',
+                    'Planetscale','Neon DB','Upstash','Sentry','LaunchDarkly',
+                    'Segment','Mixpanel','Algolia','Elastic Cloud','Kong',
+                    'AWS EC2','Firebase','Vercel','Supabase','Auth0','Stripe Billing',
+                    'Cloudflare','SendGrid','Twilio','MongoDB Atlas','Redis Cloud',
+                    'Datadog','PagerDuty','Heroku','Netlify','Render','Railway',
+                  ].map((label, i) => (
+                    <span
+                      key={i}
+                      className="px-3 py-1.5 text-xs font-medium border border-border text-muted-foreground bg-muted/50 whitespace-nowrap line-through decoration-red-400/60"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="overflow-hidden mt-3">
+                <div
+                  className="flex gap-3 w-max"
+                  style={{ animation: 'dcc-marquee-reverse 34s linear infinite' }}
+                >
+                  {[
+                    'CloudFront CDN','S3 Buckets','IAM Roles','VPC Config','SSL Certs',
+                    'DNS Routing','Load Balancers','Auto-scaling Groups','RDS Snapshots',
+                    'ECS Task Defs','ECR Registry','Lambda Cold Starts','SQS Queues',
+                    'WAF Rules','NAT Gateway','Bastion Hosts','K8s YAML','Helm Charts',
+                    'CloudFront CDN','S3 Buckets','IAM Roles','VPC Config','SSL Certs',
+                    'DNS Routing','Load Balancers','Auto-scaling Groups','RDS Snapshots',
+                    'ECS Task Defs','ECR Registry','Lambda Cold Starts','SQS Queues',
+                  ].map((label, i) => (
+                    <span
+                      key={i}
+                      className="px-3 py-1.5 text-xs font-medium border border-border text-muted-foreground/60 bg-muted/30 whitespace-nowrap line-through decoration-red-400/40"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Reveal>
+
+          <Reveal delay={200}>
+            <div className="relative">
+              <div className="absolute -inset-px bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 opacity-30 blur-md" />
+              <div className="relative border border-border bg-card px-8 py-8 max-w-2xl mx-auto">
+                <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-3">The DCCortex way</p>
+                <h3 className="text-2xl md:text-3xl font-extrabold text-foreground mb-3 leading-tight">
+                  One runtime.<br />Every layer. Fully yours.
+                </h3>
+                <p className="text-muted-foreground text-base leading-relaxed mb-6">
+                  Frontend, backend, database, networking, scaling, and auth &mdash; provisioned as isolated containers on infrastructure you control. No fragmented services. No external cost surprises. No vendor that can pull the rug.
+                </p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {[
+                    'Your frontend','Your API','Your database','Your scaling',
+                    'Your auth','Your network','Your cost','Your rules',
+                  ].map((label) => (
+                    <span key={label} className="px-3 py-1 text-xs font-medium border border-primary/30 text-primary bg-primary/5">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+
+        <style>{`
+          @keyframes dcc-marquee {
+            0%   { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+          @keyframes dcc-marquee-reverse {
+            0%   { transform: translateX(-50%); }
+            100% { transform: translateX(0); }
+          }
+        `}</style>
       </section>
 
       {/* ── SCALE ── */}
