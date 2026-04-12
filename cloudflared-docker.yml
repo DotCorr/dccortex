@@ -19,7 +19,7 @@ ingress:
     originRequest:
       httpHostHeader: active.dccortex.com
   - hostname: flow.dccortex.com
-    service: http://dashboard:3000
+    service: http://dcflow:3000
     originRequest:
       httpHostHeader: flow.dccortex.com
   - hostname: api.dccortex.com

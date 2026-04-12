@@ -29,12 +29,22 @@ export default function LoginPage() {
   // Video URL - served from public folder
   const videoUrl = '/auth_illu.mp4'
 
+  const [registerHref, setRegisterHref] = useState('/register')
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     const cb = params.get('callbackUrl')
+    const product = params.get('product')
     if (cb && cb.startsWith('/')) {
       setCallbackUrl(cb)
+    } else if (product === 'flow') {
+      // After login, send flow users to the flow subdomain dashboard
+      const isLocal = window.location.hostname === 'localhost'
+      setCallbackUrl(isLocal ? '/dashboard?product=flow' : 'https://flow.dccortex.com/dashboard')
+    }
+    if (product) {
+      setRegisterHref(`/register?product=${product}`)
     }
   }, [])
 
@@ -224,7 +234,7 @@ export default function LoginPage() {
           {/* Sign up link */}
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Don't have an account yet?{' '}
-            <Link href="/register" className="text-foreground hover:underline font-medium">
+            <Link href={registerHref} className="text-foreground hover:underline font-medium">
               Sign up
             </Link>
           </p>

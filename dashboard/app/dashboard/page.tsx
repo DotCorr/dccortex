@@ -12,10 +12,11 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import Link from 'next/link'
-import { Plus, Users, Edit2, Trash2, MoreVertical, ArrowRight } from 'lucide-react'
+import { Plus, Users, Edit2, Trash2, MoreVertical, ArrowRight, Paintbrush, Hammer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { LoadingBar } from '@/components/ui/loading-bar'
-import { useState } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,14 +33,29 @@ import {
 import { Input } from "@/components/ui/input"
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={<DashboardLayout><LoadingBar fullPage /></DashboardLayout>}>
+      <DashboardContent />
+    </Suspense>
+  )
+}
+
+function DashboardContent() {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const [mode, setMode] = useState<'build' | 'design'>('build')
   const [editingOrg, setEditingOrg] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [orgToDelete, setOrgToDelete] = useState<any>(null)
   const [verificationName, setVerificationName] = useState('')
+
+  useEffect(() => {
+    const product = searchParams.get('product')
+    if (product === 'flow') setMode('design')
+  }, [searchParams])
 
   const { data: orgsData, isLoading: orgsLoading } = useQuery({
     queryKey: ['organizations'],
@@ -119,16 +135,44 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <div className="min-h-screen bg-white dark:bg-[#0d1117]">
-        {/* Hero Section - Matching dotcorr_landing */}
+        {/* Hero Section */}
         <section className="pt-24 pb-16 px-6 lg:px-8 max-w-7xl mx-auto">
           <div className="mb-16">
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-medium tracking-tighter text-black dark:text-white mb-6 leading-[0.95]">
               Welcome back,<br />
               <span className="text-gray-300 dark:text-gray-500">{session?.user?.name || 'User'}</span>
             </h1>
-            <p className="text-xl md:text-2xl text-gray-500 dark:text-gray-400 font-light max-w-2xl leading-relaxed">
-              Manage your organizations and projects. Build apps without code.
+            <p className="text-xl md:text-2xl text-gray-500 dark:text-gray-400 font-light max-w-2xl leading-relaxed mb-8">
+              {mode === 'design'
+                ? 'Design multi-screen prototypes with AI.'
+                : 'Manage your organizations and projects. Build apps without code.'}
             </p>
+
+            {/* Design / Build Toggle */}
+            <div className="inline-flex items-center bg-gray-100 dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] p-1 gap-1">
+              <button
+                onClick={() => setMode('design')}
+                className={`inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-all ${
+                  mode === 'design'
+                    ? 'bg-black dark:bg-white text-white dark:text-black shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                <Paintbrush size={16} />
+                Design
+              </button>
+              <button
+                onClick={() => setMode('build')}
+                className={`inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-all ${
+                  mode === 'build'
+                    ? 'bg-black dark:bg-white text-white dark:text-black shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                <Hammer size={16} />
+                Build
+              </button>
+            </div>
           </div>
         </section>
 
@@ -140,7 +184,9 @@ export default function DashboardPage() {
                 Organizations
               </h2>
               <p className="text-gray-500 dark:text-gray-400 font-light">
-                Create orgs and add projects (your apps)
+                {mode === 'design'
+                  ? 'Select an org to start designing'
+                  : 'Create orgs and add projects (your apps)'}
               </p>
             </div>
             <Link href="/organizations/new">
@@ -219,7 +265,7 @@ export default function DashboardPage() {
                   ) : (
                     <>
                       <Link
-                        href={`/organizations/${org.id}`}
+                        href={mode === 'design' ? `/organizations/${org.id}/design` : `/organizations/${org.id}`}
                         className="block mb-6 group/link"
                       >
                         <h3 className="text-2xl font-medium mb-3 text-black dark:text-white tracking-tight group-hover/link:text-gray-600 dark:group-hover/link:text-gray-400 transition-colors mt-8">

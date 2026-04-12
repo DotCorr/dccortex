@@ -15,6 +15,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { buildSystemPrompt } from '@/lib/cortex/system-prompt'
+import { buildDesignSystemPrompt } from '@/lib/cortex/design-prompt'
 import { executeActionsStreaming, type CortexAction, type ActionResult } from '@/lib/cortex/action-executor'
 import { mkdir, writeFile } from 'fs/promises'
 import path from 'path'
@@ -191,7 +192,111 @@ function shouldForceScaffoldFallback(prompt: string): boolean {
   return /\b(build|create|generate|app)\b/i.test(prompt)
 }
 
+function extractTextByTag(source: string, tag: string): string[] {
+  const out: string[] = []
+  const rx = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi')
+  let m: RegExpExecArray | null
+  while ((m = rx.exec(source)) !== null) {
+    const val = m[1].replace(/\s+/g, ' ').trim()
+    if (val) out.push(val)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
+function normalizeUserDesignRequest(raw: string): { modelMessage: string; normalized: boolean; notes: string[] } {
+  const notes: string[] = []
+  const trimmed = raw.trim()
+  if (!trimmed) return { modelMessage: raw, normalized: false, notes }
+
+  const lower = trimmed.toLowerCase()
+  const looksLikeFullHtml = /<!doctype html|<html[\s>]|<head[\s>]|<body[\s>]/i.test(trimmed) && trimmed.length > 2500
+  const cloneIntent = /\b(replica(?:te)?|clone|copy\s+exact|same\s+as|1:1)\b/i.test(lower)
+  const bananiMention = /\bbanani\b/i.test(lower)
+
+  if (!looksLikeFullHtml && !cloneIntent && !bananiMention) {
+    return { modelMessage: raw, normalized: false, notes }
+  }
+
+  let normalizedMessage = trimmed
+
+  if (looksLikeFullHtml) {
+    const titles = extractTextByTag(trimmed, 'title')
+    const metaDescriptionMatch = trimmed.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)
+    const hasGradient = /linear-gradient|radial-gradient/i.test(trimmed)
+    const hasInter = /inter\.css|font-family[^>]*inter/i.test(trimmed)
+    const hasCards = /card|shadow|border-radius|rounded/i.test(trimmed)
+    const hasNav = /<nav|header|menu/i.test(trimmed)
+    const hasHero = /hero|welcome|home/i.test(trimmed)
+
+    const signals: string[] = []
+    if (titles.length) signals.push(`title ideas: ${titles.join(' | ')}`)
+    if (metaDescriptionMatch?.[1]) signals.push(`meta description: ${metaDescriptionMatch[1]}`)
+    if (hasInter) signals.push('typography: clean sans style')
+    if (hasGradient) signals.push('visual style: gradient accents/backgrounds')
+    if (hasCards) signals.push('layout style: card-based surfaces with subtle depth')
+    if (hasNav) signals.push('structure: top navigation/header')
+    if (hasHero) signals.push('structure: strong hero section with CTA')
+
+    normalizedMessage = [
+      'User supplied a full HTML dump as visual reference.',
+      'Do NOT reproduce copyrighted markup or brand-identical copy.',
+      'Create an ORIGINAL design with similar vibe and structure only.',
+      'Extracted style signals:',
+      ...signals.map((s) => `- ${s}`),
+      '',
+      'Deliverables:',
+      '- Build screens/components in DCCortex format only (no raw HTML output).',
+      '- Use clean, production UI with coherent spacing, typography, and navigation.',
+      '- Keep naming/content original (no Banani brand usage).',
+    ].join('\n')
+    notes.push('Normalized oversized HTML reference into a compact design brief.')
+  }
+
+  if (cloneIntent || bananiMention) {
+    normalizedMessage += '\n\nConstraint: user asked for cloning a third-party brand. Refuse exact cloning and produce an original, non-infringing variation with similar UX intent.'
+    notes.push('Converted direct clone request into non-infringing inspired-build constraint.')
+  }
+
+  return { modelMessage: normalizedMessage, normalized: true, notes }
+}
+
+// Filter actions for Design mode — only allow screen creation, reject project/database/API actions
+function filterDesignActions(actions: CortexAction[]): { filtered: CortexAction[]; rejected: string[] } {
+  const DESIGN_FORBIDDEN_ACTIONS = new Set([
+    'create_project',
+    'delete_project',
+    'update_project_settings',
+    'create_table',
+    'update_table',
+    'delete_table',
+    'add_rows',
+    'update_rows',
+    'delete_rows',
+    'create_api_source',
+    'delete_api_source',
+    'validate_api',
+    'execute_query',
+    'create_webhook',
+    'delete_webhook',
+  ])
+
+  const filtered: CortexAction[] = []
+  const rejected: string[] = []
+
+  for (const action of actions) {
+    if (DESIGN_FORBIDDEN_ACTIONS.has(action.type)) {
+      rejected.push(action.type)
+    } else {
+      filtered.push(action)
+    }
+  }
+
+  return { filtered, rejected }
+}
+
 // Simple in-memory rate limiter: 20 requests per user per minute
+
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT_MAX = 20
 const RATE_LIMIT_WINDOW_MS = 60_000
@@ -232,6 +337,7 @@ export async function POST(req: NextRequest) {
     organizationId: string
     projectId?: string | null
     model?: string
+    mode?: 'cortex' | 'design'
   }
   try {
     body = await req.json()
@@ -239,8 +345,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { message, organizationId, projectId } = body
+  const { message, organizationId, projectId, mode = 'cortex' } = body
   const selectedModel = body.model ?? 'gemini-2.5-flash'
+  const normalizedReq = normalizeUserDesignRequest(message)
+  const modelInputMessage = normalizedReq.modelMessage
+
   if (!message?.trim() || !organizationId) {
     return NextResponse.json({ error: 'message and organizationId required' }, { status: 400 })
   }
@@ -335,18 +444,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Build system prompt
-  const systemPrompt = buildSystemPrompt({
-    orgId: organizationId,
-    orgName: membership.organization.name,
-    projectId: activeProjectId,
-    projectName: projectContext.projectName,
-    projectScreens: projectContext.projectScreens,
-    projectScreenSummaries: projectContext.projectScreenSummaries,
-    projectTables: projectContext.projectTables,
-    projectApiSources: projectContext.projectApiSources,
-    conversationSummary: thread.summary,
-  })
+  // Build system prompt based on mode
+  const systemPrompt = mode === 'design'
+    ? buildDesignSystemPrompt({
+        orgId: organizationId,
+        orgName: membership.organization.name,
+      })
+    : buildSystemPrompt({
+        orgId: organizationId,
+        orgName: membership.organization.name,
+        projectId: activeProjectId,
+        projectName: projectContext.projectName,
+        projectScreens: projectContext.projectScreens,
+        projectScreenSummaries: projectContext.projectScreenSummaries,
+        projectTables: projectContext.projectTables,
+        projectApiSources: projectContext.projectApiSources,
+        conversationSummary: thread.summary,
+      })
 
   // Fetch recent messages for context
   const recentMessages = await prisma.cortexMessage.findMany({
@@ -451,7 +565,7 @@ export async function POST(req: NextRequest) {
         let lastThinkStep = ''
         let lastThinkAt = Date.now()
 
-        const streamResult = await chat.sendMessageStream(message)
+        const streamResult = await chat.sendMessageStream(modelInputMessage)
         for await (const chunk of streamResult.stream) {
           accumulatedText += chunk.text()
           const now = Date.now()
@@ -571,7 +685,7 @@ export async function POST(req: NextRequest) {
                 '- Never claim complete unless actions actually include what you claim.',
                 '- Keep actions concise and valid over verbosity.',
                 'Original user request:',
-                message,
+                modelInputMessage,
               ].join('\n')
 
               const selfHealResult = await geminiJsonModel.generateContent(selfHealPrompt)
@@ -652,10 +766,63 @@ export async function POST(req: NextRequest) {
 
         // Execute actions with per-action SSE progress
         let actionResults: ActionResult[] = []
-        if (aiResponse.actions.length > 0) {
-          push({ type: 'thinking', step: `Executing ${aiResponse.actions.length} action${aiResponse.actions.length !== 1 ? 's' : ''}...` })
+        let designRejectedActions: string[] = []
+        let designSandboxProjectId: string | null = null
+        
+        // For Design mode, filter out forbidden actions and inject sandbox project ID
+        let actionsToExecute = aiResponse.actions
+        if (mode === 'design') {
+          const { filtered, rejected } = filterDesignActions(aiResponse.actions)
+          actionsToExecute = filtered
+          designRejectedActions = rejected
+          if (rejected.length > 0) {
+            const rejectedList = rejected.join(', ')
+            aiResponse.message = `${aiResponse.message}\n\n*Note: I skipped ${rejected.length} backend action(s) (${rejectedList}) since Design creates mockups only.`
+          }
+
+          // If Design has create_screen actions, ensure a Design Sandbox project exists
+          const hasScreenActions = actionsToExecute.some(a => a.type === 'create_screen' || a.type === 'update_screen' || a.type === 'delete_screen')
+          if (hasScreenActions) {
+            // Find or create the "Design Sandbox" project for this org
+            let sandboxProject = await prisma.project.findFirst({
+              where: { organizationId, slug: '__design-sandbox__' },
+              select: { id: true },
+            })
+            if (!sandboxProject) {
+              sandboxProject = await prisma.project.create({
+                data: {
+                  organizationId,
+                  userId,
+                  name: 'Design Sandbox',
+                  slug: '__design-sandbox__',
+                  description: 'Auto-created project for DCFlow design mockups.',
+                  status: 'draft',
+                },
+                select: { id: true },
+              })
+            }
+            designSandboxProjectId = sandboxProject.id
+
+            // Inject the sandbox projectId into all screen actions
+            actionsToExecute = actionsToExecute.map(action => {
+              if (action.type === 'create_screen' || action.type === 'update_screen' || action.type === 'delete_screen') {
+                return { ...action, params: { ...action.params, projectId: sandboxProject!.id } }
+              }
+              return action
+            }) as typeof actionsToExecute
+
+            // Also update thread to track this project so UI can show link
+            await prisma.cortexThread.update({
+              where: { id: thread.id },
+              data: { projectId: sandboxProject.id },
+            })
+          }
+        }
+        
+        if (actionsToExecute.length > 0) {
+          push({ type: 'thinking', step: `Executing ${actionsToExecute.length} action${actionsToExecute.length !== 1 ? 's' : ''}...` })
           actionResults = await executeActionsStreaming(
-            aiResponse.actions,
+            actionsToExecute,
             userId,
             organizationId,
             (evt) => {
@@ -731,8 +898,12 @@ export async function POST(req: NextRequest) {
             failedActionCount: failedActions.length,
           },
           assessments: {
-            warnings: assessPromptContract(message, aiResponse.actions, actionResults, aiResponse.message ?? ''),
+            warnings: assessPromptContract(modelInputMessage, aiResponse.actions, actionResults, aiResponse.message ?? ''),
           },
+        }
+
+        if (normalizedReq.normalized && normalizedReq.notes.length > 0) {
+          auditArtifact.assessments.warnings.push(...normalizedReq.notes)
         }
 
         try {
@@ -792,7 +963,7 @@ export async function POST(req: NextRequest) {
           followUp: aiResponse.followUp ?? null,
           threadId: thread.id,
         })
-        push({ type: 'done', threadId: thread.id, actionResults, debugTrace, auditArtifact })
+        push({ type: 'done', threadId: thread.id, projectId: designSandboxProjectId ?? (activeProjectId ?? null), actionResults, debugTrace, auditArtifact })
 
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err)

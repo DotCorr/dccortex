@@ -62,18 +62,6 @@ const authMiddleware = withAuth(
 )
 
 export default async function middleware(req: NextRequest, event: NextFetchEvent) {
-  const hostname = req.headers.get('host') || ''
-
-  // Subdomain routing: flow.dccortex.com → /flow
-  if (hostname.startsWith('flow.')) {
-    const url = req.nextUrl.clone()
-    if (!url.pathname.startsWith('/flow')) {
-      url.pathname = `/flow${url.pathname === '/' ? '' : url.pathname}`
-      return NextResponse.rewrite(url)
-    }
-    return NextResponse.next()
-  }
-
   if (req.nextUrl.pathname.startsWith('/api')) {
     const origin = req.headers.get('origin')
     const referer = req.headers.get('referer')
@@ -94,6 +82,8 @@ export const config = {
     '/dashboard/:path*',
     '/apps/:path*',
     '/organizations/:path*',
+    '/login',
+    '/register',
     '/',
   ],
 }

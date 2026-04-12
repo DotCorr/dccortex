@@ -1001,7 +1001,7 @@ export default function PreviewApp({ projectId, initialProject, initialData }: {
             }
           }
         } else {
-          const resolved = resolveExpression(config.rowData, rdCtx)
+          const resolved = resolveExpression(config.rowData as string, rdCtx)
           try { rowData = typeof resolved === 'string' ? JSON.parse(resolved) : resolved as Record<string, unknown> } catch { rowData = undefined }
         }
       }
