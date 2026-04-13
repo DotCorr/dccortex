@@ -82,5 +82,8 @@ export const config = {
     '/dashboard/:path*',
     '/apps/:path*',
     '/organizations/:path*',
+    '/login',
+    '/register',
+    '/',
   ],
 }

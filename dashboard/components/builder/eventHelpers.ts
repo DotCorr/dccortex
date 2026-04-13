@@ -98,7 +98,7 @@ export type EventActionConfig = {
   uploadLoadingStateKey?: string
   // CRUD (insertRow / updateRow / deleteRow)
   tableName?: string
-  rowData?: string  // JSON string or binding expression → object
+  rowData?: string | Record<string, unknown>  // JSON string, binding expression, or object literal
   rowId?: string    // binding expression for updateRow/deleteRow
   /** State key to store the result (inserted/updated row or deleted id) */
   resultStateKey?: string
@@ -268,10 +268,11 @@ function normalizeStep(raw: Record<string, unknown>): EventActionConfig {
   }
 
   if (action === 'insertRow' || action === 'updateRow' || action === 'deleteRow') {
+    const rawRowData = params.rowData ?? params.data ?? raw.rowData ?? raw.data ?? ''
     return {
       action,
       tableName: String(params.tableName ?? params.table ?? raw.tableName ?? raw.table ?? ''),
-      rowData: String(params.rowData ?? params.data ?? raw.rowData ?? raw.data ?? ''),
+      rowData: (rawRowData && typeof rawRowData === 'object') ? rawRowData as Record<string, unknown> : String(rawRowData),
       rowId: String(params.rowId ?? params.id ?? raw.rowId ?? raw.id ?? ''),
       resultStateKey: String(params.resultStateKey ?? params.resultKey ?? raw.resultStateKey ?? raw.resultKey ?? ''),
       refreshStateKey: String(params.refreshStateKey ?? params.refreshKey ?? raw.refreshStateKey ?? raw.refreshKey ?? ''),
@@ -319,6 +320,8 @@ export function stringifyEventConfig(c: EventActionConfig): string {
  */
 export function parseEventSteps(raw: unknown): EventActionConfig[] {
   if (raw == null) return []
+  // Handle direct array of steps: [{action:...}, ...]
+  if (Array.isArray(raw)) return (raw as Record<string, unknown>[]).map(normalizeStep)
   // Handle already-parsed object
   if (typeof raw === 'object') {
     const o = raw as Record<string, unknown>

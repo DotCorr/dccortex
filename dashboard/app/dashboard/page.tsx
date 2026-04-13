@@ -15,7 +15,7 @@ import Link from 'next/link'
 import { Plus, Users, Edit2, Trash2, MoreVertical, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { LoadingBar } from '@/components/ui/loading-bar'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +32,14 @@ import {
 import { Input } from "@/components/ui/input"
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={<DashboardLayout><LoadingBar fullPage /></DashboardLayout>}>
+      <DashboardContent />
+    </Suspense>
+  )
+}
+
+function DashboardContent() {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const [editingOrg, setEditingOrg] = useState<string | null>(null)
@@ -119,14 +127,14 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <div className="min-h-screen bg-white dark:bg-[#0d1117]">
-        {/* Hero Section - Matching dotcorr_landing */}
+        {/* Hero Section */}
         <section className="pt-24 pb-16 px-6 lg:px-8 max-w-7xl mx-auto">
           <div className="mb-16">
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-medium tracking-tighter text-black dark:text-white mb-6 leading-[0.95]">
               Welcome back,<br />
               <span className="text-gray-300 dark:text-gray-500">{session?.user?.name || 'User'}</span>
             </h1>
-            <p className="text-xl md:text-2xl text-gray-500 dark:text-gray-400 font-light max-w-2xl leading-relaxed">
+            <p className="text-xl md:text-2xl text-gray-500 dark:text-gray-400 font-light max-w-2xl leading-relaxed mb-8">
               Manage your organizations and projects. Build apps without code.
             </p>
           </div>

@@ -20,6 +20,7 @@ function RegisterForm() {
   const searchParams = useSearchParams()
   const inviteToken = searchParams.get('inviteToken')
   const inviteEmail = searchParams.get('email')
+  const product = searchParams.get('product')
 
   const [formData, setFormData] = useState({
     name: '',
@@ -62,7 +63,8 @@ function RegisterForm() {
             router.push(`/login?callbackUrl=/invitations/${inviteToken}&inviteToken=${inviteToken}`)
           }
         } else {
-          router.push('/login?registered=true')
+          const productParam = product ? `&product=${product}` : ''
+          router.push(`/login?registered=true${productParam}`)
         }
       }
     } catch (err: any) {

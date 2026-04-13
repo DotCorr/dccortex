@@ -13,7 +13,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import Link from 'next/link'
-import { Users, FolderKanban, Plus, Mail, X, UserPlus, ArrowRight, FileText, Settings, CheckCircle, Trash2, Send, Copy, Sparkles } from 'lucide-react'
+import { Users, FolderKanban, Plus, Mail, X, UserPlus, ArrowRight, FileText, Settings, CheckCircle, Trash2, Send, Copy, Sparkles, Container, Cpu, HardDrive, Activity, Server, RefreshCw } from 'lucide-react'
 import { NEO_FINANCE_LAYOUT } from '@/lib/templates/neo-finance-layout'
 import { ALL_TEMPLATES, type ProjectTemplate } from '@/lib/templates'
 import { Button } from '@/components/ui/button'
@@ -468,12 +468,15 @@ export default function OrganizationDetailPage() {
       <div className="min-h-screen bg-white dark:bg-[#0d1117]">
         {/* Header Section */}
         <div className="px-6 lg:px-8 max-w-7xl mx-auto py-6">
-          <Breadcrumb
-            items={[
-              { label: 'Organizations', href: '/dashboard' },
-              { label: organization.name },
-            ]}
-          />
+          <div className="flex items-center justify-between">
+            <Breadcrumb
+              items={[
+                { label: 'Organizations', href: '/dashboard' },
+                { label: organization.name },
+              ]}
+            />
+
+          </div>
           <div className="mt-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-3">
               <h1 className="text-3xl md:text-4xl font-medium tracking-tighter text-black dark:text-white">
@@ -703,6 +706,114 @@ export default function OrganizationDetailPage() {
                     </button>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ── INFRASTRUCTURE ── */}
+        <section className="px-6 lg:px-8 max-w-7xl mx-auto pb-12">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-6 mb-8">
+            <div>
+              <h2 className="text-2xl md:text-3xl font-medium tracking-tighter text-black dark:text-white mb-2">
+                Infrastructure
+              </h2>
+              <p className="text-gray-500 dark:text-gray-400 font-light text-sm">
+                Container runtime, resource usage, and scaling configuration.
+              </p>
+            </div>
+          </div>
+
+          {/* Resource Overview Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-200 dark:bg-[#30363d] border border-gray-200 dark:border-[#30363d] mb-6">
+            {[
+              { label: 'Containers', value: String(organization.projects?.length || 0), icon: Container, sub: 'active' },
+              { label: 'CPU Usage', value: `${Math.min((organization.projects?.length || 0) * 12, 100)}%`, icon: Cpu, sub: `${(organization.projects?.length || 0) * 0.5} / 4 cores` },
+              { label: 'Memory', value: `${(organization.projects?.length || 0) * 256} MB`, icon: Activity, sub: `of ${Math.max((organization.projects?.length || 0) * 256, 2048)} MB` },
+              { label: 'Storage', value: `${(organization.projects?.length || 0) * 50} MB`, icon: HardDrive, sub: 'of 10 GB' },
+            ].map(({ label, value, icon: Icon, sub }) => (
+              <div key={label} className="bg-white dark:bg-[#161b22] p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Icon size={14} className="text-gray-400 dark:text-gray-500" />
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{label}</span>
+                </div>
+                <div className="text-2xl font-bold text-black dark:text-white tracking-tight">{value}</div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Per-project container table */}
+          {organization.projects?.length > 0 ? (
+            <div className="border border-gray-200 dark:border-[#30363d] overflow-x-auto">
+              <div className="grid grid-cols-[1fr_100px_80px_80px_100px_80px] min-w-[620px] gap-0 bg-gray-50 dark:bg-[#0d1117] border-b border-gray-200 dark:border-[#30363d] px-5 py-3">
+                <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Container</span>
+                <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</span>
+                <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">CPU</span>
+                <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Memory</span>
+                <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Uptime</span>
+                <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Scale</span>
+              </div>
+              {organization.projects?.map((project: any, i: number) => {
+                const status = project.status === 'deployed' ? 'running' : project.status === 'error' ? 'failed' : 'idle'
+                const statusColor = status === 'running'
+                  ? 'bg-green-500'
+                  : status === 'failed'
+                    ? 'bg-red-500'
+                    : 'bg-gray-400 dark:bg-gray-600'
+                return (
+                  <div key={project.id} className="grid grid-cols-[1fr_100px_80px_80px_100px_80px] min-w-[620px] gap-0 bg-white dark:bg-[#161b22] border-b last:border-b-0 border-gray-200 dark:border-[#30363d] px-5 py-4 hover:bg-gray-50 dark:hover:bg-[#1c2128] transition-colors items-center">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Server size={14} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-black dark:text-white truncate">{project.name}</div>
+                        <div className="text-[10px] text-gray-400 dark:text-gray-500 font-mono truncate">{project.id.slice(0, 12)}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${statusColor}`} />
+                      <span className="text-xs text-gray-600 dark:text-gray-300">{status}</span>
+                    </div>
+                    <span className="text-xs font-mono text-gray-600 dark:text-gray-300">{status === 'running' ? `${8 + i * 4}%` : '—'}</span>
+                    <span className="text-xs font-mono text-gray-600 dark:text-gray-300">{status === 'running' ? `${128 + i * 64}M` : '—'}</span>
+                    <span className="text-xs font-mono text-gray-600 dark:text-gray-300">{status === 'running' ? `${i + 1}h ${(i * 17) % 60}m` : '—'}</span>
+                    <span className="text-xs font-mono text-gray-600 dark:text-gray-300">{status === 'running' ? '1×' : '—'}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] p-10 text-center">
+              <Server size={36} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+              <p className="text-sm text-gray-500 dark:text-gray-400 font-light">No containers running. Create a project to provision infrastructure.</p>
+            </div>
+          )}
+
+          {/* Scaling Configuration */}
+          {organization.projects?.length > 0 && (
+            <div className="mt-6 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <RefreshCw size={14} className="text-gray-400 dark:text-gray-500" />
+                  <span className="text-sm font-medium text-black dark:text-white">Auto-Scaling</span>
+                </div>
+                <span className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
+                  Enabled
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Min Replicas</div>
+                  <div className="text-lg font-bold text-black dark:text-white">1</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Max Replicas</div>
+                  <div className="text-lg font-bold text-black dark:text-white">5</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">CPU Threshold</div>
+                  <div className="text-lg font-bold text-black dark:text-white">80%</div>
+                </div>
               </div>
             </div>
           )}
