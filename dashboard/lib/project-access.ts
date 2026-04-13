@@ -18,17 +18,25 @@ export async function getProjectForAccess(projectId: string) {
   if (!session?.user?.id) return null
   const userId = (session.user as any).id
 
-  const project = await prisma.project.findFirst({
-    where: {
-      id: projectId,
-      OR: [
-        { userId },
-        { organization: { members: { some: { userId } } } },
-      ],
-    },
+  // Fetch project first, then verify access — avoids edge cases in nested Prisma OR filter
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
     include: { organization: true },
   })
-  return project ? { project, session } : null
+  if (!project) return null
+
+  // Direct ownership
+  if (project.userId === userId) return { project, session }
+
+  // Org membership fallback
+  if (project.organizationId) {
+    const member = await prisma.organizationMember.findUnique({
+      where: { organizationId_userId: { organizationId: project.organizationId, userId } },
+    })
+    if (member) return { project, session }
+  }
+
+  return null
 }
 
 export async function requireProjectDataAccess(

@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Breadcrumb } from '@/components/ui/breadcrumb'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -598,12 +598,14 @@ function loadStoredPreviewSettings(projectId: string, screenId: string): StoredP
 export default function ScreenEditPage() {
   const params = useParams()
   const queryClient = useQueryClient()
+  const router = useRouter()
   const orgId = params.id as string
   const projectId = params.projectId as string
   const screenId = params.screenId as string
   const [root, setRoot] = useState<Node>(defaultLayout)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [leftPanelTab, setLeftPanelTab] = useState<'layers' | 'screens'>('layers')
   const [previewMode, setPreviewMode] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.previewMode ?? false)
   const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>({})
   const [runtimePendingSources, setRuntimePendingSources] = useState<string[]>([])
@@ -2659,7 +2661,7 @@ export default function ScreenEditPage() {
     const typ = (s: (typeof effectiveStateDefinitions)[0]) => (s as { type?: 'string' | 'number' | 'boolean' | 'date' }).type ?? 'string'
     for (const s of effectiveStateDefinitions) {
       if (!s.name?.trim()) continue
-      const raw = s.initialValue?.trim() ?? ''
+      const raw = String(s.initialValue ?? '').trim()
       // Try constructor first
       const constructed = resolveConstructor(raw)
       if (constructed !== undefined) { out[s.name] = constructed; continue }
@@ -2882,7 +2884,7 @@ export default function ScreenEditPage() {
     const fp: Record<string, string> = {}
     for (const s of effectiveStateDefinitions) {
       if (!s.name?.trim()) continue
-      const iv = s.initialValue?.trim() ?? ''
+      const iv = String(s.initialValue ?? '').trim()
       const ctMatch = iv.match(/^(\w+)\(\)$/)
       if (ctMatch) {
         // Include the data model's field defaults in the fingerprint so cache invalidates when they change
@@ -3216,8 +3218,16 @@ export default function ScreenEditPage() {
       }
       if (config.customScript?.trim()) {
         try {
-          const fn = new Function('state', 'event', 'data', config.customScript)
-          fn(runtimeState, eventCtx ?? {}, runtimeData)
+          const fn = new Function('state', 'event', 'data', 'setState', 'setGlobalState', 'alert', 'log', config.customScript)
+          fn(
+            runtimeState,
+            eventCtx ?? {},
+            runtimeData,
+            (key: string, value: unknown) => setRuntimeState((prev) => ({ ...prev, [String(key)]: value })),
+            (key: string, value: unknown) => setRuntimeState((prev) => ({ ...prev, [String(key)]: value })),
+            (msg: unknown) => window.alert(String(msg ?? '')),
+            (...args: unknown[]) => console.log('[CustomScript]', ...args)
+          )
         } catch {}
       }
       return
@@ -3367,11 +3377,71 @@ export default function ScreenEditPage() {
     if (config.action === 'custom' && config.customScript?.trim()) {
       if (!evaluateEventCondition(config.condition, runtimeState, eventCtx)) return
       try {
-        const fn = new Function('state', 'event', 'data', config.customScript)
-        fn(runtimeState, eventCtx ?? {}, runtimeData)
+        const fn = new Function('state', 'event', 'data', 'setState', 'setGlobalState', 'alert', 'log', config.customScript)
+        fn(
+          runtimeState,
+          eventCtx ?? {},
+          runtimeData,
+          (key: string, value: unknown) => setRuntimeState((prev) => ({ ...prev, [String(key)]: value })),
+          (key: string, value: unknown) => setRuntimeState((prev) => ({ ...prev, [String(key)]: value })),
+          (msg: unknown) => window.alert(String(msg ?? '')),
+          (...args: unknown[]) => console.log('[CustomScript]', ...args)
+        )
       } catch {}
     }
-  }, [stateTypeByKey, stateCacheKey, runScript, runtimeState, triggerHaptic, projectId, activeRoot])
+
+    // ── CRUD actions: insertRow / updateRow / deleteRow ──────────────────
+    if (config.action === 'insertRow' || config.action === 'updateRow' || config.action === 'deleteRow') {
+      if (!evaluateEventCondition(config.condition, runtimeState, eventCtx)) return
+      const tbl = resolveBinding(config.tableName ?? '', { state: runtimeState, event: eventCtx as Record<string, unknown> | undefined })
+      if (!tbl) return
+      const rowId = config.rowId ? resolveBinding(config.rowId, { state: runtimeState, event: eventCtx as Record<string, unknown> | undefined }) : undefined
+      let rowData: Record<string, unknown> | undefined
+      if (config.rowData) {
+        const rdCtx = { state: runtimeState, data: runtimeData, event: eventCtx as Record<string, unknown> | undefined, runScript }
+        if (typeof config.rowData === 'object' && !Array.isArray(config.rowData)) {
+          rowData = {}
+          for (const [k, v] of Object.entries(config.rowData as Record<string, unknown>)) {
+            if (typeof v === 'string' && v.includes('{{')) {
+              const resolved = resolveExpression(v, rdCtx)
+              if (resolved === 'true') rowData[k] = true
+              else if (resolved === 'false') rowData[k] = false
+              else if (resolved !== '' && !isNaN(Number(resolved))) rowData[k] = Number(resolved)
+              else rowData[k] = resolved
+            } else {
+              rowData[k] = v
+            }
+          }
+        } else {
+          const resolved = resolveExpression(String(config.rowData), rdCtx)
+          try { rowData = typeof resolved === 'string' ? JSON.parse(resolved) : resolved as Record<string, unknown> } catch { rowData = undefined }
+        }
+      }
+      ;(async () => {
+        try {
+          const res = await fetch(`/api/p/${projectId}/data/mutate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: config.action, table: tbl, data: rowData, rowId }),
+          })
+          const json = await res.json()
+          if (config.resultStateKey) {
+            setRuntimeState((prev) => ({ ...prev, [config.resultStateKey!]: json.ok ? (json.row ?? json.deleted ?? true) : false }))
+          }
+          if (config.refreshStateKey) {
+            setRuntimeState((prev) => ({ ...prev, [config.refreshStateKey!]: (Number(prev[config.refreshStateKey!]) || 0) + 1 }))
+          }
+          // Re-fetch data so bindings update
+          fetchRuntimeData()
+          if (debugHandleRef.current) debugHandleRef.current.push({ level: 'event', label: `${config.action} → ${tbl}`, detail: JSON.stringify(rowData ?? {}).slice(0, 200) })
+        } catch (err) {
+          console.error(`[CRUD ${config.action}] Error:`, err)
+          if (debugHandleRef.current) debugHandleRef.current.push({ level: 'event', label: `${config.action} error`, detail: err instanceof Error ? err.message : 'unknown' })
+        }
+      })()
+      return
+    }
+  }, [stateTypeByKey, stateCacheKey, runScript, runtimeState, runtimeData, triggerHaptic, projectId, activeRoot, fetchRuntimeData])
 
   useEffect(() => {
     if (!activeSelectedId) {
@@ -3607,16 +3677,61 @@ export default function ScreenEditPage() {
           storageKey={panelWidthsStorageKey}
           onWidthsChange={handlePanelWidthsChange}
           leftTree={
-            <NodeTree
-              root={activeRoot}
-              selectedId={activeSelectedId}
-              onSelect={editingReusableId ? setReusableSelectedId : setSelectedId}
-              onDelete={handleDeleteNode}
-              onCreateReusable={handleCreateReusableFromNode}
-              onMove={handleMoveNode}
-              globalReusables={globalReusables}
-              storageKey={treeStorageKey}
-            />
+            <div className="flex flex-col h-full min-h-0">
+              {/* Tab bar */}
+              <div className="shrink-0 flex border-b border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22]">
+                <button
+                  type="button"
+                  onClick={() => setLeftPanelTab('layers')}
+                  className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${leftPanelTab === 'layers' ? 'text-black dark:text-white border-b-2 border-[var(--primary)]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                >
+                  Layers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeftPanelTab('screens')}
+                  className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${leftPanelTab === 'screens' ? 'text-black dark:text-white border-b-2 border-[var(--primary)]' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                >
+                  Screens
+                </button>
+              </div>
+              {/* Layers tab */}
+              {leftPanelTab === 'layers' && (
+                <NodeTree
+                  root={activeRoot}
+                  selectedId={activeSelectedId}
+                  onSelect={editingReusableId ? setReusableSelectedId : setSelectedId}
+                  onDelete={handleDeleteNode}
+                  onCreateReusable={handleCreateReusableFromNode}
+                  onMove={handleMoveNode}
+                  globalReusables={globalReusables}
+                  storageKey={treeStorageKey}
+                />
+              )}
+              {/* Screens tab */}
+              {leftPanelTab === 'screens' && (
+                <div className="flex-1 min-h-0 overflow-y-auto py-1">
+                  {((screensData?.screens ?? []) as Array<Record<string, unknown>>).map((s) => {
+                    const sId = String(s.id)
+                    const sName = String(s.name ?? s.slug ?? s.id)
+                    const isActive = sId === screenId
+                    return (
+                      <button
+                        key={sId}
+                        type="button"
+                        onClick={() => router.push(`/organizations/${orgId}/projects/${projectId}/screens/${sId}/edit`)}
+                        className={`w-full text-left px-3 py-2 text-xs truncate transition-colors ${isActive ? 'bg-[var(--primary)]/10 text-[var(--primary)] font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#21262d]'}`}
+                      >
+                        {sName}
+                      </button>
+                    )
+                  })}
+                  {(screensData?.screens ?? []).length === 0 && (
+                    <p className="px-3 py-4 text-xs text-gray-400 dark:text-gray-500">No screens yet</p>
+                  )}
+                </div>
+              )}
+            </div>
           }
           leftPalette={({ isMobile, closeMobileSheet }) => (
             <ComponentPalette

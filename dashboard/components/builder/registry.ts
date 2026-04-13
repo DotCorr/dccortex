@@ -737,10 +737,20 @@ export function getDefaultProps(type: string): Record<string, unknown> {
 export const CATEGORIES = ['Layout', 'Form', 'Display', 'Actions', 'Charts'] as const
 
 /** Build inline style from layout props (display, flex*, gap, padding, margin, width, height) */
+/** Convert a CSS length value: numbers get 'px', strings like "16px 24px" pass through */
+function cssLength(raw: unknown, fallback?: string | number): string | number | undefined {
+  if (raw == null || raw === '') return fallback != null ? (typeof fallback === 'number' ? `${fallback}px` : fallback) : undefined
+  if (typeof raw === 'number') return `${raw}px`
+  const s = String(raw).trim()
+  if (!s) return fallback != null ? (typeof fallback === 'number' ? `${fallback}px` : fallback) : undefined
+  const n = Number(s)
+  if (!Number.isNaN(n)) return `${n}px`
+  return s // CSS shorthand like "16px 24px" or "auto"
+}
+
 export function layoutPropsToStyle(props: Record<string, unknown>): Record<string, string | number> {
   const p = props as Record<string, unknown>
   const style: Record<string, string | number> = {}
-  // Builder layout primitives are flex-only to keep behavior predictable.
   style.display = 'flex'
   const flexRaw = p.flex != null && String(p.flex).trim() ? String(p.flex).trim() : ''
   if (flexRaw) {
@@ -755,12 +765,12 @@ export function layoutPropsToStyle(props: Record<string, unknown>): Record<strin
   if (ai) style.alignItems = ai as any
   const jc = String(p.justifyContent ?? 'flex-start')
   if (jc) style.justifyContent = jc as any
-  const gap = p.gap != null ? Number(p.gap) : 8
-  if (typeof gap === 'number' && !isNaN(gap)) style.gap = `${gap}px`
-  const pad = p.padding != null ? Number(p.padding) : 12
-  if (typeof pad === 'number' && !isNaN(pad)) style.padding = `${pad}px`
-  const margin = p.margin != null ? Number(p.margin) : 0
-  if (typeof margin === 'number' && !isNaN(margin)) style.margin = margin ? `${margin}px` : 0
+  const gap = cssLength(p.gap, 8)
+  if (gap != null) style.gap = gap
+  const pad = cssLength(p.padding, 12)
+  if (pad != null) style.padding = pad
+  const margin = cssLength(p.margin, 0)
+  if (margin != null) style.margin = margin
   const wRaw = p.width != null && String(p.width).trim() ? String(p.width).trim() : ''
   if (wRaw) {
     style.width = /^\d+$/.test(wRaw) ? `${wRaw}px` : wRaw
@@ -892,6 +902,16 @@ function normalizeAnimationTime(raw: unknown, fallback: string): string {
   return fallback
 }
 
+/** CSS properties that require a 'px' suffix when only a plain number is provided */
+const PX_STYLE_KEYS = new Set([
+  'fontSize', 'letterSpacing', 'textIndent',
+  'borderRadius', 'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius',
+  'borderWidth',
+  'outlineOffset',
+  'top', 'right', 'bottom', 'left',
+  'minWidth', 'maxWidth', 'minHeight', 'maxHeight',
+])
+
 /** Build inline style from CSS-like props (100% web-aligned for scripting and export) */
 export function stylePropsToStyle(props: Record<string, unknown>): Record<string, string | number> {
   const p = props as Record<string, unknown>
@@ -901,7 +921,12 @@ export function stylePropsToStyle(props: Record<string, unknown>): Record<string
     if (v == null || v === '') continue
     const str = String(v).trim()
     if (!str) continue
-    style[key] = str
+    // Add px to bare numbers for properties that need units
+    if (PX_STYLE_KEYS.has(key) && /^-?\d+(\.\d+)?$/.test(str)) {
+      style[key] = `${str}px`
+    } else {
+      style[key] = str
+    }
   }
 
   // Handle animationSequence: convert to CSS animation string

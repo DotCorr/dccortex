@@ -131,13 +131,47 @@ export default function PreviewApp({ projectId, initialProject, initialData }: {
     const rows = initialProject?.screens ?? []
     return rows.find((s) => s.slug === 'home')?.id ?? rows[0]?.id ?? null
   }, [initialProject])
+  // Compute initial runtime state synchronously so SSR/first render resolves bindings correctly.
+  const initialRuntimeState = useMemo(() => {
+    if (!initialProject) return {}
+    const rows = initialProject.screens ?? []
+    const rawGlobalDefs = (initialProject.globals as Record<string, unknown>)?.globalStateDefinitions
+    const stateDefs: StateDefinition[] = [
+      ...(Array.isArray(rawGlobalDefs) ? rawGlobalDefs as StateDefinition[] : []),
+    ]
+    for (const sc of rows) {
+      const lay = sc.layout as any
+      const defs: StateDefinition[] = Array.isArray(lay?.stateDefinitions) ? lay.stateDefinitions : []
+      for (const d of defs) {
+        if (!stateDefs.some((x) => x.name === d.name)) stateDefs.push(d)
+      }
+    }
+    const initial: Record<string, unknown> = {}
+    const dateMap = getDateNowMap()
+    const resolveDateNow = (val: string) =>
+      val.replace(/\{\{dateNow\.(\w+)\}\}/g, (_, key: string) => {
+        const v = dateMap[key]
+        return v === undefined ? '' : String(v)
+      })
+    for (const s of stateDefs) {
+      if (!s.name?.trim()) continue
+      const raw = String(s.initialValue ?? '')
+      const v = resolveDateNow(raw)
+      const typ = s.type ?? 'string'
+      if (typ === 'number') initial[s.name] = Number.isNaN(Number(v)) ? 0 : Number(v)
+      else if (typ === 'boolean') initial[s.name] = v === 'true' || v === '1'
+      else if (typ === 'date') initial[s.name] = v || resolveDateNow('{{dateNow.datetime}}')
+      else initial[s.name] = v
+    }
+    return initial
+  }, [initialProject])
   const [status, setStatus] = useState<'loading' | 'notPublished' | 'error' | 'ready'>(initialProject ? 'ready' : 'loading')
   const [projectName, setProjectName] = useState(initialProject?.project.name ?? '')
   const [screens, setScreens] = useState<ScreenRow[]>(initialProject?.screens ?? [])
   const [globals, setGlobals] = useState<Record<string, unknown>>(initialProject?.globals ?? {})
   const [currentScreenId, setCurrentScreenId] = useState<string | null>(initialHomeScreenId)
   const screenHistoryRef = useRef<string[]>([])
-  const [runtimeState, setRuntimeState] = useState<Record<string, unknown>>({})
+  const [runtimeState, setRuntimeState] = useState<Record<string, unknown>>(initialRuntimeState)
   const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>(initialData ?? {})
   const runtimeDataCacheKey = useMemo(() => `dccortex:runtime-data:${projectId}`, [projectId])
   const runtimeDataSignatureCacheKey = useMemo(() => `dccortex:runtime-data-signatures:${projectId}`, [projectId])
@@ -477,7 +511,7 @@ export default function PreviewApp({ projectId, initialProject, initialData }: {
         }
         for (const s of stateDefs) {
           if (!s.name?.trim()) continue
-          const raw = s.initialValue ?? ''
+          const raw = String(s.initialValue ?? '')
           const constructed = resolveConstructor(raw)
           if (constructed !== undefined) { initial[s.name] = constructed; continue }
           const v = resolveDateNow(raw)
@@ -950,8 +984,26 @@ export default function PreviewApp({ projectId, initialProject, initialData }: {
       const rowId = config.rowId ? resolveBinding(config.rowId, { state: runtimeState, event: eventCtx as Record<string, unknown> | undefined }) : undefined
       let rowData: Record<string, unknown> | undefined
       if (config.rowData) {
-        const resolved = resolveExpression(config.rowData, { state: runtimeState, data: runtimeData, event: eventCtx as Record<string, unknown> | undefined, runScript })
-        try { rowData = typeof resolved === 'string' ? JSON.parse(resolved) : resolved as Record<string, unknown> } catch { rowData = undefined }
+        const rdCtx = { state: runtimeState, data: runtimeData, event: eventCtx as Record<string, unknown> | undefined, runScript }
+        if (typeof config.rowData === 'object' && !Array.isArray(config.rowData)) {
+          // rowData is already an object — resolve any remaining bindings in its values
+          rowData = {}
+          for (const [k, v] of Object.entries(config.rowData as Record<string, unknown>)) {
+            if (typeof v === 'string' && v.includes('{{')) {
+              const resolved = resolveExpression(v, rdCtx)
+              // Coerce booleans/numbers from string form
+              if (resolved === 'true') rowData[k] = true
+              else if (resolved === 'false') rowData[k] = false
+              else if (resolved !== '' && !isNaN(Number(resolved))) rowData[k] = Number(resolved)
+              else rowData[k] = resolved
+            } else {
+              rowData[k] = v
+            }
+          }
+        } else {
+          const resolved = resolveExpression(config.rowData as string, rdCtx)
+          try { rowData = typeof resolved === 'string' ? JSON.parse(resolved) : resolved as Record<string, unknown> } catch { rowData = undefined }
+        }
       }
       ;(async () => {
         try {
@@ -994,6 +1046,17 @@ export default function PreviewApp({ projectId, initialProject, initialData }: {
     const screenTheme = ((currentScreen?.layout as any)?.theme ?? {}) as Record<string, string> & { colorMode?: string; customCss?: string }
     return { ...globalTheme, ...screenTheme }
   }, [globals, currentScreen])
+
+  // Sync dark/light class on <html> so :root:not(.light) in globals.css
+  // does not fire when the preview should stay light.
+  useEffect(() => {
+    const isDark = theme.colorMode === 'dark' || (theme.colorMode === 'adaptive' && systemDark)
+    document.documentElement.classList.toggle('dark', isDark)
+    document.documentElement.classList.toggle('light', !isDark)
+    return () => {
+      document.documentElement.classList.remove('dark', 'light')
+    }
+  }, [theme.colorMode, systemDark])
 
   const fullRadius = useMemo(() => {
     const raw = String(theme.borderRadius ?? '').trim().toLowerCase()
@@ -1042,7 +1105,7 @@ export default function PreviewApp({ projectId, initialProject, initialData }: {
     <div
       data-desktop-runtime={isDesktopShell ? 'true' : undefined}
       className={`h-full flex flex-col overflow-y-auto ${
-        theme.colorMode === 'dark' || (theme.colorMode === 'adaptive' && systemDark) ? 'dark' : ''
+        theme.colorMode === 'dark' || (theme.colorMode === 'adaptive' && systemDark) ? 'dark' : 'light'
       }`}
       onDragStartCapture={(e) => {
         if (!isDesktopShell) return

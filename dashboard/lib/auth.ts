@@ -143,6 +143,15 @@ export const authOptions: NextAuthOptions = {
     return buildProviders()
   },
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      // Allow redirects to any dccortex.com subdomain (e.g. flow.dccortex.com)
+      if (url.startsWith('/')) return `${baseUrl}${url}`
+      try {
+        const u = new URL(url)
+        if (u.hostname === 'dccortex.com' || u.hostname.endsWith('.dccortex.com')) return url
+      } catch {}
+      return baseUrl
+    },
     async signIn({ user, account, profile }) {
       // Handle OAuth sign in - create or update user
       if (account?.type === 'oauth' && account.provider !== 'credentials') {
@@ -270,6 +279,8 @@ export const authOptions: NextAuthOptions = {
         path: '/',
         // Secure must be true for HTTPS (Cloudflare Tunnel uses HTTPS)
         secure: process.env.NEXTAUTH_URL?.startsWith('https://') || false,
+        // Share session across subdomains (dccortex.com, flow.dccortex.com)
+        domain: process.env.NEXTAUTH_URL?.includes('dccortex.com') ? '.dccortex.com' : undefined,
       },
     },
   },

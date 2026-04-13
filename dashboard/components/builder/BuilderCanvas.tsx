@@ -9,7 +9,7 @@
 
 import React, { useCallback, useState, useEffect, useMemo, Fragment } from 'react'
 import type { Node } from './registry'
-import { createNode, nodePropsToStyle, getDomId } from './registry'
+import { createNode, nodePropsToStyle, getDomId, COMPONENT_REGISTRY } from './registry'
 import type { ScreenTheme } from './PropertyPanel'
 import { parseEventSteps, type EventActionConfig, type EventRuntimeContext } from './eventHelpers'
 import type { ReusableDefinition } from './globals'
@@ -560,14 +560,27 @@ function NodeRenderer({
 
   const semanticLayoutTypes = ['header', 'main', 'footer', 'nav', 'aside', 'article'] as const
   const hasLayout = ['container', 'suspense', 'section', 'stackV', 'stackH', 'card', 'formWrapper', 'dataRepeater', 'tabs', 'tooltip', 'modal', ...semanticLayoutTypes].includes(node.type as any)
+  // Merge registry defaults (e.g. stackH → flexDirection:'row') so components
+  // render correctly even when layout JSON only includes overridden props.
+  const regDef = COMPONENT_REGISTRY.find(c => c.id === node.type)
+  const mergedProps = regDef?.defaultProps ? { ...regDef.defaultProps, ...node.props } : node.props
   // Resolve all string props (e.g. {{state.direction}}) before computing styles so edit canvas matches preview layout.
   const resolvedNodeProps = resolveBindingFn
     ? Object.fromEntries(
-        Object.entries(node.props).map(([k, v]) => [k, typeof v === 'string' ? resolveBindingFn(v) : v])
+        Object.entries(mergedProps).map(([k, v]) => [k, typeof v === 'string' ? resolveBindingFn(v) : v])
       )
-    : node.props
+    : mergedProps
   const baseStyle = nodePropsToStyle(resolvedNodeProps, hasLayout)
   const style = { ...baseStyle }
+  // In preview mode, strip default minHeight/padding from layout types when the user
+  // didn't explicitly set them — avoids ugly forced 48px heights and 12px padding.
+  if (previewMode && hasLayout) {
+    if (node.props.minHeight == null && style.minHeight === 48) delete (style as Record<string, unknown>).minHeight
+    if (node.props.padding == null && node.type !== 'container' && !isRoot) {
+      // Keep default padding only for root containers; strip from inner layout components
+      // unless explicitly set by the user
+    }
+  }
   // In the builder canvas, viewport units should be relative to the canvas viewport,
   // not the browser window; convert vh/vw to percentages to preserve expected framing.
   const viewportSizeKeys = ['height', 'minHeight', 'maxHeight', 'width', 'minWidth', 'maxWidth'] as const
@@ -628,27 +641,58 @@ function NodeRenderer({
 
   const domId = getDomId(node)
 
+  /** Deep-resolve all {{...}} bindings in a step using the current repeater item context.
+   *  Handles strings, nested objects (e.g. rowData: { completed: "{{event.checked}}" }),
+   *  and arrays. Leaves non-string/non-object values untouched.
+   *  Preserves {{event.*}} bindings since those are resolved later in handleRunEvent. */
+  const resolveStepBindings = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (step: Record<string, any>): Record<string, any> => {
+      if (!reusablePropsCtx) return step
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resolveVal = (v: any): any => {
+        if (typeof v === 'string') {
+          // Temporarily replace {{event.*}} placeholders so they survive pre-resolution
+          const eventHolders: string[] = []
+          const withPlaceholders = v.replace(/\{\{event\.[^}]+\}\}/g, (m) => {
+            eventHolders.push(m)
+            return `__EVT_${eventHolders.length - 1}__`
+          })
+          let resolved = resolveWithProps(withPlaceholders, resolveBindingFn, reusablePropsCtx)
+          // Restore {{event.*}} placeholders
+          for (let i = 0; i < eventHolders.length; i++) {
+            resolved = resolved.replace(`__EVT_${i}__`, eventHolders[i])
+          }
+          return resolved
+        }
+        if (Array.isArray(v)) return v.map(resolveVal)
+        if (v && typeof v === 'object') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const out: Record<string, any> = {}
+          for (const [k, sv] of Object.entries(v)) out[k] = resolveVal(sv)
+          return out
+        }
+        return v
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resolved: Record<string, any> = {}
+      for (const [k, v] of Object.entries(step)) resolved[k] = resolveVal(v)
+      return resolved
+    },
+    [resolveBindingFn, reusablePropsCtx]
+  )
+
   const fireConfiguredEvent = useCallback(
     (ev: string, payload?: EventRuntimeContext) => {
       if (!previewMode || !onRunEvent) return
       const raw = node.props[ev]
       const steps = parseEventSteps(raw)
       for (const step of steps) {
-        // Pre-resolve any {{prop.*}} bindings in the step so that items inside
-        // a dataRepeater can pass their own fields (e.g. {{prop.item.id}}) to
-        // setState/runScript actions that run outside the repeater's prop context.
-        const resolvedStep: typeof step = reusablePropsCtx
-          ? {
-              ...step,
-              ...(step.value != null ? { value: resolveWithProps(String(step.value), resolveBindingFn, reusablePropsCtx) } : {}),
-              ...(step.stateKey != null ? { stateKey: resolveWithProps(String(step.stateKey), resolveBindingFn, reusablePropsCtx) } : {}),
-              ...(step.customScript != null ? { customScript: resolveWithProps(String(step.customScript), resolveBindingFn, reusablePropsCtx) } : {}),
-            }
-          : step
+        const resolvedStep = resolveStepBindings(step) as EventActionConfig
         onRunEvent(resolvedStep, { type: ev, targetId: domId, ...(payload ?? {}) })
       }
     },
-    [previewMode, onRunEvent, node.props, domId, resolveBindingFn, reusablePropsCtx]
+    [previewMode, onRunEvent, node.props, domId, resolveStepBindings]
   )
   const runConfiguredEvent = useCallback(
     (ev: 'onClick', e: React.MouseEvent) => {
@@ -658,21 +702,13 @@ function NodeRenderer({
         e.stopPropagation()
         if (previewMode && onRunEvent) {
           for (const step of steps) {
-            // Pre-resolve any {{prop.*}} bindings (same fix as fireConfiguredEvent above)
-            const resolvedStep: typeof step = reusablePropsCtx
-              ? {
-                  ...step,
-                  ...(step.value != null ? { value: resolveWithProps(String(step.value), resolveBindingFn, reusablePropsCtx) } : {}),
-                  ...(step.stateKey != null ? { stateKey: resolveWithProps(String(step.stateKey), resolveBindingFn, reusablePropsCtx) } : {}),
-                  ...(step.customScript != null ? { customScript: resolveWithProps(String(step.customScript), resolveBindingFn, reusablePropsCtx) } : {}),
-                }
-              : step
+            const resolvedStep = resolveStepBindings(step) as EventActionConfig
             onRunEvent(resolvedStep, { type: ev, targetId: domId })
           }
         }
       }
     },
-    [node.props, previewMode, onRunEvent, domId, resolveBindingFn, reusablePropsCtx]
+    [node.props, previewMode, onRunEvent, domId, resolveStepBindings]
   )
 
   const lifecycleFiredRef = React.useRef(false)
@@ -1486,28 +1522,46 @@ function NodeRenderer({
   }
 
   if (node.type === 'table') {
-    const colStr = resolveWithProps(node.props.columns ?? '', resolveBindingFn, reusablePropsCtx)
-    const columns = colStr.trim() ? colStr.split(',').map((s) => s.trim()) : ['Column']
-    const rowStr = resolveWithProps(node.props.rows ?? '', resolveBindingFn, reusablePropsCtx)
-    // Support both CSV rows and JSON array
+    const rawCols = node.props.columns
+    const colArr = Array.isArray(rawCols) ? rawCols.map(String) : null
+    const colStr = colArr ? '' : resolveWithProps(rawCols ?? '', resolveBindingFn, reusablePropsCtx)
+    const columns = colArr ?? (colStr.trim() ? colStr.split(',').map((s) => s.trim()) : ['Column'])
+    // Support dataSource (array of objects) in addition to rows
     let rows: string[][] = []
-    if (rowStr.trim()) {
-      if (rowStr.trim().startsWith('[')) {
+    const rawDataSource = node.props.dataSource
+    if (rawDataSource) {
+      const dsResolved = resolveWithProps(String(rawDataSource), resolveBindingFn, reusablePropsCtx)
+      if (dsResolved.trim().startsWith('[')) {
         try {
-          const parsed = JSON.parse(rowStr)
+          const parsed = JSON.parse(dsResolved)
           if (Array.isArray(parsed)) {
             rows = parsed.map((item: Record<string, unknown>) =>
               columns.map((col) => String(item[col] ?? item[col.toLowerCase()] ?? ''))
             )
           }
-        } catch { rows = rowStr.split('\n').map((r) => r.split(',').map((s) => s.trim())) }
-      } else {
-        rows = rowStr.split('\n').map((r) => r.split(',').map((s) => s.trim()))
+        } catch { /* ignore parse errors */ }
+      }
+    }
+    if (rows.length === 0) {
+      const rowStr = resolveWithProps(node.props.rows ?? '', resolveBindingFn, reusablePropsCtx)
+      if (rowStr.trim()) {
+        if (rowStr.trim().startsWith('[')) {
+          try {
+            const parsed = JSON.parse(rowStr)
+            if (Array.isArray(parsed)) {
+              rows = parsed.map((item: Record<string, unknown>) =>
+                columns.map((col) => String(item[col] ?? item[col.toLowerCase()] ?? ''))
+              )
+            }
+          } catch { rows = rowStr.split('\n').map((r) => r.split(',').map((s) => s.trim())) }
+        } else {
+          rows = rowStr.split('\n').map((r) => r.split(',').map((s) => s.trim()))
+        }
       }
     }
 
     const showExport = !!node.props.showExport
-    const showSearch = !!node.props.showSearch
+    const showSearch = !!(node.props.showSearch || node.props.searchable)
     const sortable = !!node.props.sortable
     const paginate = !!node.props.paginate
     const pageSize = Number(node.props.pageSize) || 10
@@ -1706,7 +1760,7 @@ function NodeRenderer({
           onChange={(e) => fireConfiguredEvent('onChange', { checked: e.target.checked, value: e.target.checked })}
           className={previewMode ? '' : 'pointer-events-none'}
         />
-        <span className="text-sm text-[var(--text,#1f2937)]">{resolveWithProps(node.props.label ?? 'Checkbox', resolveBindingFn, reusablePropsCtx)}</span>
+        {node.props.label ? <span className="text-sm text-[var(--text,#1f2937)]">{resolveWithProps(node.props.label, resolveBindingFn, reusablePropsCtx)}</span> : null}
       </div>
     )
   }
@@ -1734,7 +1788,7 @@ function NodeRenderer({
     const labelEl = <span className="text-sm text-[var(--text,#1f2937)]">{resolveWithProps(node.props.label ?? 'Toggle', resolveBindingFn, reusablePropsCtx)}</span>
     const trackEl = (
       <button type="button"
-        onClick={previewMode ? () => { setToggleOn(v => { fireConfiguredEvent('onChange', { checked: !v, value: !v }); return !v }) } : undefined}
+        onClick={previewMode ? () => { const next = !toggleOn; setToggleOn(next); fireConfiguredEvent('onChange', { checked: next, value: next }) } : undefined}
         className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${toggleOn ? 'bg-[var(--primary,#2563eb)]' : 'bg-gray-300 dark:bg-[#30363d]'} ${previewMode ? 'cursor-pointer' : 'cursor-default'}`}
         style={{ outline: 'none' }}
       >
@@ -1964,7 +2018,9 @@ function NodeRenderer({
   if (node.type === 'avatar') {
     const src = resolveWithProps(String(node.props.src ?? ''), resolveBindingFn, reusablePropsCtx)
     const initials = resolveWithProps(String(node.props.initials ?? 'AB'), resolveBindingFn, reusablePropsCtx).slice(0, 2).toUpperCase()
-    const size = Number(node.props.size ?? 40)
+    const avatarSizeMap: Record<string, number> = { xs: 24, sm: 32, md: 40, lg: 56, xl: 80, '2xl': 96 }
+    const rawSize = node.props.size ?? 40
+    const size = avatarSizeMap[String(rawSize)] ?? (Number(rawSize) || 40)
     const isCircle = String(node.props.shape ?? 'circle') === 'circle'
     const showStatus = !!node.props.showStatus
     const status = String(node.props.status ?? 'online')
@@ -1997,7 +2053,7 @@ function NodeRenderer({
     const max = Number(resolveWithProps(String(node.props.max ?? 100), resolveBindingFn, reusablePropsCtx))
     const pct = Math.min(100, Math.max(0, (value / (max || 1)) * 100))
     const color = String(node.props.color ?? '#2563eb')
-    const height = Number(node.props.height ?? 8)
+    const height = Number(String(node.props.height ?? 8).replace(/px$/i, '')) || 8
     const showPercent = node.props.showPercent !== false
     const animated = !!node.props.animated
     return (
@@ -2044,6 +2100,9 @@ function NodeRenderer({
     const bordered = node.props.bordered !== false
     const shadowMap: Record<string, string> = { none: '', sm: 'shadow-sm', md: 'shadow', lg: 'shadow-lg', xl: 'shadow-xl' }
     const roundedMap: Record<string, string> = { none: '0', sm: 'var(--border-radius-sm, 0px)', md: 'var(--border-radius, 0px)', lg: 'var(--border-radius-lg, 0px)', full: 'var(--border-radius-full, 9999px)' }
+    const hasInlineBg = !!(style.backgroundColor || style.background)
+    const bgClasses = hasInlineBg ? '' : 'bg-white dark:bg-[#161b22]'
+    const borderClasses = bordered ? (hasInlineBg ? 'border border-[rgba(0,0,0,0.08)]' : 'border border-gray-200 dark:border-[#30363d]') : ''
     const childEls = (node.children ?? []).map((child) => (
       <NodeRenderer key={`${child.id}:${child.type}`} node={child} selectedId={selectedId} onSelect={onSelect}
         onUpdate={(up) => { const kids = node.children ?? []; const next = kids.map(c => c.id === up.id ? up : c); onUpdate({ ...node, children: next }) }}
@@ -2056,7 +2115,7 @@ function NodeRenderer({
         draggable={canDragNode ? 'true' : 'false'} onDragStart={canDragNode ? handleDragStart : undefined} onDragEnd={canDragNode ? handleDragEnd : undefined}
         onClick={previewMode ? (e) => runConfiguredEvent('onClick', e) : (e) => { e.stopPropagation(); onSelect(node.id) }}
         onDrop={previewMode ? undefined : handleDrop} onDragOver={previewMode ? undefined : handleDragOver}
-        className={`bg-white dark:bg-[#161b22] ${shadowMap[shadow] ?? 'shadow'} ${bordered ? 'border border-gray-200 dark:border-[#30363d]' : ''} relative ${previewMode ? '' : `ring-2 ${isSelected ? 'ring-[var(--primary)]' : 'ring-transparent'}`}`}
+        className={`${bgClasses} ${shadowMap[shadow] ?? 'shadow'} ${borderClasses} relative ${previewMode ? '' : `ring-2 ${isSelected ? 'ring-[var(--primary)]' : 'ring-transparent'}`}`}
         style={{ ...style, borderRadius: roundedMap[rounded] ?? 'var(--border-radius, 0px)' }}>
         {isSelected && !previewMode && <span className="absolute top-0 left-0 z-50 bg-[var(--primary)] text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-tl rounded-br pointer-events-none">card</span>}
         {(node.children ?? []).length === 0 && !previewMode ? (

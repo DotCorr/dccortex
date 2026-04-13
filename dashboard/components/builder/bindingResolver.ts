@@ -240,6 +240,15 @@ export function resolveBinding(raw: string, ctx: ResolveContext): string {
       const v = getDateNowMap()[key]
       return v === undefined || v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
     }
+    // Fallback: bare item-var bindings like {{task.title}} — check ctx.props
+    if (ctx.props) {
+      const dotIdx = e.indexOf('.')
+      const ns = dotIdx > 0 ? e.slice(0, dotIdx) : e
+      if (Object.prototype.hasOwnProperty.call(ctx.props, ns)) {
+        const v = getByPath(ctx.props, e)
+        return v === undefined || v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
+      }
+    }
     return `{{${expr}}}`
   })
 }
@@ -262,6 +271,14 @@ function resolveToken(expr: string, ctx: ResolveContext): unknown {
   if (e.startsWith('dateNow.') || e.startsWith('dateTime.')) {
     const key = e.startsWith('dateNow.') ? e.slice(8).trim() : e.slice(9).trim()
     return getDateNowMap()[key]
+  }
+  // Fallback: bare item-var bindings like {{task.title}} — check ctx.props
+  if (ctx.props) {
+    const dotIdx = e.indexOf('.')
+    const ns = dotIdx > 0 ? e.slice(0, dotIdx) : e
+    if (Object.prototype.hasOwnProperty.call(ctx.props, ns)) {
+      return getByPath(ctx.props, e)
+    }
   }
   return undefined
 }
