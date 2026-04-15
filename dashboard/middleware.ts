@@ -47,7 +47,13 @@ function corsHeaders(origin: string | null, referer: string | null) {
 }
 
 const authMiddleware = withAuth(
-  function middleware() {
+  function middleware(req) {
+    // Authenticated user hitting /login → skip to dashboard
+    const token = req.nextauth?.token
+    const path = req.nextUrl.pathname
+    if (token && path === '/login') {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
     return NextResponse.next()
   },
   {

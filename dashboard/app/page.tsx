@@ -302,7 +302,7 @@ function ArchitectureIllustration() {
 
 /* ───────────── Main page ───────────── */
 export default function Home() {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [isTauri, setIsTauri] = useState(false)
@@ -335,8 +335,8 @@ export default function Home() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  const ctaHref = session ? '/dashboard' : '/login'
-  const ctaLabel = session ? 'Go to Dashboard' : 'Start Building'
+  const ctaHref = status === 'authenticated' ? '/dashboard' : '/login'
+  const ctaLabel = status === 'authenticated' ? 'Go to Dashboard' : status === 'loading' ? 'Loading…' : 'Start Building'
 
   return (
     <div className="landing-monochrome min-h-screen bg-background text-foreground overflow-x-hidden">

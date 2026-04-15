@@ -8,7 +8,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { signIn } from 'next-auth/react'
+import { signIn, signOut, useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { LoadingBar } from '@/components/ui/loading-bar'
@@ -19,12 +19,20 @@ const OIDC_LOGIN_LABEL = process.env.NEXT_PUBLIC_OIDC_LOGIN_LABEL || 'Continue w
 
 export default function LoginPage() {
   const router = useRouter()
+  const { status } = useSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [callbackUrl, setCallbackUrl] = useState('/dashboard')
+
+  // Already authenticated — no reason to show login UI
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.replace(callbackUrl)
+    }
+  }, [status, router, callbackUrl])
 
   // Video URL - served from public folder
   const videoUrl = '/auth_illu.mp4'
@@ -62,6 +70,9 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
+      // Clear any existing session first so we never inherit a stale account
+      await signOut({ redirect: false })
+
       const result = await signIn('credentials', {
         email,
         password,
@@ -72,7 +83,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError('Invalid email or password')
       } else {
-        router.push(result?.url || callbackUrl)
+        router.replace(result?.url || callbackUrl)
       }
     } catch (err) {
       setError('Something went wrong')
@@ -81,9 +92,18 @@ export default function LoginPage() {
     }
   }
 
-  const handleGoogleAuth = () => { void signIn('google', { callbackUrl }) }
-  const handleGithubAuth = () => { void signIn('github', { callbackUrl }) }
-  const handleOidcAuth = () => { void signIn('oidc', { callbackUrl }) }
+  const handleGoogleAuth = async () => { await signOut({ redirect: false }); void signIn('google', { callbackUrl }) }
+  const handleGithubAuth = async () => { await signOut({ redirect: false }); void signIn('github', { callbackUrl }) }
+  const handleOidcAuth = async () => { await signOut({ redirect: false }); void signIn('oidc', { callbackUrl }) }
+
+  // Don't flash the login form while checking or if already authenticated
+  if (status === 'loading' || status === 'authenticated') {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-background">
+        <div className="w-6 h-6 rounded-full border-2 border-foreground border-t-transparent animate-spin" />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-background">
