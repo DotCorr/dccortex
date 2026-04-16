@@ -8,11 +8,12 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useSession } from 'next-auth/react'
+import { useSession, signOut } from 'next-auth/react'
 import { detectDesktopShell } from '@/components/tauri-detector'
 import Link from 'next/link'
 import { Logo } from '@/components/ui/logo'
 import { ProductSwitcher } from '@/components/product-switcher'
+import { LiveRadioIndicator } from '@/components/live-radio-indicator'
 import {
   Layers, Zap, Globe, Shield, Code2, ArrowRight, ChevronRight,
   Building2, Landmark, Factory, Stethoscope, Truck, GraduationCap,
@@ -66,10 +67,10 @@ function RuntimeBadge() {
   }, [])
 
   const items = [
-    'Describe your app → AI builds it',
-    'Drag and drop to customize anything',
-    'One click to go live',
-    'You own everything — data, code, servers',
+    'Describe your app → AI builds UI + backend',
+    'Drag and drop to customize everything',
+    'One click to deploy full stack',
+    'You own everything — data, code, and hosting',
   ]
 
   return (
@@ -92,13 +93,12 @@ function RuntimeBadge() {
   )
 }
 
-/* ───────────── Hero illustration — runtime architecture ───────────── */
+/* ───────────── Hero illustration — full-stack system view ───────────── */
 function HeroIllustration() {
   return (
     <div className="relative w-full max-w-3xl mx-auto">
-      <div className="absolute -inset-8 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10 blur-3xl" />
+      <div className="absolute -inset-10 bg-gradient-to-br from-cyan-500/15 via-transparent to-emerald-500/10 blur-3xl" />
       <div className="relative bg-card border border-border shadow-2xl shadow-black/5 dark:shadow-black/30 overflow-hidden">
-        {/* Title bar */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-muted border-b border-border">
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5">
@@ -106,132 +106,136 @@ function HeroIllustration() {
               <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
             </div>
-            <span className="text-[11px] text-muted-foreground font-medium ml-1">DCCortex — Runtime Dashboard</span>
+            <span className="text-[11px] text-muted-foreground font-medium ml-1">DCCortex Studio</span>
           </div>
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1"><Activity className="w-3 h-3 text-emerald-500" /> All Systems Healthy</span>
-            <span className="px-2 py-0.5 bg-foreground text-background text-[10px] font-medium">Deploy</span>
+            <span className="flex items-center gap-1"><Sparkles className="w-3 h-3 text-cyan-500" /> AI Design</span>
+            <span className="px-2 py-0.5 bg-foreground text-background text-[10px] font-medium">Ship</span>
           </div>
         </div>
 
-        <div className="flex h-[360px]">
-          {/* Left — Projects */}
-          <div className="w-48 border-r border-border bg-muted/50 p-3 space-y-2 flex-shrink-0 hidden sm:block">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Projects</div>
+        <div className="grid lg:grid-cols-[220px_1fr_220px] min-h-[360px]">
+          <div className="border-r border-border bg-muted/50 p-3 space-y-3 hidden lg:block">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Builder Blocks</div>
             {[
-              { name: 'Inventory App', status: 'running', color: 'bg-emerald-500' },
-              { name: 'Customer Portal', status: 'running', color: 'bg-emerald-500' },
-              { name: 'Analytics Dash', status: 'scaling', color: 'bg-amber-500' },
-              { name: 'HR System', status: 'deploying', color: 'bg-blue-500' },
-            ].map(({ name, status, color }) => (
-              <div
-                key={name}
-                className="flex items-center gap-2 px-2 py-2 text-[11px] text-muted-foreground hover:bg-card hover:shadow-sm transition-all border border-transparent hover:border-border"
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${color} flex-shrink-0`} />
-                <span className="flex-1 truncate">{name}</span>
-                <span className="text-[9px] text-muted-foreground/60">{status}</span>
+              { label: 'Page Layout', icon: LayoutGrid },
+              { label: 'Data Table', icon: Table2 },
+              { label: 'Smart Form', icon: FormInput },
+              { label: 'Analytics', icon: BarChart3 },
+              { label: 'Workflow', icon: Workflow },
+            ].map(({ label, icon: Icon }) => (
+              <div key={label} className="flex items-center gap-2 px-2.5 py-2 border border-border bg-background/70 text-[11px] text-muted-foreground">
+                <Icon className="w-3.5 h-3.5 text-foreground" />
+                <span>{label}</span>
               </div>
             ))}
-            <div className="pt-3 border-t border-border mt-3">
-              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Containers</div>
-              <div className="grid grid-cols-3 gap-1">
-                {Array.from({ length: 9 }).map((_, i) => (
-                  <div key={i} className={`h-5 border ${i < 7 ? 'bg-emerald-500/10 border-emerald-500/30' : i < 8 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-blue-500/10 border-blue-500/30'} flex items-center justify-center`}>
-                    <Box className="w-2.5 h-2.5 text-muted-foreground/40" />
-                  </div>
+            <div className="pt-2 border-t border-border">
+              <div className="text-[10px] text-muted-foreground mb-2">Style Presets</div>
+              <div className="flex flex-wrap gap-1.5">
+                {['Mono', 'Soft', 'Contrast', 'Editorial'].map((preset) => (
+                  <span key={preset} className="text-[9px] px-2 py-1 border border-border bg-background text-muted-foreground uppercase tracking-wider">
+                    {preset}
+                  </span>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Center — Architecture View */}
-          <div className="flex-1 p-4 space-y-3 bg-background overflow-hidden relative">
-            <div className="text-[10px] font-semibold text-foreground uppercase tracking-wider mb-1">Project: Inventory App</div>
-            {/* Container stack */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: 'Frontend', icon: Globe, status: 'Running', mem: '128MB', cpu: '0.2' },
-                { label: 'Backend API', icon: Server, status: 'Running', mem: '256MB', cpu: '0.5' },
-                { label: 'Database', icon: Database, status: 'Healthy', mem: '512MB', cpu: '0.3' },
-              ].map(({ label, icon: Icon, status, mem, cpu }) => (
-                <div key={label} className="border border-border bg-card p-2.5">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Icon className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-[10px] font-medium text-foreground">{label}</span>
+          <div className="p-4 sm:p-5 bg-background relative overflow-hidden">
+            <div className="absolute inset-0 pointer-events-none opacity-40" style={{ backgroundImage: 'linear-gradient(to right, rgb(148 163 184 / 0.16) 1px, transparent 1px), linear-gradient(to bottom, rgb(148 163 184 / 0.16) 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
+
+            <div className="relative grid gap-3">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="border border-border bg-card p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Canvas Preview</span>
                   </div>
-                  <div className="flex items-center gap-1 mb-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    <span className="text-[9px] text-emerald-600 dark:text-emerald-400">{status}</span>
-                  </div>
-                  <div className="text-[9px] text-muted-foreground space-y-0.5">
-                    <div className="flex justify-between"><span>Memory</span><span>{mem}</span></div>
-                    <div className="flex justify-between"><span>CPU</span><span>{cpu} core</span></div>
+                  <div className="h-24 border border-border bg-muted p-2 flex flex-col gap-2">
+                    <div className="h-2.5 bg-foreground/15 w-2/3" />
+                    <div className="h-2.5 bg-foreground/10 w-5/6" />
+                    <div className="grid grid-cols-3 gap-1.5 mt-auto">
+                      <div className="h-8 bg-cyan-500/20 border border-cyan-500/30" />
+                      <div className="h-8 bg-emerald-500/20 border border-emerald-500/30" />
+                      <div className="h-8 bg-amber-500/20 border border-amber-500/30" />
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-            {/* Metrics */}
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { label: 'Requests/s', value: '2.4k', trend: '+12%' },
-                { label: 'Latency', value: '23ms', trend: 'p99' },
-                { label: 'Uptime', value: '99.97%', trend: '30d' },
-                { label: 'Containers', value: '3/3', trend: 'healthy' },
-              ].map(({ label, value, trend }) => (
-                <div key={label} className="border border-border bg-card p-2">
-                  <div className="text-[9px] text-muted-foreground uppercase">{label}</div>
-                  <div className="text-sm font-bold text-foreground">{value}</div>
-                  <div className="text-[8px] text-emerald-600 dark:text-emerald-400">{trend}</div>
+
+                <div className="border border-border bg-card p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <GitBranch className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Logic Flow</span>
+                  </div>
+                  <div className="h-24 border border-border bg-muted/50 p-2.5 flex items-center justify-between">
+                    {['Trigger', 'Transform', 'Save'].map((item, idx) => (
+                      <div key={item} className="flex items-center gap-1.5">
+                        <div className="px-2 py-1 border border-border bg-background text-[9px] font-medium text-foreground uppercase tracking-wide">{item}</div>
+                        {idx < 2 && <ArrowRight className="w-3 h-3 text-muted-foreground" />}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-            {/* Traffic chart */}
-            <div className="h-16 border border-border bg-muted flex items-end gap-[3px] px-2 pb-1.5">
-              {[35, 40, 55, 42, 78, 62, 88, 75, 92, 65, 72, 90, 48, 85, 95].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 bg-gradient-to-t from-primary to-primary/60"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
-            <div className="flex items-center justify-between text-[9px] text-muted-foreground">
-              <span>Traffic — Last 24 hours</span>
-              <span className="text-emerald-600 dark:text-emerald-400">Auto-scaling: Active</span>
+              </div>
+
+              <div className="grid sm:grid-cols-[1fr_220px] gap-3">
+                <div className="border border-border bg-card p-3">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Plug className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Connected Stack</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'UI Layer', icon: LayoutGrid },
+                      { label: 'API Layer', icon: Server },
+                      { label: 'Data Layer', icon: Database },
+                    ].map(({ label, icon: Icon }) => (
+                      <div key={label} className="border border-border bg-muted/40 p-2.5">
+                        <Icon className="w-3.5 h-3.5 text-foreground mb-1.5" />
+                        <div className="text-[10px] font-medium text-foreground">{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border border-border bg-card p-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Theme Tokens</div>
+                  <div className="space-y-2">
+                    {["--radius", "--spacing", "--surface", "--accent"].map((token) => (
+                      <div key={token} className="flex items-center justify-between text-[10px] border border-border bg-muted/40 px-2 py-1.5">
+                        <span className="text-muted-foreground">{token}</span>
+                        <span className="text-foreground font-medium">set</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Right — Config Panel */}
-          <div className="w-48 border-l border-border bg-muted/30 p-3 space-y-3 flex-shrink-0 hidden lg:block">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scaling Config</div>
-            <div className="space-y-2">
-              <div>
-                <div className="text-[9px] text-muted-foreground mb-0.5">Min Replicas</div>
-                <div className="px-2 py-1 bg-card border border-border text-[10px] text-foreground font-medium">1</div>
+          <div className="border-l border-border bg-muted/30 p-3 space-y-3 hidden lg:block">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Release Panel</div>
+            <div className="border border-border bg-card p-2.5 space-y-2">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-muted-foreground">QA checks</span>
+                <span className="text-emerald-600 dark:text-emerald-400">Passed</span>
               </div>
-              <div>
-                <div className="text-[9px] text-muted-foreground mb-0.5">Max Replicas</div>
-                <div className="px-2 py-1 bg-card border border-border text-[10px] text-foreground font-medium">8</div>
+              <div className="h-1.5 bg-muted overflow-hidden">
+                <div className="h-full w-[88%] bg-emerald-500" />
               </div>
-              <div>
-                <div className="text-[9px] text-muted-foreground mb-0.5">CPU Threshold</div>
-                <div className="px-2 py-1 bg-card border border-border text-[10px] text-foreground font-medium">70%</div>
+            </div>
+            <div className="border border-border bg-card p-2.5 text-[10px] space-y-1.5">
+              <div className="font-medium text-foreground">Output</div>
+              <div className="text-muted-foreground">Frontend + API + DB config generated.</div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="border border-border bg-card p-2 text-center">
+                <div className="text-[9px] uppercase text-muted-foreground">Build</div>
+                <div className="text-xs font-bold text-foreground">Ready</div>
               </div>
-              <div>
-                <div className="text-[9px] text-muted-foreground mb-0.5">Network</div>
-                <div className="px-2 py-1 bg-card border border-border text-[10px] text-muted-foreground">Isolated VNet</div>
-              </div>
-              <div>
-                <div className="text-[9px] text-muted-foreground mb-0.5">Volumes</div>
-                <div className="space-y-1">
-                  {['app-data', 'db-persist', 'logs'].map(v => (
-                    <div key={v} className="px-2 py-0.5 bg-card border border-border text-[10px] text-muted-foreground flex items-center gap-1">
-                      <HardDrive className="w-2 h-2 text-muted-foreground/50" />
-                      {v}
-                    </div>
-                  ))}
-                </div>
+              <div className="border border-border bg-card p-2 text-center">
+                <div className="text-[9px] uppercase text-muted-foreground">Deploy</div>
+                <div className="text-xs font-bold text-foreground">One Click</div>
               </div>
             </div>
           </div>
@@ -340,15 +344,6 @@ export default function Home() {
 
   return (
     <div className="landing-monochrome min-h-screen bg-background text-foreground overflow-x-hidden">
-      <div
-        aria-label="Alpha release badge"
-        className="fixed top-3 right-3 z-[70] pointer-events-none"
-      >
-        <div className="bg-foreground text-background text-[10px] sm:text-xs font-extrabold tracking-wider px-3 py-1.5 border border-border shadow-lg uppercase overflow-hidden">
-          Alpha
-        </div>
-      </div>
-
       {/* ── NAVBAR ── */}
       <nav
         className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
@@ -356,19 +351,27 @@ export default function Home() {
         }`}
         {...(isTauri ? { 'data-tauri-drag-region': true } as any : {})}
       >
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2.5">
               <Logo size="w-7 h-7" />
-              <span className="text-lg font-bold tracking-tight text-foreground">DCCortex</span>
+              <span className="text-sm sm:text-base lg:text-lg font-bold tracking-tight text-foreground">DCCortex</span>
             </Link>
+            <span
+              aria-label="Alpha release badge"
+              className="hidden sm:inline-flex items-center bg-foreground text-background text-[10px] font-extrabold tracking-wider px-2 py-1 border border-border uppercase leading-none"
+            >
+              Alpha
+            </span>
             <ProductSwitcher current="dccortex" />
+            <LiveRadioIndicator />
           </div>
 
           <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
             <a href="#how-it-works" className="hover:text-foreground transition-colors">How It Works</a>
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
+            <a href="#compliance" className="hover:text-foreground transition-colors">Compliance</a>
             <a href="#infrastructure" className="hover:text-foreground transition-colors">Hosting</a>
           </div>
 
@@ -377,6 +380,14 @@ export default function Home() {
               <Link href="/login" className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                 Log in
               </Link>
+            )}
+            {session && (
+              <button
+                onClick={() => { window.location.href = '/api/auth/logout' }}}
+                className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Sign out
+              </button>
             )}
             <Link href={ctaHref} className="px-5 py-2.5 text-sm font-medium bg-foreground text-background hover:opacity-90 transition-all hover:-translate-y-px">
               {ctaLabel}
@@ -393,10 +404,16 @@ export default function Home() {
             <a href="#how-it-works" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>How It Works</a>
             <a href="#features" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Features</a>
             <a href="#pricing" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
+            <a href="#compliance" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Compliance</a>
             <a href="#infrastructure" className="block text-sm text-muted-foreground py-1" onClick={() => setMobileMenuOpen(false)}>Hosting</a>
             <div className="py-1"><ProductSwitcher current="dccortex" /></div>
             <div className="flex gap-3 pt-2">
               {!session && <Link href="/login" className="text-sm font-medium text-foreground">Log in</Link>}
+              {session && (
+                <button onClick={() => { window.location.href = '/api/auth/logout' }} className="text-sm font-medium text-muted-foreground">
+                  Sign out
+                </button>
+              )}
               <Link href={ctaHref} className="px-4 py-2 text-sm font-medium bg-foreground text-background">{ctaLabel}</Link>
             </div>
           </div>
@@ -425,9 +442,9 @@ export default function Home() {
             </Reveal>
             <Reveal delay={200}>
               <p className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-10">
-                Describe what you want. AI builds the screens, database, and API.
-                Customize visually. Deploy in one click — to containers you own.
-                No vendor lock-in. No surprise bills. No dependencies.
+                Describe what you want. AI builds the UI, backend flows, data model, and APIs.
+                Customize visually and ship full-stack apps in one workflow.
+                Self-hosted by default, with no vendor lock-in.
               </p>
             </Reveal>
             <Reveal delay={300}>
@@ -462,7 +479,7 @@ export default function Home() {
           <Reveal delay={50}>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: 'Your Own Servers', href: '#infrastructure', icon: Server },
+                { label: 'Full-Stack + Self-Hosted', href: '#infrastructure', icon: Server },
                 { label: 'Visual Builder', href: '#features', icon: MousePointerClick },
                 { label: 'AI Design (DCFlow)', href: 'https://flow.dccortex.com', icon: Sparkles },
                 { label: 'Pricing', href: '#pricing', icon: Check },
@@ -538,7 +555,7 @@ export default function Home() {
               </h2>
               <p className="text-base md:text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed">
                 Most no-code and AI tools keep your app on their servers. You can&apos;t move it. You can&apos;t control it.
-                If they raise prices or shut down, you&apos;re stuck. DCCortex is different — you run it on your own servers, always.
+                If they raise prices or shut down, you&apos;re stuck. DCCortex is different — a practical self-hosted replacement for Budibase-style stacks.
               </p>
             </div>
           </Reveal>
@@ -549,7 +566,7 @@ export default function Home() {
                 icon: Globe,
                 label: 'Vendor Lock-in',
                 problem: 'Your app runs on Firebase, Vercel, or Supabase — you don\'t control any of it',
-                solution: 'Every project gets its own containers on your infrastructure',
+                solution: 'Self-host the full stack with your own infra and upgrade path',
               },
               {
                 icon: Lock,
@@ -567,7 +584,7 @@ export default function Home() {
                 icon: Code2,
                 label: 'Code Without Infrastructure',
                 problem: 'AI generates a frontend but you still need to wire up hosting, APIs, databases',
-                solution: 'DCCortex provisions the full stack automatically',
+                solution: 'DCCortex handles UI, backend flows, APIs, and deployment in one platform',
               },
             ].map(({ icon: Icon, label, problem, solution }, i) => (
               <Reveal key={label} delay={i * 70}>
@@ -602,7 +619,7 @@ export default function Home() {
                 From prompt to production in three steps
               </h2>
               <p className="text-muted-foreground max-w-xl mx-auto">
-                Design with AI, build visually, and deploy to your own infrastructure.
+                Design with AI, build visually, and deploy full-stack apps you control.
               </p>
             </div>
           </Reveal>
@@ -623,8 +640,8 @@ export default function Home() {
               },
               {
                 step: '3',
-                title: 'Deploy to Your Runtime',
-                desc: 'One click provisions airgapped containers — frontend, backend, and database. Auto-scaling Kubernetes handles the rest. You own everything.',
+                title: 'Deploy Full Stack',
+                desc: 'One click provisions your frontend, backend, and database. Run it self-hosted with full ownership of runtime and data.',
                 icon: Container,
               },
             ].map(({ step, title, desc, icon: Icon }, i) => (
@@ -650,10 +667,10 @@ export default function Home() {
             <div className="text-center mb-16">
               <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Platform Features</p>
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-                Everything you need to build and run applications
+                Everything you need to replace fragmented no-code stacks
               </h2>
               <p className="text-muted-foreground max-w-xl mx-auto">
-                From AI-powered design to container orchestration — one platform for the full lifecycle.
+                From AI-powered design to backend workflows and deployment — one full-stack system for the complete lifecycle.
               </p>
             </div>
           </Reveal>
@@ -663,7 +680,7 @@ export default function Home() {
               {
                 icon: Sparkles,
                 title: 'AI Application Generator',
-                desc: 'Describe your app in natural language. Cortex AI generates screens, data models, and API integrations — constrained to production-safe patterns.',
+                desc: 'Describe your app in natural language. Cortex AI generates screens, data models, backend flows, and API integrations — constrained to production-safe patterns.',
               },
               {
                 icon: MousePointerClick,
@@ -672,18 +689,18 @@ export default function Home() {
               },
               {
                 icon: Container,
-                title: 'Airgapped Container Runtime',
-                desc: 'Every project gets isolated Docker containers for frontend, backend, and database. No shared runtimes. No noisy neighbors.',
+                title: 'Self-Hosted Runtime',
+                desc: 'Run frontend, backend, and database on your own servers. Community edition is open source; commercial licensing adds enterprise support.',
               },
               {
                 icon: Scale,
-                title: 'Kubernetes Auto-Scaling',
-                desc: 'Built-in K8s orchestration scales your containers based on traffic. Set min/max replicas and CPU thresholds — we handle the rest.',
+                title: 'Scalable Deployment',
+                desc: 'Start with Docker for MVPs, scale to Kubernetes when needed. Keep one consistent platform model from prototype to production.',
               },
               {
                 icon: Database,
                 title: 'Managed Data Layer',
-                desc: 'PostgreSQL provisioned per project with encrypted volumes, automated backups, and built-in table editor. Connect external sources too.',
+                desc: 'PostgreSQL per project with backups, table tooling, and API-first access. Connect external services without leaving the platform.',
               },
               {
                 icon: Shield,
@@ -705,28 +722,28 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── CONTAINER ARCHITECTURE ── */}
+      {/* ── PLATFORM OWNERSHIP ── */}
       <section id="infrastructure" className="py-24 md:py-32">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <Reveal>
               <div>
-                <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Infrastructure</p>
+                <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Hosting and Ownership</p>
                 <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-                  Every project is a complete stack
+                  Full-stack platform, not just hosting
                 </h2>
                 <p className="text-muted-foreground leading-relaxed mb-6">
-                  When you create a project, DCCortex provisions dedicated containers — not a shared multi-tenant database.
-                  Frontend, backend API, and PostgreSQL, each in isolated Docker containers with their own network, volumes, and scaling rules.
+                  DCCortex is a practical replacement for fragmented builders like Budibase setups plus extra glue code.
+                  You get app design, backend flows, API generation, and deployment in one system that you can self-host.
                 </p>
                 <ul className="space-y-3 mb-8">
                   {[
-                    'Airgapped containers — no shared runtime, no noisy neighbors',
-                    'Per-project PostgreSQL with encrypted persistent volumes',
-                    'Private container networking — only your services can communicate',
-                    'Kubernetes orchestration with auto-scaling policies',
-                    'One-click deploy — full stack provisioned in seconds',
-                    'Self-hosted — runs on your servers, your cloud, your rules',
+                    'UI + backend flows + data model in one builder',
+                    'REST APIs and workflows generated from your model',
+                    'Self-host on Docker or Kubernetes',
+                    'Open-source community edition for MVP teams',
+                    'Commercial licensing with enterprise controls and support',
+                    'Own your data, code, runtime, and upgrade path',
                   ].map((item, i) => (
                     <li key={i} className="flex items-start gap-3 text-sm text-muted-foreground">
                       <Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
@@ -760,7 +777,7 @@ export default function Home() {
                 Build anything. Own everything.
               </h2>
               <p className="text-muted-foreground max-w-xl mx-auto">
-                Full-stack applications running on your own infrastructure.
+                Full-stack applications built visually and owned end-to-end.
               </p>
             </div>
           </Reveal>
@@ -821,7 +838,7 @@ export default function Home() {
               </h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
                 Free community version for builders. Paid plans for teams that need scale, support, and enterprise controls.
-                You run the compute — we provide the platform.
+                You run the compute — we provide the full-stack platform and licensing.
               </p>
             </div>
           </Reveal>
@@ -871,6 +888,57 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── COMPLIANCE & TRUST ── */}
+      <section id="compliance" className="py-24 md:py-32">
+        <div className="max-w-7xl mx-auto px-6">
+          <Reveal>
+            <div className="text-center mb-16">
+              <p className="text-xs font-semibold text-foreground uppercase tracking-widest mb-3">Compliance and Trust</p>
+              <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+                Controls you can run now, with a clear certification path
+              </h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                DCCortex does not claim formal certification yet. It is positioned as SOC2-ready and FedRAMP-ready path
+                with controls, documentation, and evidence automation designed to support staged certification after launch.
+              </p>
+            </div>
+          </Reveal>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {[
+              {
+                icon: FileCheck2,
+                title: 'SOC2-Adjacent / SOC2-Ready Positioning',
+                desc: 'Self-attested controls aligned to SOC2 trust service criteria for practical enterprise trust messaging.',
+              },
+              {
+                icon: Landmark,
+                title: 'FedRAMP-Ready Path',
+                desc: 'Documentation and operational artifacts are structured to support future ATO-focused implementation programs.',
+              },
+              {
+                icon: Shield,
+                title: 'Enterprise Security Controls',
+                desc: 'OIDC SSO, RBAC, immutable audit logging, backup and restore workflows, and incident response runbooks.',
+              },
+              {
+                icon: Lock,
+                title: 'NIST-Aligned Coverage',
+                desc: 'Controls are mapped to NIST-style domains in the compliance matrix for repeatable governance and audits.',
+              },
+            ].map(({ icon: Icon, title, desc }, i) => (
+              <Reveal key={title} delay={i * 80}>
+                <div className="p-6 bg-card border border-border h-full">
+                  <Icon className="w-6 h-6 text-foreground mb-4" />
+                  <h3 className="text-base font-semibold text-foreground mb-2">{title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── DCFLOW CALLOUT ── */}
       <section className="py-24 md:py-32 bg-muted/50">
         <div className="max-w-7xl mx-auto px-6">
@@ -888,7 +956,7 @@ export default function Home() {
                   <p className="text-muted-foreground leading-relaxed mb-6">
                     DCFlow is the AI design layer of DCCortex. Describe what you want to build in plain English —
                     Cortex AI generates multi-screen applications with data models, automations, and production layouts.
-                    Then deploy to your own containers with one click.
+                    Then deploy full stack to your own hosting with one click.
                   </p>
                   <ul className="space-y-3 mb-8">
                     {[
@@ -1027,7 +1095,7 @@ export default function Home() {
               <div className="relative border border-border bg-card px-8 py-8 max-w-2xl mx-auto">
                 <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-3">The DCCortex way</p>
                 <h3 className="text-2xl md:text-3xl font-extrabold text-foreground mb-3 leading-tight">
-                  One runtime.<br />Every layer. Fully yours.
+                  One platform.<br />Every layer. Fully yours.
                 </h3>
                 <p className="text-muted-foreground text-base leading-relaxed mb-6">
                   Frontend, backend, database, networking, scaling, and auth &mdash; provisioned as isolated containers on infrastructure you control. No fragmented services. No external cost surprises. No vendor that can pull the rug.
@@ -1089,7 +1157,7 @@ export default function Home() {
               {
                 icon: Code2,
                 title: 'Open Source',
-                desc: 'Inspect every line. Fork, extend, contribute. No vendor lock-in.',
+                desc: 'Community edition is open source. Fork, extend, and self-host without vendor lock-in.',
               },
               {
                 icon: Plug,
@@ -1116,7 +1184,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-6 text-center">
           <Reveal>
             <h2 className="text-3xl md:text-5xl font-bold mb-6 leading-tight">
-              Own your runtime.<br />
+              Own your full stack.<br />
               Ship without dependencies.
             </h2>
           </Reveal>
@@ -1161,7 +1229,7 @@ export default function Home() {
                 <span className="text-base font-bold text-white">DCCortex</span>
               </div>
               <p className="text-sm leading-relaxed">
-                The self-hosted application runtime. Design with AI, build visually, deploy to containers you own.
+                The self-hosted full-stack app platform. Design with AI, build visually, run backend flows, and deploy to infrastructure you own.
               </p>
             </div>
             <div>
@@ -1171,6 +1239,7 @@ export default function Home() {
                 <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
                 <li><a href="#infrastructure" className="hover:text-white transition-colors">Infrastructure</a></li>
                 <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
+                <li><a href="#compliance" className="hover:text-white transition-colors">Compliance</a></li>
                 <li><a href="https://flow.dccortex.com" className="hover:text-white transition-colors">DCFlow</a></li>
               </ul>
             </div>

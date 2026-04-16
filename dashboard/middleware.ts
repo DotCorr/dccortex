@@ -90,6 +90,5 @@ export const config = {
     '/organizations/:path*',
     '/login',
     '/register',
-    '/',
   ],
 }

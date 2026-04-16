@@ -22,6 +22,10 @@ ingress:
     service: http://dcflow:3000
     originRequest:
       httpHostHeader: flow.dccortex.com
+  - hostname: radio.dccortex.com
+    service: http://radio:3000
+    originRequest:
+      httpHostHeader: radio.dccortex.com
   - hostname: api.dccortex.com
     service: http://platform-api:3001
   - service: http_status:404

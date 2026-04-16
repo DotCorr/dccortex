@@ -93,6 +93,20 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # DCRadio (focus radio) - static site served by nginx
+  radio:
+    build:
+      context: ../DCRadio
+      dockerfile: Dockerfile
+    environment:
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=https://radio.dccortex.com
+    ports:
+      - "${DCRADIO_PORT:-3010}:3000"
+    networks:
+      - default
+    restart: unless-stopped
+
   cloudflare-tunnel:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
@@ -104,6 +118,7 @@ services:
     depends_on:
       - dashboard
       - dcflow
+      - radio
     restart: unless-stopped
 
 volumes:

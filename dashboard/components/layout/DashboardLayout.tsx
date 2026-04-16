@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { LogOut, Settings } from 'lucide-react'
 import { Logo } from '@/components/ui/logo'
 import { ProductSwitcher } from '@/components/product-switcher'
+import { LiveRadioIndicator } from '@/components/live-radio-indicator'
 import { useEffect, useState } from 'react'
 import { detectDesktopShell, detectPlatform } from '@/components/tauri-detector'
 
@@ -64,17 +65,21 @@ export function DashboardLayout({ children, hideSidebar }: { children: React.Rea
         className="fixed top-0 left-0 right-0 bg-white/90 dark:bg-[#0d1117]/90 backdrop-blur-md z-50 border-b border-gray-100 dark:border-[#30363d] select-none"
         data-tauri-drag-region
       >
-        <nav className={`max-w-7xl mx-auto ${leftPadding} pr-4 sm:pr-6 lg:pr-8`}>
-          <div className="flex justify-between items-center h-14 sm:h-16">
-            <Link 
-              href="/dashboard" 
-              className="flex items-center gap-2 group"
-            >
-              <Logo />
-              <span className="text-base sm:text-lg font-bold tracking-tight text-black dark:text-white">DCCortex</span>
-            </Link>
-            <ProductSwitcher current="dccortex" />
-            
+        <nav className={`w-full ${leftPadding} pr-4 sm:pr-6 lg:pr-8`}>
+          <div className="grid grid-cols-[1fr_auto] md:grid-cols-[1fr_auto_1fr] items-center h-14 sm:h-16 gap-3 sm:gap-6">
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard"
+                className="flex items-center gap-2 group"
+              >
+                <Logo />
+                <span className="text-base sm:text-lg font-bold tracking-tight text-black dark:text-white">DCCortex</span>
+              </Link>
+              <ProductSwitcher current="dccortex" />
+            </div>
+
+            <LiveRadioIndicator />
+
             <div className="flex items-center gap-3 sm:gap-6">
               <span className="hidden sm:inline-block text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate max-w-[150px] sm:max-w-none">
                 {session?.user?.email}
@@ -88,7 +93,7 @@ export function DashboardLayout({ children, hideSidebar }: { children: React.Rea
                 <Settings size={18} className="sm:w-5 sm:h-5" />
               </Link>
               <button
-                onClick={() => signOut({ callbackUrl: '/login', redirect: true })}
+                onClick={() => { window.location.href = '/api/auth/logout' }}
                 className="text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white transition-colors"
                 aria-label="Sign out"
               >

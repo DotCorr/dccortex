@@ -90,6 +90,20 @@ services:
       - default
     restart: unless-stopped
 
+  # DCRadio (focus radio) - static site served by nginx
+  radio:
+    build:
+      context: ../DCRadio
+      dockerfile: Dockerfile
+    environment:
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=https://radio.dccortex.com
+    ports:
+      - "${DCRADIO_PORT:-3010}:3000"
+    networks:
+      - default
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

@@ -44,11 +44,22 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search)
     const cb = params.get('callbackUrl')
     const product = params.get('product')
-    if (cb && cb.startsWith('/')) {
-      setCallbackUrl(cb)
+    if (product === 'radio') {
+      // Radio runs on its own subdomain and relies on shared .dccortex.com session cookies.
+      if (cb && cb.startsWith('/')) {
+        setCallbackUrl(`https://radio.dccortex.com${cb}`)
+      } else {
+        setCallbackUrl('https://radio.dccortex.com/')
+      }
     } else if (product === 'flow') {
-      // After login, send flow users to the flow subdomain dashboard
-      setCallbackUrl('https://flow.dccortex.com/dashboard')
+      if (cb && cb.startsWith('/')) {
+        setCallbackUrl(`https://flow.dccortex.com${cb}`)
+      } else {
+        // After login, send flow users to the flow subdomain dashboard
+        setCallbackUrl('https://flow.dccortex.com/dashboard')
+      }
+    } else if (cb && cb.startsWith('/')) {
+      setCallbackUrl(cb)
     }
     if (product) {
       setRegisterHref(`/register?product=${product}`)
