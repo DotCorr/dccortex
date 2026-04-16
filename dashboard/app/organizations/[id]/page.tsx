@@ -13,7 +13,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import Link from 'next/link'
-import { Users, FolderKanban, Plus, Mail, X, UserPlus, ArrowRight, FileText, Settings, CheckCircle, Trash2, Send, Copy, Sparkles, Container, Cpu, HardDrive, Activity, Server, RefreshCw } from 'lucide-react'
+import { Users, FolderKanban, Plus, Mail, X, UserPlus, ArrowRight, FileText, Settings, CheckCircle, Trash2, Send, Copy, Sparkles, Container, Cpu, HardDrive, Activity, Server, RefreshCw, Pencil, Bot, Key, ChevronDown, ChevronUp } from 'lucide-react'
 import { NEO_FINANCE_LAYOUT } from '@/lib/templates/neo-finance-layout'
 import { ALL_TEMPLATES, type ProjectTemplate } from '@/lib/templates'
 import { Button } from '@/components/ui/button'
@@ -52,6 +52,15 @@ export default function OrganizationDetailPage() {
   const [resendingInvitationId, setResendingInvitationId] = useState<string | null>(null)
   const [duplicatingProjectId, setDuplicatingProjectId] = useState<string | null>(null)
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
+  const [renamingProject, setRenamingProject] = useState<any | null>(null)
+  const [renameProjectName, setRenameProjectName] = useState('')
+  const [renameProjectDesc, setRenameProjectDesc] = useState('')
+  const [renameProjectLoading, setRenameProjectLoading] = useState(false)
+  const [mcpKey, setMcpKey] = useState<string | null>(null)
+  const [mcpUrl, setMcpUrl] = useState<string | null>(null)
+  const [mcpClaudeConfig, setMcpClaudeConfig] = useState<any | null>(null)
+  const [mcpCopied, setMcpCopied] = useState<'url' | 'config' | null>(null)
+  const [mcpPanelOpen, setMcpPanelOpen] = useState(false)
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false)
   const [claimingProjectId, setClaimingProjectId] = useState<string | null>(null)
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
@@ -319,6 +328,15 @@ export default function OrganizationDetailPage() {
   })
 
   const organization = orgData?.organization
+
+  // Fetch MCP key once
+  useEffect(() => {
+    axios.get('/api/mcp-key').then((res) => {
+      setMcpKey(res.data.key)
+      setMcpUrl(res.data.mcpUrl)
+      setMcpClaudeConfig(res.data.claudeDesktop)
+    }).catch(() => {})
+  }, [])
 
   // Listen for Cortex AI action completions — refresh project list automatically
   useEffect(() => {
@@ -653,6 +671,21 @@ export default function OrganizationDetailPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setRenamingProject(project)
+                        setRenameProjectName(project.name)
+                        setRenameProjectDesc(project.description || '')
+                      }}
+                      className="text-xs text-[var(--primary)] hover:underline inline-flex items-center gap-1"
+                      title="Rename project"
+                    >
+                      <Pencil size={12} />
+                      Rename
+                    </button>
+                    <button
+                      type="button"
                       onClick={async (e) => {
                         e.preventDefault()
                         e.stopPropagation()
@@ -707,6 +740,84 @@ export default function OrganizationDetailPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </section>
+
+        {/* ── MCP (AI Access) ── */}
+        <section className="px-6 lg:px-8 max-w-7xl mx-auto pb-12">
+          <button
+            onClick={() => setMcpPanelOpen((v) => !v)}
+            className="w-full flex items-center justify-between py-4 border-t border-gray-200 dark:border-[#30363d] group"
+          >
+            <div className="flex items-center gap-3">
+              <Bot size={18} className="text-gray-500 dark:text-gray-400" />
+              <div className="text-left">
+                <span className="text-base font-medium text-black dark:text-white">AI Access (MCP)</span>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-light">Connect Claude Desktop or any MCP-compatible AI to your projects</p>
+              </div>
+            </div>
+            {mcpPanelOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+          </button>
+
+          {mcpPanelOpen && (
+            <div className="border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#161b22] p-6 mb-8">
+              {!mcpKey ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">Loading MCP key…</p>
+              ) : (
+                <div className="space-y-5">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">What can the AI do?</p>
+                    <div className="flex flex-wrap gap-2">
+                      {['List projects', 'Create project', 'Delete project', 'List screens', 'Get screen HTML', 'Update screen HTML', 'Create screen', 'Rename screen', 'Delete screen'].map((cap) => (
+                        <span key={cap} className="px-2.5 py-1 text-xs bg-white dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] text-gray-700 dark:text-gray-300">{cap}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">MCP Server URL</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs bg-white dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] px-3 py-2 text-gray-800 dark:text-gray-200 font-mono truncate">
+                        {mcpUrl}
+                      </code>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(mcpUrl!); setMcpCopied('url'); setTimeout(() => setMcpCopied(null), 2000) }}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#161b22] transition-colors shrink-0"
+                      >
+                        <Copy size={12} />
+                        {mcpCopied === 'url' ? 'Copied!' : 'Copy URL'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Claude Desktop Config</p>
+                    <div className="flex items-start gap-2">
+                      <pre className="flex-1 text-xs bg-white dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] px-3 py-2 text-gray-800 dark:text-gray-200 font-mono overflow-x-auto">
+                        {JSON.stringify(mcpClaudeConfig, null, 2)}
+                      </pre>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(JSON.stringify(mcpClaudeConfig, null, 2)); setMcpCopied('config'); setTimeout(() => setMcpCopied(null), 2000) }}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs border border-gray-300 dark:border-[#30363d] bg-white dark:bg-[#0d1117] text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#161b22] transition-colors shrink-0 mt-0"
+                      >
+                        <Copy size={12} />
+                        {mcpCopied === 'config' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Paste this into <code className="font-mono">~/Library/Application Support/Claude/claude_desktop_config.json</code> (add inside an existing <code className="font-mono">mcpServers</code> object if one already exists).</p>
+                  </div>
+
+                  <div className="pt-1">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Your API Key</p>
+                    <div className="flex items-center gap-2">
+                      <Key size={12} className="text-gray-400 shrink-0" />
+                      <code className="text-xs text-gray-600 dark:text-gray-400 font-mono truncate">{mcpKey}</code>
+                    </div>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">User-scoped — grants access to all your projects across all organizations. Keep it secret.</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -1138,6 +1249,64 @@ export default function OrganizationDetailPage() {
         </section>
 
       </div>
+
+      {/* Rename Project Dialog */}
+      <Dialog open={!!renamingProject} onOpenChange={(o) => { if (!o) { setRenamingProject(null); setRenameProjectName(''); setRenameProjectDesc('') } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename Project</DialogTitle>
+            <DialogDescription>Update the name and description for <strong>{renamingProject?.name}</strong>.</DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!renameProjectName.trim() || !renamingProject) return
+              setRenameProjectLoading(true)
+              try {
+                await axios.put(`/api/projects/${renamingProject.id}`, {
+                  name: renameProjectName.trim(),
+                  description: renameProjectDesc.trim() || null,
+                })
+                queryClient.invalidateQueries({ queryKey: ['organization', orgId] })
+                setRenamingProject(null)
+                setRenameProjectName('')
+                setRenameProjectDesc('')
+              } catch (err: any) {
+                alert(err?.response?.data?.error || 'Failed to rename project')
+              } finally {
+                setRenameProjectLoading(false)
+              }
+            }}
+            className="space-y-4 mt-2"
+          >
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-black dark:text-white">Project name <span className="text-red-500">*</span></label>
+              <Input
+                value={renameProjectName}
+                onChange={(e) => setRenameProjectName(e.target.value)}
+                placeholder="Project name"
+                autoFocus
+                disabled={renameProjectLoading}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-black dark:text-white">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+              <Input
+                value={renameProjectDesc}
+                onChange={(e) => setRenameProjectDesc(e.target.value)}
+                placeholder="What does this project do?"
+                disabled={renameProjectLoading}
+              />
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button type="button" variant="outline" onClick={() => { setRenamingProject(null); setRenameProjectName(''); setRenameProjectDesc('') }} disabled={renameProjectLoading}>Cancel</Button>
+              <Button type="submit" disabled={renameProjectLoading || !renameProjectName.trim()}>
+                {renameProjectLoading ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   )
 }

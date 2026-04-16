@@ -38,11 +38,24 @@ function ensurePublicUrl() {
 function withCors(res: Response, origin: string | null): Response {
   const allowOrigin =
     origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
-  const next = new Response(res.body, {
-    status: res.status,
-    statusText: res.statusText,
-    headers: new Headers(res.headers),
+
+  // DO NOT use `new Headers(res.headers)` — the Headers constructor collapses
+  // multiple Set-Cookie values into one comma-joined string, which corrupts the
+  // OAuth state/PKCE cookies NextAuth sets and causes:
+  //   SyntaxError: The string did not match the expected pattern.
+  const next = new Response(res.body, { status: res.status, statusText: res.statusText })
+
+  // Copy every header except Set-Cookie (forEach only sees one value per name)
+  res.headers.forEach((value, key) => {
+    if (key.toLowerCase() !== 'set-cookie') next.headers.set(key, value)
   })
+
+  // Re-append each Set-Cookie individually so the browser receives separate headers
+  const setCookies = (res.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? []
+  for (const cookie of setCookies) {
+    next.headers.append('set-cookie', cookie)
+  }
+
   next.headers.set('Access-Control-Allow-Origin', allowOrigin)
   next.headers.set('Access-Control-Allow-Credentials', 'true')
   next.headers.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
