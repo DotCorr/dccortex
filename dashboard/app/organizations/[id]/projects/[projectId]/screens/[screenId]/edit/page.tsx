@@ -15,7 +15,7 @@ import axios from 'axios'
 import { useState, useCallback, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { flushSync } from 'react-dom'
 import { useWebHaptics } from 'web-haptics/react'
-import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, ExternalLink, SlidersHorizontal } from 'lucide-react'
+import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, ExternalLink, SlidersHorizontal, Code2 } from 'lucide-react'
 import { DeviceFrameset, DeviceOptions } from 'react-device-frameset'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -683,6 +683,13 @@ export default function ScreenEditPage() {
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [showGeneratedSource, setShowGeneratedSource] = useState(false)
+  const [generatedSource, setGeneratedSource] = useState('')
+  const [generatedSourceWarnings, setGeneratedSourceWarnings] = useState<string[]>([])
+  const [generatedSourceLoading, setGeneratedSourceLoading] = useState(false)
+  const [generatedSourceError, setGeneratedSourceError] = useState<string | null>(null)
+  const [generatedSourceNodeCount, setGeneratedSourceNodeCount] = useState<number | null>(null)
+  const [generatedSourceCached, setGeneratedSourceCached] = useState(false)
   const [layoutGuideRect, setLayoutGuideRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
   const [packageManagerOpen, setPackageManagerOpen] = useState(false)
   const [previewSettingsLoaded, setPreviewSettingsLoaded] = useState(false)
@@ -733,6 +740,7 @@ export default function ScreenEditPage() {
   const canvasColorStorageKey = useMemo(() => `dccortex:canvas-color:${projectId}:${screenId}`, [projectId, screenId])
   const canvasMeshStorageKey = useMemo(() => `dccortex:canvas-mesh:${projectId}:${screenId}`, [projectId, screenId])
   const frameConfigStorageKey = useMemo(() => `dccortex:frame-config:${projectId}:${screenId}`, [projectId, screenId])
+  const generatedSourceUrl = useMemo(() => `/api/projects/${projectId}/screens/${screenId}/nextjs-source`, [projectId, screenId])
   const apiLiveRefreshStorageKey = useMemo(() => `dccortex:api-live-refresh:${projectId}:${screenId}`, [projectId, screenId])
   const layoutInspectorStorageKey = useMemo(() => `dccortex:layout-inspector:${projectId}:${screenId}`, [projectId, screenId])
   const panelWidthsStorageKey = useMemo(() => `dccortex:panel-widths:${projectId}:${screenId}`, [projectId, screenId])
@@ -761,6 +769,36 @@ export default function ScreenEditPage() {
   const [orgRuleSaving, setOrgRuleSaving] = useState(false)
   const [importingOrgReusableIds, setImportingOrgReusableIds] = useState<string[]>([])
   const [importingApiSourceIds, setImportingApiSourceIds] = useState<string[]>([])
+  const generatedSourceRequestIdRef = useRef(0)
+
+  const fetchGeneratedSource = useCallback(async (force = false) => {
+    if (!projectId || !screenId) return
+    const requestId = ++generatedSourceRequestIdRef.current
+    setGeneratedSourceLoading(true)
+    setGeneratedSourceError(null)
+    try {
+      const response = await axios.get(generatedSourceUrl, {
+        params: force ? { t: Date.now() } : undefined,
+      })
+      if (requestId !== generatedSourceRequestIdRef.current) return
+      const data = response.data as {
+        source?: string
+        warnings?: string[]
+        nodeCount?: number
+        cached?: boolean
+      }
+      setGeneratedSource(typeof data.source === 'string' ? data.source : '')
+      setGeneratedSourceWarnings(Array.isArray(data.warnings) ? data.warnings.map((w) => String(w)) : [])
+      setGeneratedSourceNodeCount(typeof data.nodeCount === 'number' ? data.nodeCount : null)
+      setGeneratedSourceCached(Boolean(data.cached))
+    } catch (err: any) {
+      if (requestId !== generatedSourceRequestIdRef.current) return
+      const msg = err?.response?.data?.error || err?.message || 'Failed to generate interpolated source'
+      setGeneratedSourceError(msg)
+    } finally {
+      if (requestId === generatedSourceRequestIdRef.current) setGeneratedSourceLoading(false)
+    }
+  }, [generatedSourceUrl, projectId, screenId])
 
   const dismissEditorNotice = useCallback((noticeId: string) => {
     const timeoutId = noticeTimeoutsRef.current[noticeId]
@@ -790,6 +828,18 @@ export default function ScreenEditPage() {
       noticeTimeoutsRef.current = {}
     }
   }, [])
+
+  useEffect(() => {
+    if (previewMode && showGeneratedSource) setShowGeneratedSource(false)
+  }, [previewMode, showGeneratedSource])
+
+  useEffect(() => {
+    if (!showGeneratedSource || previewMode) return
+    const t = setTimeout(() => {
+      void fetchGeneratedSource()
+    }, 200)
+    return () => clearTimeout(t)
+  }, [showGeneratedSource, previewMode, lastSyncedAt, fetchGeneratedSource])
 
   const fetchOrgResourceCatalog = useCallback(async (query = orgResourceSearch, projectFilter = orgResourceProjectFilter) => {
     if (!orgId) {
@@ -1495,6 +1545,7 @@ export default function ScreenEditPage() {
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
       setSaveStatus('saved')
+      setLastSyncedAt(Date.now())
       queryClient.invalidateQueries({ queryKey: ['edit-payload', projectId, screenId] })
       // Invalidate screens list so other screens' presentation/propDefs changes are visible immediately
       queryClient.invalidateQueries({ queryKey: ['screens', projectId] })
@@ -3573,6 +3624,19 @@ export default function ScreenEditPage() {
                 Preview
               </Button>
             )}
+            {!previewMode && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowGeneratedSource((v) => !v)}
+                className="flex items-center gap-1.5"
+                title="Show interpolated Next.js source beside canvas"
+              >
+                <Code2 className="w-4 h-4" />
+                {showGeneratedSource ? 'Hide source' : 'Source split'}
+              </Button>
+            )}
             {liveUrl && (
               <a
                 href={liveUrl}
@@ -3810,8 +3874,9 @@ export default function ScreenEditPage() {
                   {previewSize} • {Math.round(canvasZoom * 100)}% • {effectiveDeviceFrameEnabled ? 'frame on' : 'frame off'}
                 </span>
               </div>
-              <div ref={canvasStageRef} className="flex-1 min-w-0 min-h-0 overflow-auto flex flex-col items-start justify-start">
-                {(() => {
+              <div className={`flex-1 min-w-0 min-h-0 overflow-hidden ${showGeneratedSource && !previewMode ? 'grid grid-cols-1 xl:grid-cols-2' : ''}`}>
+                <div ref={canvasStageRef} className={`min-w-0 min-h-0 overflow-auto flex flex-col items-start justify-start ${showGeneratedSource && !previewMode ? 'border-r border-gray-200 dark:border-[#30363d]' : 'flex-1'}`}>
+                  {(() => {
                   const liveFitScale =
                     canvasStageSize.width > 0 && canvasStageSize.height > 0
                       ? Math.min(
@@ -4028,6 +4093,50 @@ export default function ScreenEditPage() {
                     </div>
                   )
                 })()}
+                </div>
+                {showGeneratedSource && !previewMode && (
+                  <div className="min-w-0 min-h-0 flex flex-col bg-[#0b1020] text-gray-100">
+                    <div className="shrink-0 border-b border-white/10 px-3 py-2 flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Code2 className="w-3.5 h-3.5" />
+                        <span className="font-medium truncate">Interpolated Next.js source</span>
+                        {generatedSourceNodeCount != null && (
+                          <span className="text-[10px] text-gray-400">{generatedSourceNodeCount} nodes</span>
+                        )}
+                        <span className={`text-[10px] ${generatedSourceCached ? 'text-emerald-400' : 'text-amber-300'}`}>
+                          {generatedSourceCached ? 'cache hit' : 'fresh'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void fetchGeneratedSource(true)}
+                        className="px-2 py-1 rounded border border-white/20 hover:bg-white/10"
+                      >
+                        Refresh source
+                      </button>
+                    </div>
+                    {generatedSourceError && (
+                      <div className="shrink-0 px-3 py-2 text-xs text-rose-300 border-b border-rose-300/20 bg-rose-900/20">
+                        {generatedSourceError}
+                      </div>
+                    )}
+                    {generatedSourceWarnings.length > 0 && (
+                      <div className="shrink-0 px-3 py-2 text-xs text-amber-200 border-b border-amber-200/20 bg-amber-900/20">
+                        {generatedSourceWarnings.slice(0, 3).map((warning) => (
+                          <div key={warning}>{warning}</div>
+                        ))}
+                        {generatedSourceWarnings.length > 3 && (
+                          <div>+{generatedSourceWarnings.length - 3} more warnings</div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex-1 min-h-0 overflow-auto">
+                      <pre className="m-0 p-3 text-[11px] leading-5 whitespace-pre-wrap break-words font-mono">
+                        {generatedSourceLoading ? 'Generating source...' : (generatedSource || '// No generated source available yet.')}
+                      </pre>
+                    </div>
+                  </div>
+                )}
               </div>
               <DebugConsole
                 runtimeState={runtimeState}

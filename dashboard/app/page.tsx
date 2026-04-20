@@ -20,7 +20,7 @@ import {
   MousePointerClick, Sparkles, Database, Workflow, Check, Menu, X,
   LayoutGrid, Table2, BarChart3, FormInput, PanelLeftClose, Eye,
   GitBranch, Lock, Server, Plug, RefreshCw, Clock, FileCheck2,
-  Container, Cpu, HardDrive, Activity, Box, Network, Terminal,
+  Container, Box, Network, Terminal,
   Gauge, Scale, CircuitBoard, Hexagon
 } from 'lucide-react'
 
@@ -93,153 +93,337 @@ function RuntimeBadge() {
   )
 }
 
-/* ───────────── Hero illustration — full-stack system view ───────────── */
+/* ───────────── Hero illustration — realistic DCFlow editor mockup ───────────── */
 function HeroIllustration() {
+  const [activeScreen, setActiveScreen] = useState(0)
+  const screens = [
+    { name: 'Dashboard', active: true },
+    { name: 'Bookings', active: false },
+    { name: 'Clients', active: false },
+    { name: 'Analytics', active: false },
+  ]
+
   return (
-    <div className="relative w-full max-w-3xl mx-auto">
-      <div className="absolute -inset-10 bg-gradient-to-br from-cyan-500/15 via-transparent to-emerald-500/10 blur-3xl" />
-      <div className="relative bg-card border border-border shadow-2xl shadow-black/5 dark:shadow-black/30 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 bg-muted border-b border-border">
+    <div className="relative w-full max-w-5xl mx-auto">
+      <div className="absolute -inset-10 bg-gradient-to-br from-cyan-500/10 via-transparent to-emerald-500/8 blur-3xl" />
+      {/* App chrome */}
+      <div className="relative bg-[#0d0d0d] border border-white/10 shadow-2xl shadow-black/50 overflow-hidden rounded-lg">
+        {/* Top bar */}
+        <div className="flex items-center justify-between px-3 py-2 bg-[#111] border-b border-white/[0.07]">
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
             </div>
-            <span className="text-[11px] text-muted-foreground font-medium ml-1">DCCortex Studio</span>
+            <div className="flex items-center gap-1.5 ml-2">
+              <span className="text-[10px] text-white/30">Projects /</span>
+              <span className="text-[10px] text-white/70 font-medium">SalonTime App</span>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1"><Sparkles className="w-3 h-3 text-cyan-500" /> AI Design</span>
-            <span className="px-2 py-0.5 bg-foreground text-background text-[10px] font-medium">Ship</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 border border-white/10 rounded">
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              <span className="text-[10px] text-white/60">Gemini 2.5 Flash</span>
+            </div>
+            <div className="px-3 py-1 bg-cyan-500 text-[10px] font-semibold text-black rounded cursor-pointer">
+              Generate Flow
+            </div>
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-[220px_1fr_220px] min-h-[360px]">
-          <div className="border-r border-border bg-muted/50 p-3 space-y-3 hidden lg:block">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Builder Blocks</div>
-            {[
-              { label: 'Page Layout', icon: LayoutGrid },
-              { label: 'Data Table', icon: Table2 },
-              { label: 'Smart Form', icon: FormInput },
-              { label: 'Analytics', icon: BarChart3 },
-              { label: 'Workflow', icon: Workflow },
-            ].map(({ label, icon: Icon }) => (
-              <div key={label} className="flex items-center gap-2 px-2.5 py-2 border border-border bg-background/70 text-[11px] text-muted-foreground">
-                <Icon className="w-3.5 h-3.5 text-foreground" />
-                <span>{label}</span>
-              </div>
-            ))}
-            <div className="pt-2 border-t border-border">
-              <div className="text-[10px] text-muted-foreground mb-2">Style Presets</div>
-              <div className="flex flex-wrap gap-1.5">
-                {['Mono', 'Soft', 'Contrast', 'Editorial'].map((preset) => (
-                  <span key={preset} className="text-[9px] px-2 py-1 border border-border bg-background text-muted-foreground uppercase tracking-wider">
-                    {preset}
-                  </span>
-                ))}
+        <div className="flex h-[420px]">
+          {/* Left panel — screen list */}
+          <div className="w-[160px] flex-shrink-0 border-r border-white/[0.07] bg-[#111] flex flex-col hidden lg:flex">
+            <div className="px-3 pt-3 pb-2 flex items-center justify-between">
+              <span className="text-[10px] text-white/40 uppercase tracking-wider font-medium">Screens</span>
+              <span className="text-[10px] text-white/40">{screens.length}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 space-y-1.5">
+              {screens.map((s, i) => (
+                <button
+                  key={s.name}
+                  onClick={() => setActiveScreen(i)}
+                  className={`w-full text-left rounded overflow-hidden border transition-all ${
+                    activeScreen === i
+                      ? 'border-cyan-500/50 ring-1 ring-cyan-500/20'
+                      : 'border-white/[0.06] hover:border-white/20'
+                  }`}
+                >
+                  {/* Mini screen thumbnail */}
+                  <div className="h-[68px] bg-[#0a0a12] relative overflow-hidden">
+                    {i === 0 && (
+                      <>
+                        <div className="absolute top-0 left-0 right-0 h-4 bg-[#111827] flex items-center gap-1 px-1.5">
+                          <div className="w-8 h-1.5 bg-white/20 rounded" />
+                          <div className="flex gap-0.5 ml-auto">
+                            {[...Array(3)].map((_, j) => <div key={j} className="w-1 h-1 bg-white/10 rounded-sm" />)}
+                          </div>
+                        </div>
+                        <div className="absolute top-5 left-1.5 right-1.5 grid grid-cols-3 gap-0.5">
+                          {[...Array(3)].map((_, j) => (
+                            <div key={j} className="h-7 bg-[#1a2035] rounded-sm" />
+                          ))}
+                        </div>
+                        <div className="absolute bottom-1 left-1.5 right-1.5 h-2 bg-[#0f1929] rounded-sm" />
+                      </>
+                    )}
+                    {i === 1 && (
+                      <>
+                        <div className="absolute top-0 left-0 right-0 h-4 bg-[#111] flex items-center px-1.5 gap-1">
+                          <div className="w-6 h-1.5 bg-cyan-500/30 rounded" />
+                        </div>
+                        <div className="absolute top-5 left-1.5 right-1.5 space-y-1">
+                          {[...Array(4)].map((_, j) => (
+                            <div key={j} className="flex gap-1">
+                              <div className="h-2 flex-1 bg-white/5 rounded-sm" />
+                              <div className="h-2 w-8 bg-white/5 rounded-sm" />
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {i === 2 && (
+                      <>
+                        <div className="absolute inset-1.5 grid grid-cols-2 gap-1">
+                          {[...Array(4)].map((_, j) => (
+                            <div key={j} className="bg-[#1a1a2e] rounded-sm flex items-center gap-0.5 px-1">
+                              <div className="w-2.5 h-2.5 rounded-full bg-white/10 flex-shrink-0" />
+                              <div className="h-1.5 flex-1 bg-white/8 rounded" />
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {i === 3 && (
+                      <>
+                        <div className="absolute top-1.5 left-1.5 right-1.5 h-10 bg-[#0f1929] rounded-sm overflow-hidden">
+                          <div className="absolute bottom-0 left-1 flex items-end gap-0.5 h-full pt-2">
+                            {[40, 65, 45, 80, 60, 90, 55].map((h, j) => (
+                              <div key={j} className="w-2 bg-cyan-500/50 rounded-t-sm" style={{ height: `${h}%` }} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="absolute bottom-1 left-1.5 right-1.5 h-2 bg-white/5 rounded-sm" />
+                      </>
+                    )}
+                  </div>
+                  <div className="px-2 py-1.5 bg-[#0f0f0f]">
+                    <div className="text-[9px] text-white/60 font-medium">{s.name}</div>
+                  </div>
+                </button>
+              ))}
+              {/* Generating skeleton */}
+              <div className="w-full rounded border border-dashed border-white/10 overflow-hidden opacity-60">
+                <div className="h-[68px] bg-[#0d0d0d] flex flex-col items-center justify-center gap-1.5">
+                  <div className="w-4 h-4 rounded-full border border-cyan-500/50 border-t-cyan-500 animate-spin" />
+                  <div className="text-[8px] text-white/30">Generating…</div>
+                </div>
+                <div className="px-2 py-1.5 bg-[#0f0f0f]">
+                  <div className="h-1.5 w-12 bg-white/10 rounded" />
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="p-4 sm:p-5 bg-background relative overflow-hidden">
-            <div className="absolute inset-0 pointer-events-none opacity-40" style={{ backgroundImage: 'linear-gradient(to right, rgb(148 163 184 / 0.16) 1px, transparent 1px), linear-gradient(to bottom, rgb(148 163 184 / 0.16) 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
+          {/* Canvas */}
+          <div
+            className="flex-1 bg-[#0a0a0a] relative overflow-hidden"
+            style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)', backgroundSize: '24px 24px' }}
+          >
+            {/* Active screen frame on canvas */}
+            <div className="absolute inset-6 lg:inset-8">
+              <div className="relative w-full h-full border border-cyan-500/30 shadow-[0_0_0_1px_rgba(6,182,212,0.1)] rounded-sm overflow-hidden">
+                {/* Screen label */}
+                <div className="absolute -top-5 left-0 flex items-center gap-1.5">
+                  <span className="text-[9px] text-white/30 font-medium">{screens[activeScreen].name}</span>
+                  <span className="text-[8px] px-1 py-0.5 bg-cyan-500/10 text-cyan-400 rounded">active</span>
+                </div>
 
-            <div className="relative grid gap-3">
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="border border-border bg-card p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Eye className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Canvas Preview</span>
-                  </div>
-                  <div className="h-24 border border-border bg-muted p-2 flex flex-col gap-2">
-                    <div className="h-2.5 bg-foreground/15 w-2/3" />
-                    <div className="h-2.5 bg-foreground/10 w-5/6" />
-                    <div className="grid grid-cols-3 gap-1.5 mt-auto">
-                      <div className="h-8 bg-cyan-500/20 border border-cyan-500/30" />
-                      <div className="h-8 bg-emerald-500/20 border border-emerald-500/30" />
-                      <div className="h-8 bg-amber-500/20 border border-amber-500/30" />
+                {/* Realistic generated screen — SalonTime Dashboard */}
+                {activeScreen === 0 && (
+                  <div className="w-full h-full bg-[#08090f] overflow-hidden">
+                    {/* Top nav */}
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-[#0e1018] border-b border-white/[0.06]">
+                      <div className="flex items-center gap-3">
+                        <div className="w-5 h-5 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-sm" />
+                        <span className="text-[10px] text-white font-semibold">SalonTime</span>
+                        <div className="flex gap-3 ml-3">
+                          {['Overview', 'Bookings', 'Staff', 'Reports'].map((tab, i) => (
+                            <span key={tab} className={`text-[9px] ${i === 0 ? 'text-cyan-400 border-b border-cyan-400 pb-0.5' : 'text-white/30'}`}>{tab}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-400 to-pink-400" />
+                        <span className="text-[9px] text-white/50">Anna K.</span>
+                      </div>
+                    </div>
+                    {/* KPI row */}
+                    <div className="grid grid-cols-4 gap-2 px-4 pt-3 pb-2">
+                      {[
+                        { label: 'Bookings Today', val: '24', delta: '+3', color: 'text-cyan-400' },
+                        { label: 'Revenue MTD', val: '€4,820', delta: '+12%', color: 'text-emerald-400' },
+                        { label: 'Active Clients', val: '183', delta: '+7', color: 'text-blue-400' },
+                        { label: 'Open Slots', val: '8', delta: '-2', color: 'text-amber-400' },
+                      ].map(({ label, val, delta, color }) => (
+                        <div key={label} className="bg-[#0e1018] border border-white/[0.07] rounded p-2">
+                          <div className="text-[8px] text-white/30 mb-1">{label}</div>
+                          <div className={`text-sm font-bold ${color}`}>{val}</div>
+                          <div className="text-[8px] text-white/30 mt-0.5">{delta} this week</div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Chart + table row */}
+                    <div className="grid grid-cols-[1fr_140px] gap-2 px-4">
+                      <div className="bg-[#0e1018] border border-white/[0.07] rounded p-2.5">
+                        <div className="text-[9px] text-white/40 mb-2 font-medium">Bookings — Last 7 Days</div>
+                        <div className="flex items-end gap-1 h-16">
+                          {[5, 9, 7, 12, 8, 14, 10].map((h, i) => (
+                            <div key={i} className="flex-1 rounded-t-sm" style={{ height: `${(h / 14) * 100}%`, background: i === 5 ? 'rgb(6 182 212)' : 'rgba(6,182,212,0.25)' }} />
+                          ))}
+                        </div>
+                        <div className="flex justify-between mt-1">
+                          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+                            <span key={i} className="text-[7px] text-white/20 flex-1 text-center">{d}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-[#0e1018] border border-white/[0.07] rounded p-2.5">
+                        <div className="text-[9px] text-white/40 mb-2 font-medium">Next Appointments</div>
+                        <div className="space-y-1.5">
+                          {[
+                            { name: 'Emma R.', time: '10:00', type: 'Cut' },
+                            { name: 'Sofia M.', time: '11:30', type: 'Color' },
+                            { name: 'Laura B.', time: '13:00', type: 'Style' },
+                          ].map(({ name, time, type }) => (
+                            <div key={name} className="flex items-center gap-1.5">
+                              <div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-500/50 to-pink-500/50 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[8px] text-white/70 truncate">{name}</div>
+                                <div className="text-[7px] text-white/30">{time} · {type}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
-                <div className="border border-border bg-card p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <GitBranch className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Logic Flow</span>
-                  </div>
-                  <div className="h-24 border border-border bg-muted/50 p-2.5 flex items-center justify-between">
-                    {['Trigger', 'Transform', 'Save'].map((item, idx) => (
-                      <div key={item} className="flex items-center gap-1.5">
-                        <div className="px-2 py-1 border border-border bg-background text-[9px] font-medium text-foreground uppercase tracking-wide">{item}</div>
-                        {idx < 2 && <ArrowRight className="w-3 h-3 text-muted-foreground" />}
+                {activeScreen === 1 && (
+                  <div className="w-full h-full bg-[#08090f] overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-[#0e1018] border-b border-white/[0.06]">
+                      <span className="text-[10px] text-white font-semibold">Bookings</span>
+                      <div className="flex gap-1.5">
+                        <span className="px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/20 text-[9px] text-cyan-400 rounded">+ New</span>
+                        <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-[9px] text-white/40 rounded">Filter</span>
                       </div>
-                    ))}
+                    </div>
+                    <div className="px-4 pt-2">
+                      <div className="grid grid-cols-5 gap-2 px-2 pb-1 border-b border-white/[0.06]">
+                        {['Client', 'Service', 'Staff', 'Time', 'Status'].map(h => (
+                          <span key={h} className="text-[8px] text-white/25 uppercase tracking-wider font-medium">{h}</span>
+                        ))}
+                      </div>
+                      {[
+                        ['Emma Rodriguez', 'Haircut', 'Maria', '10:00', 'confirmed'],
+                        ['Sofia Müller', 'Color', 'Lisa', '11:30', 'pending'],
+                        ['Laura Bianchi', 'Style', 'Maria', '13:00', 'confirmed'],
+                        ['Anna Novak', 'Trim', 'Sara', '14:30', 'cancelled'],
+                        ['Petra Koch', 'Highlights', 'Lisa', '15:00', 'confirmed'],
+                      ].map(([client, service, staff, time, status]) => (
+                        <div key={client} className="grid grid-cols-5 gap-2 px-2 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.02]">
+                          <span className="text-[9px] text-white/70">{client}</span>
+                          <span className="text-[9px] text-white/50">{service}</span>
+                          <span className="text-[9px] text-white/50">{staff}</span>
+                          <span className="text-[9px] text-white/50">{time}</span>
+                          <span className={`text-[8px] font-medium px-1.5 py-0.5 rounded-full w-fit ${
+                            status === 'confirmed' ? 'bg-emerald-500/15 text-emerald-400' :
+                            status === 'pending' ? 'bg-amber-500/15 text-amber-400' :
+                            'bg-red-500/15 text-red-400'
+                          }`}>{status}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {(activeScreen === 2 || activeScreen === 3) && (
+                  <div className="w-full h-full bg-[#08090f] flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-8 h-8 rounded-full border border-cyan-500/40 border-t-cyan-500 animate-spin mx-auto mb-2" />
+                      <div className="text-[10px] text-white/30">AI is writing this screen…</div>
+                    </div>
+                  </div>
+                )}
               </div>
+            </div>
 
-              <div className="grid sm:grid-cols-[1fr_220px] gap-3">
-                <div className="border border-border bg-card p-3">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Plug className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Connected Stack</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { label: 'UI Layer', icon: LayoutGrid },
-                      { label: 'API Layer', icon: Server },
-                      { label: 'Data Layer', icon: Database },
-                    ].map(({ label, icon: Icon }) => (
-                      <div key={label} className="border border-border bg-muted/40 p-2.5">
-                        <Icon className="w-3.5 h-3.5 text-foreground mb-1.5" />
-                        <div className="text-[10px] font-medium text-foreground">{label}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="border border-border bg-card p-3">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Theme Tokens</div>
-                  <div className="space-y-2">
-                    {["--radius", "--spacing", "--surface", "--accent"].map((token) => (
-                      <div key={token} className="flex items-center justify-between text-[10px] border border-border bg-muted/40 px-2 py-1.5">
-                        <span className="text-muted-foreground">{token}</span>
-                        <span className="text-foreground font-medium">set</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            {/* Zoom controls */}
+            <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#111]/80 border border-white/[0.08] rounded px-2 py-1">
+              <button className="text-[10px] text-white/40 hover:text-white/70 px-1">−</button>
+              <span className="text-[9px] text-white/30">78%</span>
+              <button className="text-[10px] text-white/40 hover:text-white/70 px-1">+</button>
             </div>
           </div>
 
-          <div className="border-l border-border bg-muted/30 p-3 space-y-3 hidden lg:block">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Release Panel</div>
-            <div className="border border-border bg-card p-2.5 space-y-2">
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-muted-foreground">QA checks</span>
-                <span className="text-emerald-600 dark:text-emerald-400">Passed</span>
+          {/* Right panel — AI chat */}
+          <div className="w-[200px] flex-shrink-0 border-l border-white/[0.07] bg-[#111] flex flex-col hidden lg:flex">
+            <div className="px-3 pt-3 pb-2 border-b border-white/[0.06] flex items-center gap-2">
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              <span className="text-[10px] text-white/60 font-medium">AI Chat</span>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+              {/* User message */}
+              <div className="flex justify-end">
+                <div className="max-w-[140px] bg-cyan-500/15 border border-cyan-500/20 rounded-lg rounded-tr-sm px-2.5 py-2 text-[9px] text-white/80 leading-relaxed">
+                  Design a salon booking dashboard with revenue and upcoming appointments
+                </div>
               </div>
-              <div className="h-1.5 bg-muted overflow-hidden">
-                <div className="h-full w-[88%] bg-emerald-500" />
+              {/* AI response */}
+              <div className="flex gap-1.5">
+                <div className="w-4 h-4 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex-shrink-0 mt-0.5" />
+                <div className="max-w-[150px] bg-white/[0.04] border border-white/[0.08] rounded-lg rounded-tl-sm px-2.5 py-2 text-[9px] text-white/60 leading-relaxed">
+                  Generated 4 screens for SalonTime — Dashboard, Bookings, Clients, and Analytics.
+                </div>
+              </div>
+              {/* User message */}
+              <div className="flex justify-end">
+                <div className="max-w-[140px] bg-cyan-500/15 border border-cyan-500/20 rounded-lg rounded-tr-sm px-2.5 py-2 text-[9px] text-white/80 leading-relaxed">
+                  Add a dark sidebar and make the KPI cards more prominent
+                </div>
+              </div>
+              {/* AI typing */}
+              <div className="flex gap-1.5">
+                <div className="w-4 h-4 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex-shrink-0 mt-0.5" />
+                <div className="bg-white/[0.04] border border-white/[0.08] rounded-lg rounded-tl-sm px-2.5 py-2">
+                  <div className="flex gap-1">
+                    {[0, 150, 300].map(d => (
+                      <div key={d} className="w-1 h-1 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="border border-border bg-card p-2.5 text-[10px] space-y-1.5">
-              <div className="font-medium text-foreground">Output</div>
-              <div className="text-muted-foreground">Frontend + API + DB config generated.</div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="border border-border bg-card p-2 text-center">
-                <div className="text-[9px] uppercase text-muted-foreground">Build</div>
-                <div className="text-xs font-bold text-foreground">Ready</div>
-              </div>
-              <div className="border border-border bg-card p-2 text-center">
-                <div className="text-[9px] uppercase text-muted-foreground">Deploy</div>
-                <div className="text-xs font-bold text-foreground">One Click</div>
+            {/* Input */}
+            <div className="px-2 pb-2">
+              <div className="flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.08] rounded px-2 py-1.5">
+                <input
+                  className="flex-1 bg-transparent text-[9px] text-white/50 placeholder-white/20 outline-none"
+                  placeholder="Describe changes…"
+                  readOnly
+                />
+                <ArrowRight className="w-3 h-3 text-cyan-500 flex-shrink-0" />
               </div>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Caption */}
+      <div className="text-center mt-4 text-[11px] text-muted-foreground">
+        SalonTime project — generated from a single prompt in DCFlow
       </div>
     </div>
   )
@@ -252,7 +436,7 @@ function ArchitectureIllustration() {
       <div className="bg-card border border-border shadow-lg overflow-hidden">
         <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">
           <Network className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-[11px] text-muted-foreground font-medium">Container Architecture</span>
+          <span className="text-[11px] text-muted-foreground font-medium">Self-Hosted Stack</span>
         </div>
         <div className="p-5 space-y-3">
           {/* Request */}
@@ -261,8 +445,8 @@ function ArchitectureIllustration() {
               <Globe className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </div>
             <div className="flex-1 px-3 py-2 border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/5">
-              <div className="text-[10px] font-semibold text-blue-700 dark:text-blue-400 uppercase">Ingress</div>
-              <div className="text-xs text-blue-900 dark:text-blue-200">HTTPS request &rarr; <span className="font-medium">Load Balancer</span></div>
+              <div className="text-[10px] font-semibold text-blue-700 dark:text-blue-400 uppercase">Your Domain</div>
+              <div className="text-xs text-blue-900 dark:text-blue-200">HTTPS → <span className="font-medium">your server</span></div>
             </div>
           </div>
           <div className="flex justify-center"><div className="w-px h-5 bg-border" /></div>
@@ -272,8 +456,8 @@ function ArchitectureIllustration() {
               <LayoutGrid className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             </div>
             <div className="flex-1 px-3 py-2 border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/5">
-              <div className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase">Frontend Container</div>
-              <div className="text-xs text-emerald-900 dark:text-emerald-200">Serves <span className="font-medium">your app UI</span> — isolated runtime</div>
+              <div className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase">Dashboard</div>
+              <div className="text-xs text-emerald-900 dark:text-emerald-200">Next.js — <span className="font-medium">builder + app preview</span></div>
             </div>
           </div>
           <div className="flex justify-center"><div className="w-px h-5 bg-border" /></div>
@@ -283,8 +467,8 @@ function ArchitectureIllustration() {
               <Server className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             </div>
             <div className="flex-1 px-3 py-2 border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/5">
-              <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 uppercase">Backend Container</div>
-              <div className="text-xs text-amber-900 dark:text-amber-200">API layer + <span className="font-medium">business logic</span> — airgapped</div>
+              <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 uppercase">Platform API</div>
+              <div className="text-xs text-amber-900 dark:text-amber-200">REST API — <span className="font-medium">projects, screens, data</span></div>
             </div>
           </div>
           <div className="flex justify-center"><div className="w-px h-5 bg-border" /></div>
@@ -294,8 +478,8 @@ function ArchitectureIllustration() {
               <Database className="w-4 h-4 text-purple-600 dark:text-purple-400" />
             </div>
             <div className="flex-1 px-3 py-2 border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/5">
-              <div className="text-[10px] font-semibold text-purple-700 dark:text-purple-400 uppercase">Database Container</div>
-              <div className="text-xs text-purple-900 dark:text-purple-200">Persistent <span className="font-medium">PostgreSQL</span> — encrypted volumes</div>
+              <div className="text-[10px] font-semibold text-purple-700 dark:text-purple-400 uppercase">PostgreSQL</div>
+              <div className="text-xs text-purple-900 dark:text-purple-200">Your data — <span className="font-medium">on your infrastructure</span></div>
             </div>
           </div>
         </div>
@@ -578,7 +762,7 @@ export default function Home() {
                 icon: Zap,
                 label: 'Scaling Tax',
                 problem: 'Cloud bills spike unpredictably when your app gains traction',
-                solution: 'K8s auto-scaling on your own compute — predictable costs',
+                solution: 'Self-hosted on your own compute — no per-request billing, predictable costs',
               },
               {
                 icon: Code2,
@@ -694,8 +878,8 @@ export default function Home() {
               },
               {
                 icon: Scale,
-                title: 'Scalable Deployment',
-                desc: 'Start with Docker for MVPs, scale to Kubernetes when needed. Keep one consistent platform model from prototype to production.',
+                title: 'Docker Deployment',
+                desc: 'Self-host with Docker. One consistent platform model from local dev to production. No cloud vendor required.',
               },
               {
                 icon: Database,
@@ -740,7 +924,7 @@ export default function Home() {
                   {[
                     'UI + backend flows + data model in one builder',
                     'REST APIs and workflows generated from your model',
-                    'Self-host on Docker or Kubernetes',
+                    'Self-host on Docker — your servers, your data',
                     'Open-source community edition for MVP teams',
                     'Commercial licensing with enterprise controls and support',
                     'Own your data, code, runtime, and upgrade path',
@@ -790,11 +974,11 @@ export default function Home() {
               },
               {
                 title: 'Customer-Facing Apps',
-                desc: 'Portals, booking systems, client dashboards — each customer gets isolated containers for data separation.',
+                desc: 'Portals, booking systems, client dashboards — all data stays in your self-hosted PostgreSQL, under your control.',
               },
               {
                 title: 'AI-Generated Prototypes',
-                desc: 'Describe an app to Cortex AI, get production-ready screens. Then deploy instantly to real containers.',
+                desc: 'Describe an app to Cortex AI, get production-ready screens. Self-host it on your own infrastructure.',
               },
               {
                 title: 'API-First Backends',
@@ -816,8 +1000,8 @@ export default function Home() {
                     <h3 className="text-base font-semibold text-foreground mb-2">{title}</h3>
                     <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
                     <div className="mt-4 flex items-center gap-2 text-xs text-primary font-medium">
-                      <Container className="w-3.5 h-3.5" />
-                      Deployed to isolated containers
+                      <Server className="w-3.5 h-3.5" />
+                      Self-hosted on your infrastructure
                     </div>
                   </div>
                 </div>
@@ -853,7 +1037,7 @@ export default function Home() {
               {
                 title: 'Team',
                 desc: 'For growing teams that need more projects, scaling, and operational tooling.',
-                items: ['Unlimited projects', 'Auto-scaling with K8s', 'Priority support + SLA'],
+                items: ['Unlimited projects', 'Scale on your own infrastructure', 'Priority support + SLA'],
               },
               {
                 title: 'Enterprise',
@@ -963,7 +1147,7 @@ export default function Home() {
                       'Generate full-stack apps from natural language prompts',
                       'AI output is constrained to production-safe patterns',
                       'Refine visually in the WYSIWYG builder',
-                      'Deploy straight to airgapped containers — not a prototype tool',
+                      'Deploy self-hosted — real apps running on infrastructure you own',
                     ].map((item, i) => (
                       <li key={i} className="flex items-start gap-3 text-sm text-muted-foreground">
                         <Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
@@ -999,7 +1183,7 @@ export default function Home() {
                       </div>
                       <div className="flex items-center gap-2 text-foreground px-1">
                         <Check className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Provisioned containers (frontend + API + PostgreSQL)</span>
+                        <span>Generated screens, data model, and API endpoints</span>
                       </div>
                     </div>
                     <div className="border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
@@ -1098,7 +1282,7 @@ export default function Home() {
                   One platform.<br />Every layer. Fully yours.
                 </h3>
                 <p className="text-muted-foreground text-base leading-relaxed mb-6">
-                  Frontend, backend, database, networking, scaling, and auth &mdash; provisioned as isolated containers on infrastructure you control. No fragmented services. No external cost surprises. No vendor that can pull the rug.
+                  Frontend, backend, database, and auth — all running on infrastructure you control. No fragmented services. No external cost surprises. No vendor that can pull the rug.
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {[
@@ -1145,14 +1329,14 @@ export default function Home() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               {
-                icon: Container,
-                title: 'Container Isolation',
-                desc: 'Every project runs in its own airgapped Docker containers. No shared runtimes.',
-              },
-              {
                 icon: Server,
                 title: 'Self-Host Anywhere',
-                desc: 'Docker or Kubernetes. Your servers, your cloud, your on-prem hardware.',
+                desc: 'Docker on your own servers, cloud, or on-prem hardware. No third-party runtime required.',
+              },
+              {
+                icon: Database,
+                title: 'Your Data, Your DB',
+                desc: 'PostgreSQL runs on your infrastructure. No external database services or surprise data costs.',
               },
               {
                 icon: Code2,
@@ -1190,7 +1374,7 @@ export default function Home() {
           </Reveal>
           <Reveal delay={100}>
             <p className="text-muted-foreground text-lg mb-10 max-w-xl mx-auto">
-              Design with AI, build visually, and deploy to containers you control.
+              Design with AI, build visually, and self-host on infrastructure you control.
               No third-party runtime. No surprise bills. No vendor lock-in.
             </p>
           </Reveal>
