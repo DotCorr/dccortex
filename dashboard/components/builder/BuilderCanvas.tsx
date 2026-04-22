@@ -11,10 +11,10 @@ import React, { useCallback, useState, useEffect, useMemo, Fragment } from 'reac
 import type { Node } from './registry'
 import { createNode, nodePropsToStyle, getDomId, COMPONENT_REGISTRY } from './registry'
 import type { ScreenTheme } from './PropertyPanel'
-import { parseEventSteps, type EventActionConfig, type EventRuntimeContext } from './eventHelpers'
+import { parseEventSteps, type EventActionConfig, type EventRuntimeContext } from '@dccortex/runtime-kernel'
 import type { ReusableDefinition } from './globals'
 import { BuilderChart } from './BuilderCharts'
-import type { AnimationSequenceConfig } from './AnimationSequenceBuilder'
+import type { AnimationSequenceConfig } from '@dccortex/runtime-kernel';
 import { clearBuilderDragPayload, getBuilderDragPayload, setBuilderDragPayload } from './drag-payload'
 
 export type ResolveBindingFn = (raw: string, propsCtx?: Record<string, unknown>) => string

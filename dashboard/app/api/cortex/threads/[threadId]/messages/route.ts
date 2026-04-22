@@ -15,14 +15,14 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ threadId: string }> | { threadId: string } }
+  { params }: any
 ) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { threadId } = await Promise.resolve(params)
+  const { threadId } = params
 
   // Verify ownership
   const thread = await prisma.cortexThread.findFirst({

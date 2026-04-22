@@ -16,7 +16,7 @@ import { prisma } from '@/lib/prisma'
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -24,10 +24,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const resolvedParams = await Promise.resolve(params)
     const notification = await prisma.notification.findFirst({
       where: {
-        id: resolvedParams.id,
+        id: context.params.id,
         userId: session.user.id,
       },
     })
@@ -37,7 +36,7 @@ export async function PUT(
     }
 
     const updated = await prisma.notification.update({
-      where: { id: resolvedParams.id },
+      where: { id: context.params.id },
       data: { isRead: true },
     })
 

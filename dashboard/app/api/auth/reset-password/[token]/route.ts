@@ -11,11 +11,10 @@ import { hashPassword } from '@/lib/auth'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ token: string }> | { token: string } }
+  { params }: any
 ) {
   try {
-    const resolvedParams = await Promise.resolve(params)
-    const token = resolvedParams.token
+    const token = params.token
 
     // Find reset token
     const resetToken = await prisma.passwordResetToken.findUnique({
@@ -53,11 +52,10 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ token: string }> | { token: string } }
+  { params }: any
 ) {
   try {
-    const resolvedParams = await Promise.resolve(params)
-    const token = resolvedParams.token
+    const token = params.token
     const { password } = await req.json()
 
     if (!password || password.length < 8) {

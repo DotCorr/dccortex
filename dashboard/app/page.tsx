@@ -93,337 +93,176 @@ function RuntimeBadge() {
   )
 }
 
-/* ───────────── Hero illustration — realistic DCFlow editor mockup ───────────── */
+/* ───────────── Hero illustration — neutral product frame ───────────── */
 function HeroIllustration() {
-  const [activeScreen, setActiveScreen] = useState(0)
-  const screens = [
-    { name: 'Dashboard', active: true },
-    { name: 'Bookings', active: false },
-    { name: 'Clients', active: false },
-    { name: 'Analytics', active: false },
-  ]
-
   return (
-    <div className="relative w-full max-w-5xl mx-auto">
+    <div className="relative w-full max-w-6xl mx-auto">
       <div className="absolute -inset-10 bg-gradient-to-br from-cyan-500/10 via-transparent to-emerald-500/8 blur-3xl" />
-      {/* App chrome */}
-      <div className="relative bg-[#0d0d0d] border border-white/10 shadow-2xl shadow-black/50 overflow-hidden rounded-lg">
-        {/* Top bar */}
-        <div className="flex items-center justify-between px-3 py-2 bg-[#111] border-b border-white/[0.07]">
+      <div className="relative overflow-hidden rounded-lg border border-white/10 bg-[#0d0d0d] shadow-2xl shadow-black/50">
+        <div className="flex items-center justify-between border-b border-white/[0.07] bg-[#111] px-3 py-2">
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]" />
-              <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
             </div>
-            <div className="flex items-center gap-1.5 ml-2">
-              <span className="text-[10px] text-white/30">Projects /</span>
-              <span className="text-[10px] text-white/70 font-medium">SalonTime App</span>
+            <div className="ml-2 flex items-center gap-1.5">
+              <span className="text-[10px] text-white/30">DCCortex /</span>
+              <span className="text-[10px] font-medium text-white/70">Builder Runtime</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 border border-white/10 rounded">
-              <Sparkles className="w-3 h-3 text-cyan-400" />
-              <span className="text-[10px] text-white/60">Gemini 2.5 Flash</span>
-            </div>
-            <div className="px-3 py-1 bg-cyan-500 text-[10px] font-semibold text-black rounded cursor-pointer">
-              Generate Flow
-            </div>
+          <div className="hidden items-center gap-1.5 text-[9px] text-white/45 md:flex">
+            {['Preview', 'Bindings', 'Data', 'Deploy'].map((item) => (
+              <span key={item} className="rounded border border-white/10 bg-white/5 px-2 py-1">
+                {item}
+              </span>
+            ))}
           </div>
         </div>
 
-        <div className="flex h-[420px]">
-          {/* Left panel — screen list */}
-          <div className="w-[160px] flex-shrink-0 border-r border-white/[0.07] bg-[#111] flex flex-col hidden lg:flex">
-            <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-              <span className="text-[10px] text-white/40 uppercase tracking-wider font-medium">Screens</span>
-              <span className="text-[10px] text-white/40">{screens.length}</span>
+        <div className="flex h-[440px]">
+          <div className="hidden w-10 flex-col items-center gap-2 border-r border-white/[0.07] bg-[#111] py-2 md:flex">
+            {[LayoutGrid, Layers, Workflow, Database, Terminal].map((Icon, idx) => (
+              <span
+                key={idx}
+                className={`flex h-7 w-7 items-center justify-center rounded ${idx === 0 ? 'bg-cyan-500/15 text-cyan-400' : 'bg-white/[0.02] text-white/35'}`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </span>
+            ))}
+          </div>
+
+          <div className="hidden w-[220px] flex-col border-r border-white/[0.07] bg-[#101215] lg:flex lg:w-[250px]">
+            <div className="border-b border-white/[0.06] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+              Builder Surface
             </div>
-            <div className="flex-1 overflow-y-auto px-2 space-y-1.5">
-              {screens.map((s, i) => (
-                <button
-                  key={s.name}
-                  onClick={() => setActiveScreen(i)}
-                  className={`w-full text-left rounded overflow-hidden border transition-all ${
-                    activeScreen === i
-                      ? 'border-cyan-500/50 ring-1 ring-cyan-500/20'
-                      : 'border-white/[0.06] hover:border-white/20'
-                  }`}
-                >
-                  {/* Mini screen thumbnail */}
-                  <div className="h-[68px] bg-[#0a0a12] relative overflow-hidden">
-                    {i === 0 && (
-                      <>
-                        <div className="absolute top-0 left-0 right-0 h-4 bg-[#111827] flex items-center gap-1 px-1.5">
-                          <div className="w-8 h-1.5 bg-white/20 rounded" />
-                          <div className="flex gap-0.5 ml-auto">
-                            {[...Array(3)].map((_, j) => <div key={j} className="w-1 h-1 bg-white/10 rounded-sm" />)}
-                          </div>
-                        </div>
-                        <div className="absolute top-5 left-1.5 right-1.5 grid grid-cols-3 gap-0.5">
-                          {[...Array(3)].map((_, j) => (
-                            <div key={j} className="h-7 bg-[#1a2035] rounded-sm" />
-                          ))}
-                        </div>
-                        <div className="absolute bottom-1 left-1.5 right-1.5 h-2 bg-[#0f1929] rounded-sm" />
-                      </>
-                    )}
-                    {i === 1 && (
-                      <>
-                        <div className="absolute top-0 left-0 right-0 h-4 bg-[#111] flex items-center px-1.5 gap-1">
-                          <div className="w-6 h-1.5 bg-cyan-500/30 rounded" />
-                        </div>
-                        <div className="absolute top-5 left-1.5 right-1.5 space-y-1">
-                          {[...Array(4)].map((_, j) => (
-                            <div key={j} className="flex gap-1">
-                              <div className="h-2 flex-1 bg-white/5 rounded-sm" />
-                              <div className="h-2 w-8 bg-white/5 rounded-sm" />
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {i === 2 && (
-                      <>
-                        <div className="absolute inset-1.5 grid grid-cols-2 gap-1">
-                          {[...Array(4)].map((_, j) => (
-                            <div key={j} className="bg-[#1a1a2e] rounded-sm flex items-center gap-0.5 px-1">
-                              <div className="w-2.5 h-2.5 rounded-full bg-white/10 flex-shrink-0" />
-                              <div className="h-1.5 flex-1 bg-white/8 rounded" />
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {i === 3 && (
-                      <>
-                        <div className="absolute top-1.5 left-1.5 right-1.5 h-10 bg-[#0f1929] rounded-sm overflow-hidden">
-                          <div className="absolute bottom-0 left-1 flex items-end gap-0.5 h-full pt-2">
-                            {[40, 65, 45, 80, 60, 90, 55].map((h, j) => (
-                              <div key={j} className="w-2 bg-cyan-500/50 rounded-t-sm" style={{ height: `${h}%` }} />
-                            ))}
-                          </div>
-                        </div>
-                        <div className="absolute bottom-1 left-1.5 right-1.5 h-2 bg-white/5 rounded-sm" />
-                      </>
-                    )}
-                  </div>
-                  <div className="px-2 py-1.5 bg-[#0f0f0f]">
-                    <div className="text-[9px] text-white/60 font-medium">{s.name}</div>
-                  </div>
-                </button>
-              ))}
-              {/* Generating skeleton */}
-              <div className="w-full rounded border border-dashed border-white/10 overflow-hidden opacity-60">
-                <div className="h-[68px] bg-[#0d0d0d] flex flex-col items-center justify-center gap-1.5">
-                  <div className="w-4 h-4 rounded-full border border-cyan-500/50 border-t-cyan-500 animate-spin" />
-                  <div className="text-[8px] text-white/30">Generating…</div>
-                </div>
-                <div className="px-2 py-1.5 bg-[#0f0f0f]">
-                  <div className="h-1.5 w-12 bg-white/10 rounded" />
-                </div>
+            <div className="space-y-1 p-2 text-[10px]">
+              <div className="rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-cyan-300">App Structure</div>
+              <div className="ml-3 space-y-1">
+                <div className="rounded border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-white/70">Screens</div>
+                <div className="rounded border border-white/[0.05] bg-white/[0.02] px-2 py-1 text-white/55">Reusable Components</div>
+                <div className="rounded border border-white/[0.05] bg-white/[0.02] px-2 py-1 text-white/55">Data Sources</div>
+                <div className="rounded border border-white/[0.05] bg-white/[0.02] px-2 py-1 text-white/55">Event Flows</div>
+              </div>
+            </div>
+            <div className="mt-auto border-t border-white/[0.06] p-2">
+              <div className="mb-1 text-[9px] text-white/40">Shared Blocks</div>
+              <div className="flex flex-wrap gap-1.5">
+                {['Form', 'Table', 'Chart', 'Shell'].map((tag) => (
+                  <span key={tag} className="rounded border border-white/[0.08] bg-white/[0.03] px-1.5 py-0.5 text-[8px] text-white/55">
+                    {tag}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* Canvas */}
           <div
-            className="flex-1 bg-[#0a0a0a] relative overflow-hidden"
-            style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)', backgroundSize: '24px 24px' }}
+            className="relative flex-1 overflow-hidden bg-[#0a0a0a]"
+            style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)', backgroundSize: '22px 22px' }}
           >
-            {/* Active screen frame on canvas */}
-            <div className="absolute inset-6 lg:inset-8">
-              <div className="relative w-full h-full border border-cyan-500/30 shadow-[0_0_0_1px_rgba(6,182,212,0.1)] rounded-sm overflow-hidden">
-                {/* Screen label */}
-                <div className="absolute -top-5 left-0 flex items-center gap-1.5">
-                  <span className="text-[9px] text-white/30 font-medium">{screens[activeScreen].name}</span>
-                  <span className="text-[8px] px-1 py-0.5 bg-cyan-500/10 text-cyan-400 rounded">active</span>
-                </div>
-
-                {/* Realistic generated screen — SalonTime Dashboard */}
-                {activeScreen === 0 && (
-                  <div className="w-full h-full bg-[#08090f] overflow-hidden">
-                    {/* Top nav */}
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-[#0e1018] border-b border-white/[0.06]">
-                      <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-sm" />
-                        <span className="text-[10px] text-white font-semibold">SalonTime</span>
-                        <div className="flex gap-3 ml-3">
-                          {['Overview', 'Bookings', 'Staff', 'Reports'].map((tab, i) => (
-                            <span key={tab} className={`text-[9px] ${i === 0 ? 'text-cyan-400 border-b border-cyan-400 pb-0.5' : 'text-white/30'}`}>{tab}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-400 to-pink-400" />
-                        <span className="text-[9px] text-white/50">Anna K.</span>
-                      </div>
-                    </div>
-                    {/* KPI row */}
-                    <div className="grid grid-cols-4 gap-2 px-4 pt-3 pb-2">
-                      {[
-                        { label: 'Bookings Today', val: '24', delta: '+3', color: 'text-cyan-400' },
-                        { label: 'Revenue MTD', val: '€4,820', delta: '+12%', color: 'text-emerald-400' },
-                        { label: 'Active Clients', val: '183', delta: '+7', color: 'text-blue-400' },
-                        { label: 'Open Slots', val: '8', delta: '-2', color: 'text-amber-400' },
-                      ].map(({ label, val, delta, color }) => (
-                        <div key={label} className="bg-[#0e1018] border border-white/[0.07] rounded p-2">
-                          <div className="text-[8px] text-white/30 mb-1">{label}</div>
-                          <div className={`text-sm font-bold ${color}`}>{val}</div>
-                          <div className="text-[8px] text-white/30 mt-0.5">{delta} this week</div>
-                        </div>
-                      ))}
-                    </div>
-                    {/* Chart + table row */}
-                    <div className="grid grid-cols-[1fr_140px] gap-2 px-4">
-                      <div className="bg-[#0e1018] border border-white/[0.07] rounded p-2.5">
-                        <div className="text-[9px] text-white/40 mb-2 font-medium">Bookings — Last 7 Days</div>
-                        <div className="flex items-end gap-1 h-16">
-                          {[5, 9, 7, 12, 8, 14, 10].map((h, i) => (
-                            <div key={i} className="flex-1 rounded-t-sm" style={{ height: `${(h / 14) * 100}%`, background: i === 5 ? 'rgb(6 182 212)' : 'rgba(6,182,212,0.25)' }} />
-                          ))}
-                        </div>
-                        <div className="flex justify-between mt-1">
-                          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-                            <span key={i} className="text-[7px] text-white/20 flex-1 text-center">{d}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="bg-[#0e1018] border border-white/[0.07] rounded p-2.5">
-                        <div className="text-[9px] text-white/40 mb-2 font-medium">Next Appointments</div>
-                        <div className="space-y-1.5">
-                          {[
-                            { name: 'Emma R.', time: '10:00', type: 'Cut' },
-                            { name: 'Sofia M.', time: '11:30', type: 'Color' },
-                            { name: 'Laura B.', time: '13:00', type: 'Style' },
-                          ].map(({ name, time, type }) => (
-                            <div key={name} className="flex items-center gap-1.5">
-                              <div className="w-4 h-4 rounded-full bg-gradient-to-br from-purple-500/50 to-pink-500/50 flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[8px] text-white/70 truncate">{name}</div>
-                                <div className="text-[7px] text-white/30">{time} · {type}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {activeScreen === 1 && (
-                  <div className="w-full h-full bg-[#08090f] overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-[#0e1018] border-b border-white/[0.06]">
-                      <span className="text-[10px] text-white font-semibold">Bookings</span>
-                      <div className="flex gap-1.5">
-                        <span className="px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/20 text-[9px] text-cyan-400 rounded">+ New</span>
-                        <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-[9px] text-white/40 rounded">Filter</span>
-                      </div>
-                    </div>
-                    <div className="px-4 pt-2">
-                      <div className="grid grid-cols-5 gap-2 px-2 pb-1 border-b border-white/[0.06]">
-                        {['Client', 'Service', 'Staff', 'Time', 'Status'].map(h => (
-                          <span key={h} className="text-[8px] text-white/25 uppercase tracking-wider font-medium">{h}</span>
-                        ))}
-                      </div>
-                      {[
-                        ['Emma Rodriguez', 'Haircut', 'Maria', '10:00', 'confirmed'],
-                        ['Sofia Müller', 'Color', 'Lisa', '11:30', 'pending'],
-                        ['Laura Bianchi', 'Style', 'Maria', '13:00', 'confirmed'],
-                        ['Anna Novak', 'Trim', 'Sara', '14:30', 'cancelled'],
-                        ['Petra Koch', 'Highlights', 'Lisa', '15:00', 'confirmed'],
-                      ].map(([client, service, staff, time, status]) => (
-                        <div key={client} className="grid grid-cols-5 gap-2 px-2 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.02]">
-                          <span className="text-[9px] text-white/70">{client}</span>
-                          <span className="text-[9px] text-white/50">{service}</span>
-                          <span className="text-[9px] text-white/50">{staff}</span>
-                          <span className="text-[9px] text-white/50">{time}</span>
-                          <span className={`text-[8px] font-medium px-1.5 py-0.5 rounded-full w-fit ${
-                            status === 'confirmed' ? 'bg-emerald-500/15 text-emerald-400' :
-                            status === 'pending' ? 'bg-amber-500/15 text-amber-400' :
-                            'bg-red-500/15 text-red-400'
-                          }`}>{status}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {(activeScreen === 2 || activeScreen === 3) && (
-                  <div className="w-full h-full bg-[#08090f] flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-8 h-8 rounded-full border border-cyan-500/40 border-t-cyan-500 animate-spin mx-auto mb-2" />
-                      <div className="text-[10px] text-white/30">AI is writing this screen…</div>
-                    </div>
-                  </div>
-                )}
+            <div className="absolute left-3 right-3 top-3 flex items-center justify-between text-[9px] text-white/45">
+              <div className="flex items-center gap-1.5">
+                <span className="rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-300">Live Canvas</span>
+                <span>Desktop</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5">Fit</span>
+                <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5">Guides</span>
               </div>
             </div>
 
-            {/* Zoom controls */}
-            <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#111]/80 border border-white/[0.08] rounded px-2 py-1">
-              <button className="text-[10px] text-white/40 hover:text-white/70 px-1">−</button>
-              <span className="text-[9px] text-white/30">78%</span>
-              <button className="text-[10px] text-white/40 hover:text-white/70 px-1">+</button>
-            </div>
-          </div>
-
-          {/* Right panel — AI chat */}
-          <div className="w-[200px] flex-shrink-0 border-l border-white/[0.07] bg-[#111] flex flex-col hidden lg:flex">
-            <div className="px-3 pt-3 pb-2 border-b border-white/[0.06] flex items-center gap-2">
-              <Sparkles className="w-3 h-3 text-cyan-400" />
-              <span className="text-[10px] text-white/60 font-medium">AI Chat</span>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-              {/* User message */}
-              <div className="flex justify-end">
-                <div className="max-w-[140px] bg-cyan-500/15 border border-cyan-500/20 rounded-lg rounded-tr-sm px-2.5 py-2 text-[9px] text-white/80 leading-relaxed">
-                  Design a salon booking dashboard with revenue and upcoming appointments
+            <div className="absolute left-1/2 top-1/2 w-[86%] max-w-[680px] -translate-x-1/2 -translate-y-1/2">
+              <div className="rounded-sm border border-cyan-500/35 bg-[#0b0f1a] shadow-[0_0_0_1px_rgba(6,182,212,0.15)]">
+                <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-1.5 text-[9px] text-white/45">
+                  <span>Generated Application Shell</span>
+                  <span>Responsive Preview</span>
                 </div>
-              </div>
-              {/* AI response */}
-              <div className="flex gap-1.5">
-                <div className="w-4 h-4 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex-shrink-0 mt-0.5" />
-                <div className="max-w-[150px] bg-white/[0.04] border border-white/[0.08] rounded-lg rounded-tl-sm px-2.5 py-2 text-[9px] text-white/60 leading-relaxed">
-                  Generated 4 screens for SalonTime — Dashboard, Bookings, Clients, and Analytics.
-                </div>
-              </div>
-              {/* User message */}
-              <div className="flex justify-end">
-                <div className="max-w-[140px] bg-cyan-500/15 border border-cyan-500/20 rounded-lg rounded-tr-sm px-2.5 py-2 text-[9px] text-white/80 leading-relaxed">
-                  Add a dark sidebar and make the KPI cards more prominent
-                </div>
-              </div>
-              {/* AI typing */}
-              <div className="flex gap-1.5">
-                <div className="w-4 h-4 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex-shrink-0 mt-0.5" />
-                <div className="bg-white/[0.04] border border-white/[0.08] rounded-lg rounded-tl-sm px-2.5 py-2">
-                  <div className="flex gap-1">
-                    {[0, 150, 300].map(d => (
-                      <div key={d} className="w-1 h-1 rounded-full bg-white/40 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                <div className="space-y-2.5 p-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'UI Schema', value: 'Structured' },
+                      { label: 'Bindings', value: 'Live' },
+                      { label: 'Runtime', value: 'Ready' },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded border border-white/[0.06] bg-[#101624] px-2 py-2">
+                        <div className="text-[8px] text-white/30">{item.label}</div>
+                        <div className="mt-1 text-sm font-semibold text-cyan-300">{item.value}</div>
+                      </div>
                     ))}
                   </div>
+                  <div className="grid grid-cols-[1.3fr_0.9fr] gap-2">
+                    <div className="rounded border border-white/[0.06] bg-[#101624] p-2">
+                      <div className="mb-2 text-[8px] text-white/35">Composition Flow</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { icon: Sparkles, label: 'Prompt' },
+                          { icon: Layers, label: 'Layout' },
+                          { icon: Plug, label: 'Integrations' },
+                          { icon: GitBranch, label: 'Logic' },
+                          { icon: Eye, label: 'Preview' },
+                          { icon: Shield, label: 'Policies' },
+                        ].map(({ icon: Icon, label }) => (
+                          <div key={label} className="flex h-16 flex-col items-center justify-center rounded border border-white/[0.05] bg-white/[0.03] text-center">
+                            <Icon className="mb-1 h-3.5 w-3.5 text-cyan-300" />
+                            <span className="text-[8px] text-white/60">{label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded border border-white/[0.06] bg-[#101624] p-2">
+                      <div className="mb-2 text-[8px] text-white/35">Deployment Targets</div>
+                      <div className="space-y-1">
+                        {['Web app', 'API layer', 'Postgres', 'Container runtime'].map((row) => (
+                          <div key={row} className="flex h-5 items-center rounded border border-white/[0.06] bg-white/[0.04] px-1.5 text-[8px] text-white/60">
+                            {row}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            {/* Input */}
-            <div className="px-2 pb-2">
-              <div className="flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.08] rounded px-2 py-1.5">
-                <input
-                  className="flex-1 bg-transparent text-[9px] text-white/50 placeholder-white/20 outline-none"
-                  placeholder="Describe changes…"
-                  readOnly
-                />
-                <ArrowRight className="w-3 h-3 text-cyan-500 flex-shrink-0" />
+
+            <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded border border-white/[0.08] bg-[#111]/80 px-2 py-1">
+              <button className="px-1 text-[10px] text-white/40 hover:text-white/70">−</button>
+              <span className="text-[9px] text-white/30">100%</span>
+              <button className="px-1 text-[10px] text-white/40 hover:text-white/70">+</button>
+            </div>
+          </div>
+
+          <div className="hidden w-[230px] flex-col border-l border-white/[0.07] bg-[#111] lg:flex lg:w-[260px]">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
+              <span className="text-[10px] font-medium text-white/60">Inspector</span>
+              <span className="rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] text-cyan-300">Runtime</span>
+            </div>
+            <div className="space-y-2 p-3 text-[9px]">
+              <div>
+                <div className="mb-1 text-white/35">Surface</div>
+                <div className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-white/70">Schema-driven canvas</div>
+              </div>
+              <div>
+                <div className="mb-1 text-white/35">State</div>
+                <div className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-white/70">Bindings, actions, and persistence</div>
+              </div>
+              <div>
+                <div className="mb-1 text-white/35">Output</div>
+                <div className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-white/70">UI, API, and database working together</div>
+              </div>
+            </div>
+            <div className="mt-auto border-t border-white/[0.06] p-3">
+              <div className="mb-1.5 text-[9px] text-white/35">AI Assist</div>
+              <div className="rounded border border-white/[0.08] bg-white/[0.03] p-2 text-[9px] leading-relaxed text-white/60">
+                Generate structure, wire data, then refine visually without switching tools.
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Caption */}
-      <div className="text-center mt-4 text-[11px] text-muted-foreground">
-        SalonTime project — generated from a single prompt in DCFlow
+      <div className="mt-4 text-center text-[11px] text-muted-foreground">
+        Product surface preview. No fake project or sample customer data shown.
       </div>
     </div>
   )
@@ -626,7 +465,8 @@ export default function Home() {
             </Reveal>
             <Reveal delay={200}>
               <p className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-10">
-                Describe what you want. AI builds the UI, backend flows, data model, and APIs.
+                Describe what you want, then build in a no-code visual editor with AI support.
+                DCCortex generates the UI, backend flows, data model, and APIs.
                 Customize visually and ship full-stack apps in one workflow.
                 Self-hosted by default, with no vendor lock-in.
               </p>

@@ -41,10 +41,10 @@ async function getScreens(projectId: string) {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
   try {
-    const { id: projectId } = await Promise.resolve(params)
+    const { id: projectId } = await Promise.resolve(context.params)
     if (!projectId) return corsJson(req, { error: 'Project ID required' }, 400)
 
     const access = await requireProjectDataAccess(projectId, false)
@@ -108,10 +108,10 @@ async function createScreen(projectId: string, name: string, slug: string, layou
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
   try {
-    const { id: projectId } = await Promise.resolve(params)
+    const { id: projectId } = await Promise.resolve(context.params)
     if (!projectId) return corsJson(req, { error: 'Project ID required' }, 400)
 
     const access = await requireProjectDataAccess(projectId, true)

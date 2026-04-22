@@ -1,10 +1,8 @@
+const path = require('path')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  eslint: {
-    // CI/docker images should still build while the repo has existing lint debt.
-    ignoreDuringBuilds: true,
-  },
   // Allow dev server to accept requests from tunnel domain (hostnames only per Next.js doc)
   allowedDevOrigins: ['dccortex.com', 'www.dccortex.com', 'active.dccortex.com'],
   env: {
@@ -60,7 +58,6 @@ const nextConfig = {
       },
     ]
   },
-  // Rewrite legacy /uploads/* URLs to the API route that serves files from disk
   async rewrites() {
     return [
       {
@@ -70,21 +67,30 @@ const nextConfig = {
     ]
   },
   webpack: (config, { isServer }) => {
-    // Fix NextAuth CSS parsing issue
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      '@dccortex/runtime-kernel': path.resolve(__dirname, 'lib/runtime-kernel'),
+    }
+
+    // Fixes npm packages that depend on `fs` module
     if (!isServer) {
       config.resolve.fallback = {
-        ...config.resolve.fallback,
         fs: false,
-      }
+        net: false,
+        tls: false,
+      };
     }
-    
-    // Ignore next-auth CSS file
-    config.module.rules.push({
-      test: /node_modules\/next-auth\/css\/index\.js$/,
-      type: 'asset/source',
-    })
 
-    return config
+    config.module.rules.push({
+      test: /\.mjs$/,
+      include: /node_modules/,
+      type: 'javascript/auto',
+    });
+
+    return config;
+  },
+  turbopack: {
+    root: path.resolve(__dirname),
   },
 }
 

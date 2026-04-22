@@ -9,9 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireProjectDataAccess } from '@/lib/project-access'
 import { listPresence, subscribeProjectSync } from '@/lib/projects/live-sync'
 
-type Params = Promise<{ id: string }> | { id: string }
-
-async function getAuthorisedProjectId(params: Params): Promise<{ projectId: string } | NextResponse> {
+async function getAuthorisedProjectId(params: any): Promise<{ projectId: string } | NextResponse> {
   const { id: projectId } = await Promise.resolve(params)
   const access = await requireProjectDataAccess(projectId, false)
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
@@ -24,10 +22,10 @@ function toSseData(data: unknown): string {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Params }
+  context: any
 ) {
   try {
-    const auth = await getAuthorisedProjectId(params)
+    const auth = await getAuthorisedProjectId(context.params)
     if (auth instanceof NextResponse) return auth
 
     const { projectId } = auth

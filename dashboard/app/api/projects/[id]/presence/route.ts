@@ -13,14 +13,14 @@ import { listPresence, publishProjectSync, removePresence, upsertPresence } from
 
 type Params = Promise<{ id: string }> | { id: string }
 
-async function getAuthorisedProjectContext(params: Params): Promise<{ projectId: string; userId: string; name: string | null } | NextResponse> {
+async function getAuthorisedProjectContext(params: any): Promise<{ projectId: string; userId: string; name: string | null } | NextResponse> {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const user = session.user as { id?: string; name?: string | null }
   if (!user.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { id: projectId } = await Promise.resolve(params)
+  const { id: projectId } = params
   const project = await prisma.project.findFirst({
     where: {
       id: projectId,
@@ -38,10 +38,10 @@ async function getAuthorisedProjectContext(params: Params): Promise<{ projectId:
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Params }
+  context: any
 ) {
   try {
-    const auth = await getAuthorisedProjectContext(params)
+    const auth = await getAuthorisedProjectContext(context.params)
     if (auth instanceof NextResponse) return auth
 
     return NextResponse.json({
@@ -55,10 +55,10 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Params }
+  context: any
 ) {
   try {
-    const auth = await getAuthorisedProjectContext(params)
+    const auth = await getAuthorisedProjectContext(context.params)
     if (auth instanceof NextResponse) return auth
 
     const body = await request.json().catch(() => ({}))
@@ -112,10 +112,10 @@ export async function POST(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Params }
+  context: any
 ) {
   try {
-    const auth = await getAuthorisedProjectContext(params)
+    const auth = await getAuthorisedProjectContext(context.params)
     if (auth instanceof NextResponse) return auth
 
     const body = await request.json().catch(() => ({}))

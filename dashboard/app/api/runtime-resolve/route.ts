@@ -9,7 +9,7 @@
  */
 import { NextResponse } from 'next/server'
 import { COMPONENT_REGISTRY, nodePropsToStyle, type Node } from '@/components/builder/registry'
-import { resolveBinding } from '@/components/builder/bindingResolver'
+import { resolveBinding } from '@dccortex/runtime-kernel'
 
 type ResolvedNode = {
   id: string

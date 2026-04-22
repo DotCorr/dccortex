@@ -36,9 +36,9 @@ function nextImportedName(base: string, usedNames: Set<string>): string {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
-  const resolvedParams = await Promise.resolve(params)
+  const resolvedParams = await Promise.resolve(context.params)
   const targetProjectId = resolvedParams.id
 
   try {

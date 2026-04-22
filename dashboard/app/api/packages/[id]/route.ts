@@ -27,12 +27,12 @@ type PackageRow = {
   updated_at: Date
 }
 
-export async function GET(request: NextRequest, { params }: { params: Params }) {
+export async function GET(request: NextRequest, context: any) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { id } = await Promise.resolve(params)
+    const { id } = context.params
     const rows = await prisma.$queryRaw<PackageRow[]>`SELECT * FROM packages WHERE id = ${id} LIMIT 1`
     if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -59,13 +59,13 @@ export async function GET(request: NextRequest, { params }: { params: Params }) 
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Params }) {
+export async function DELETE(request: NextRequest, context: any) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const userId = (session.user as any).id
 
-    const { id } = await Promise.resolve(params)
+    const { id } = context.params
     // Only the author can delete
     const rows = await prisma.$queryRaw<{ author_user_id: string }[]>`
       SELECT author_user_id FROM packages WHERE id = ${id} LIMIT 1
@@ -81,13 +81,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Params 
   }
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: Params }) {
+export async function PATCH(request: NextRequest, context: any) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const userId = (session.user as any).id
 
-    const { id } = await Promise.resolve(params)
+    const { id } = context.params
     const rows = await prisma.$queryRaw<{ author_user_id: string }[]>`
       SELECT author_user_id FROM packages WHERE id = ${id} LIMIT 1
     `

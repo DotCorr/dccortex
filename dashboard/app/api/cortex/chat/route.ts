@@ -22,6 +22,9 @@ import path from 'path'
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const MAX_CONTEXT_MESSAGES = 20
+const MODEL_CONNECT_TIMEOUT_MS = 20_000
+const MODEL_STREAM_IDLE_TIMEOUT_MS = 30_000
+const MODEL_STREAM_TOTAL_TIMEOUT_MS = 90_000
 
 type DebugTrace = {
   model: string
@@ -85,6 +88,20 @@ function safeLongText(input: string, max = 180_000): string {
   if (!input) return ''
   if (input.length <= max) return input
   return `${input.slice(0, max)}\n...[truncated by cortex-audit safeLongText]`
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error(message)), ms)
+      }),
+    ])
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
 }
 
 async function persistAuditArtifact(artifact: AuditArtifact): Promise<{ runId: string; relativeFile: string }> {
@@ -158,6 +175,17 @@ function assessPromptContract(prompt: string, actions: CortexAction[], actionRes
   if (likelyMultiScreen && !usesReusable && !hasActionType('update_globals')) {
     warnings.push('Multi-screen generation did not include reusable/global patterns (update_globals or reusableInstance). This increases maintenance risk.')
   }
+
+    // Detect chrome inconsistency: multi-screen app has inline status/tab/nav elements instead of reusableInstances
+    if (likelyMultiScreen && hasActionType('update_globals')) {
+      // Count screens that use reusableInstance vs total screens created/updated
+      const totalScreenActions = actions.filter((a) => a.type === 'create_screen' || a.type === 'update_screen').length
+      const reusableInstanceMatches = (serializedActions.match(/"type"\s*:\s*"reusableInstance"/g) ?? []).length
+      // If there are many screens but very few reusableInstances, likely inconsistent chrome
+      if (totalScreenActions >= 3 && reusableInstanceMatches < totalScreenActions) {
+        warnings.push(`Chrome consistency check: ${totalScreenActions} screens generated but only ${reusableInstanceMatches} reusableInstance references found. Shared chrome (status bar, tab bar, nav) should appear via reusableInstance on every applicable screen.`)
+      }
+    }
 
   const createApiActions = actions.filter((a) => a.type === 'create_api_source')
   const hasRelativeApiUrl = createApiActions.some((a) => {
@@ -401,6 +429,7 @@ export async function POST(req: NextRequest) {
     projectScreenSummaries?: { id: string; name: string; slug: string; layout: string | null }[]
     projectTables?: { id: string; name: string; columns: { name: string; type: string }[] }[]
     projectApiSources?: { id: string; name: string; url: string; method: string }[]
+    projectReusables?: { id: string; name: string; propsSchema?: object[] }[]
   } = {}
 
   const activeProjectId = projectId ?? thread.projectId
@@ -427,6 +456,18 @@ export async function POST(req: NextRequest) {
       where: { projectId: activeProjectId },
       select: { id: true, name: true, url: true, method: true },
     })
+    const globalsScreen = await prisma.appScreen.findFirst({
+      where: { projectId: activeProjectId, slug: '__globals__' },
+      select: { layout: true },
+    })
+    const existingReusables: { id: string; name: string; propsSchema?: object[] }[] =
+      Array.isArray((globalsScreen?.layout as any)?.reusables)
+        ? (globalsScreen!.layout as any).reusables.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            ...(r.propsSchema ? { propsSchema: r.propsSchema } : {}),
+          }))
+        : []
 
     projectContext = {
       projectName: project?.name ?? undefined,
@@ -441,6 +482,7 @@ export async function POST(req: NextRequest) {
         columns: t.columns.map((c) => ({ name: c.name, type: c.type })),
       })),
       projectApiSources: apiSources,
+      projectReusables: existingReusables,
     }
   }
 
@@ -459,6 +501,7 @@ export async function POST(req: NextRequest) {
         projectScreenSummaries: projectContext.projectScreenSummaries,
         projectTables: projectContext.projectTables,
         projectApiSources: projectContext.projectApiSources,
+        projectReusables: projectContext.projectReusables,
         conversationSummary: thread.summary,
       })
 
@@ -565,8 +608,27 @@ export async function POST(req: NextRequest) {
         let lastThinkStep = ''
         let lastThinkAt = Date.now()
 
-        const streamResult = await chat.sendMessageStream(modelInputMessage)
-        for await (const chunk of streamResult.stream) {
+        const streamResult = await withTimeout(
+          chat.sendMessageStream(modelInputMessage),
+          MODEL_CONNECT_TIMEOUT_MS,
+          'Timed out waiting for the AI model to start responding.'
+        )
+        const streamStartedAt = Date.now()
+        const streamIterator = streamResult.stream[Symbol.asyncIterator]()
+
+        while (true) {
+          if (Date.now() - streamStartedAt > MODEL_STREAM_TOTAL_TIMEOUT_MS) {
+            throw new Error('AI generation exceeded the maximum allowed duration.')
+          }
+
+          const { value, done } = await withTimeout(
+            streamIterator.next(),
+            MODEL_STREAM_IDLE_TIMEOUT_MS,
+            'Timed out waiting for the AI model to continue streaming.'
+          )
+          if (done) break
+
+          const chunk = value
           accumulatedText += chunk.text()
           const now = Date.now()
           if (now - lastThinkAt > 350) {
@@ -577,6 +639,10 @@ export async function POST(req: NextRequest) {
             }
             lastThinkAt = now
           }
+        }
+
+        if (!accumulatedText.trim()) {
+          throw new Error('AI returned an empty response.')
         }
 
         // Parse JSON from accumulated text

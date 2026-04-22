@@ -138,24 +138,61 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Create project
-    const project = await prisma.project.create({
-      data: {
-        name,
-        slug,
-        description,
-        userId: session.user.id,
-        organizationId: organizationId || null,
-      },
-      include: {
-        organization: {
-          select: {
-            id: true,
-            name: true,
+    // Create project and a default 'index' screen
+    const project = await prisma.$transaction(async (tx) => {
+      const newProject = await tx.project.create({
+        data: {
+          name,
+          slug,
+          description,
+          userId: session.user.id,
+          organizationId: organizationId || null,
+        },
+        include: {
+          organization: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-    })
+      });
+
+      await (tx as any).appScreen.create({
+        data: {
+          name: 'index',
+          slug: 'index',
+          projectId: newProject.id,
+          layout: {
+            root: {
+              type: 'View',
+              props: {
+                style: {
+                  flex: 1,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  backgroundColor: '#ffffff',
+                },
+              },
+              children: [
+                {
+                  type: 'Text',
+                  props: {
+                    text: 'Welcome to your new screen!',
+                    style: {
+                      fontSize: 24,
+                      color: '#000000',
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      return newProject;
+    });
 
     await logAuditEvent({
       action: 'project.create',

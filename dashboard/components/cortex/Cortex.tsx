@@ -133,6 +133,8 @@ type AuditArtifact = {
   }
 }
 
+const CHAT_REQUEST_TIMEOUT_MS = 90_000
+
 /* ───────────── Helpers ───────────── */
 function extractOrgId(pathname: string): string | null {
   const m = pathname.match(/\/organizations\/([^/]+)/)
@@ -345,8 +347,8 @@ export default function Cortex() {
   }
 
   /* ───────────── Send message ───────────── */
-  const sendMessage = async () => {
-    const text = input.trim()
+  const sendMessage = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim()
     if (!text || loading || !orgId) return
 
     // Detect @project context switch
@@ -387,9 +389,17 @@ export default function Cortex() {
     setThinkingStep('Connecting…')
     setStreamingActions([])
 
+    let timedOut = false
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
     try {
       const controller = new AbortController()
       abortRef.current = controller
+      timeoutId = setTimeout(() => {
+        timedOut = true
+        controller.abort()
+      }, CHAT_REQUEST_TIMEOUT_MS)
+
       const res = await fetch('/api/cortex/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -419,6 +429,10 @@ export default function Cortex() {
       }
 
       // SSE streaming reader
+      if (!res.body) {
+        throw new Error('Generation stream was unavailable')
+      }
+
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
       let buf = ''
@@ -509,7 +523,7 @@ export default function Cortex() {
             const errMsg: Message = {
               id: `err-${Date.now()}`,
               role: 'assistant',
-              content: `Error: ${(evt.error as string) ?? 'Unknown error'}`,
+              content: `Error: ${(evt.error as string) ?? (evt.message as string) ?? 'Unknown error'}`,
               createdAt: new Date().toISOString(),
             }
             setMessages((prev) => [...prev, errMsg])
@@ -517,14 +531,20 @@ export default function Cortex() {
         }
       }
     } catch (err) {
+      const errorMessage = timedOut
+        ? 'Generation timed out before the AI returned a usable response. Please try again.'
+        : err instanceof Error
+          ? err.message
+          : 'Request failed'
       const errMsg: Message = {
         id: `err-${Date.now()}`,
         role: 'assistant',
-        content: `Error: ${err instanceof Error ? err.message : 'Request failed'}`,
+        content: `Error: ${errorMessage}`,
         createdAt: new Date().toISOString(),
       }
       setMessages((prev) => [...prev, errMsg])
     } finally {
+      if (timeoutId) clearTimeout(timeoutId)
       abortRef.current = null
       setLoading(false)
       setThinkingStep(null)
@@ -946,7 +966,7 @@ export default function Cortex() {
                       ].map((q) => (
                         <button
                           key={q}
-                          onClick={() => { setInput(q); setTimeout(sendMessage, 50) }}
+                          onClick={() => { void sendMessage(q) }}
                           className="text-[11px] px-3 py-2 text-white/35 hover:text-white/70 hover:bg-white/5 transition text-left font-mono"
                           style={{ border: '1px solid rgba(255,255,255,0.08)' }}
                         >
@@ -1244,7 +1264,7 @@ export default function Cortex() {
                     </button>
                   ) : (
                     <button
-                      onClick={sendMessage}
+                      onClick={() => { void sendMessage() }}
                       disabled={!input.trim()}
                       className={cn(
                         'shrink-0 w-9 h-9 flex items-center justify-center transition',

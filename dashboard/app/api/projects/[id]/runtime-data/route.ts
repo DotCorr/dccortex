@@ -16,10 +16,10 @@ import { getCachedRuntimeData, parseVarsQuery } from '@/lib/public-runtime-cache
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
   try {
-    const { id: projectId } = await Promise.resolve(params)
+    const { id: projectId } = context.params
     const access = await requireProjectDataAccess(projectId, false)
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 

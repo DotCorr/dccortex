@@ -20,12 +20,12 @@ const GLOBALS_SLUG = '__globals__'
 
 type Params = Promise<{ id: string }> | { id: string }
 
-async function getAuthorisedProjectId(req: NextRequest, params: Params): Promise<{ projectId: string } | NextResponse> {
+async function getAuthorisedProjectId(req: NextRequest, params: any): Promise<{ projectId: string } | NextResponse> {
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const userId = (session.user as any).id
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { id: projectId } = await Promise.resolve(params)
+  const { id: projectId } = params
   const project = await prisma.project.findFirst({
     where: {
       id: projectId,
@@ -42,10 +42,10 @@ async function getAuthorisedProjectId(req: NextRequest, params: Params): Promise
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Params }
+  context: any
 ) {
   try {
-    const result = await getAuthorisedProjectId(request, params)
+    const result = await getAuthorisedProjectId(request, context.params)
     if (result instanceof NextResponse) return result
     const { projectId } = result
     const clientId = request.headers.get('x-dcc-client-id')?.trim() || undefined
@@ -64,10 +64,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Params }
+  context: any
 ) {
   try {
-    const result = await getAuthorisedProjectId(request, params)
+    const result = await getAuthorisedProjectId(request, context.params)
     if (result instanceof NextResponse) return result
     const { projectId } = result
     const clientId = request.headers.get('x-dcc-client-id')?.trim() || undefined

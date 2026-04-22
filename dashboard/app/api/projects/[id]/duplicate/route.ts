@@ -24,7 +24,7 @@ function slugFromName(name: string): string {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -33,7 +33,7 @@ export async function POST(
     }
     const userId = (session.user as any).id
 
-    const { id: sourceProjectId } = await Promise.resolve(params)
+    const { id: sourceProjectId } = context.params
     if (!sourceProjectId) {
       return NextResponse.json({ error: 'Project ID required' }, { status: 400 })
     }

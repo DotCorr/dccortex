@@ -14,10 +14,10 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { token: string } }
+  context: any
 ) {
   try {
-    const token = params.token
+    const token = context.params.token
 
     // Find invitation
     const invitation = await prisma.invitation.findUnique({
