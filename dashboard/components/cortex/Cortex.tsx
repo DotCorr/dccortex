@@ -78,6 +78,8 @@ type ParsedAI = {
   followUp?: string | null
 }
 
+type ParsedAIAction = NonNullable<ParsedAI['actions']>[number]
+
 type ModelOption = {
   id: string
   name: string
@@ -135,6 +137,14 @@ type AuditArtifact = {
 
 const CHAT_REQUEST_TIMEOUT_MS = 90_000
 
+type CortexProps = {
+  embedded?: boolean
+  projectId?: string | null
+  projectName?: string | null
+  organizationId?: string | null
+  className?: string
+}
+
 /* ───────────── Helpers ───────────── */
 function extractOrgId(pathname: string): string | null {
   const m = pathname.match(/\/organizations\/([^/]+)/)
@@ -177,6 +187,11 @@ function parseAssistantJson(raw: string): ParsedAI | null {
   return null
 }
 
+function parseActionsFromMessage(raw: string): ParsedAIAction[] {
+  const parsed = parseAssistantJson(raw)
+  return Array.isArray(parsed?.actions) ? parsed.actions : []
+}
+
 function downloadAuditArtifact(artifact: AuditArtifact): void {
   const fileName = `cortex-audit-${artifact.runId}.json`
   const blob = new Blob([JSON.stringify(artifact, null, 2)], { type: 'application/json' })
@@ -189,13 +204,19 @@ function downloadAuditArtifact(artifact: AuditArtifact): void {
 }
 
 /* ───────────── Component ───────────── */
-export default function Cortex({ embedded = false }: { embedded?: boolean }) {
+export default function Cortex({
+  embedded = false,
+  projectId = null,
+  projectName = null,
+  organizationId = null,
+  className = '',
+}: CortexProps) {
   const { data: session } = useSession()
   const pathname = usePathname()
-  const orgId = extractOrgId(pathname)
+  const orgId = organizationId ?? extractOrgId(pathname)
 
   // Core state
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(embedded)
   const [view, setView] = useState<'chat' | 'history' | 'preview'>('chat')
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
@@ -308,6 +329,17 @@ export default function Cortex({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     setPreviewNonce(Date.now())
   }, [contextProjectId])
+
+  useEffect(() => {
+    if (!embedded) return
+    setOpen(true)
+  }, [embedded])
+
+  useEffect(() => {
+    if (!projectId) return
+    setContextProjectId(projectId)
+    setContextProjectName(projectName ?? 'Project')
+  }, [projectId, projectName])
 
   // Must be after all hooks
   if (!session?.user || !orgId) return null
@@ -706,7 +738,10 @@ export default function Cortex({ embedded = false }: { embedded?: boolean }) {
       {/* ── DIALOG ── */}
       {(open || embedded) && (
         <div
-          className={embedded ? 'flex flex-col h-full w-full overflow-hidden' : 'fixed z-[9999] flex flex-col overflow-hidden'}
+          className={cn(
+            embedded ? 'flex flex-col h-full w-full overflow-hidden' : 'fixed z-[9999] flex flex-col overflow-hidden',
+            className,
+          )}
           style={embedded ? {
             background: '#000',
           } : {
@@ -1067,6 +1102,71 @@ export default function Cortex({ embedded = false }: { embedded?: boolean }) {
                             </details>
                           </div>
                         )}
+                        {msg.role === 'assistant' && (() => {
+                          const actionResults = msg.metadata?.actionResults ?? []
+                          const parsedActions = parseActionsFromMessage(msg.content)
+                          const createdScreens = actionResults.filter((result) => result.success && result.type === 'create_screen' && result.data?.screenId)
+                          const updatedScreens = actionResults.filter((result) => result.success && result.type === 'update_screen' && result.data?.screenId)
+                          const successfulActions = actionResults.filter((result) => result.success)
+                          const hasScreenWork = createdScreens.length > 0 || updatedScreens.length > 0 || parsedActions.some((action) => action.type === 'create_screen' || action.type === 'update_screen')
+                          const hasRefreshableWork = successfulActions.some((result) => (
+                            result.type === 'create_project'
+                            || result.type === 'create_screen'
+                            || result.type === 'update_screen'
+                            || result.type === 'update_globals'
+                            || result.type === 'create_table'
+                            || result.type === 'create_api_source'
+                          ))
+                          if (!hasScreenWork && !hasRefreshableWork && !contextProjectId) return null
+                          return (
+                            <div className="mt-2.5 flex flex-wrap gap-1.5">
+                              {createdScreens.map((result, index) => {
+                                const screenId = typeof result.data?.screenId === 'string' ? result.data.screenId : null
+                                if (!screenId) return null
+                                const label = typeof result.data?.name === 'string' && result.data.name.trim()
+                                  ? `Open ${result.data.name}`
+                                  : `Open screen ${index + 1}`
+                                return (
+                                  <button
+                                    key={`${msg.id}-screen-${screenId}`}
+                                    type="button"
+                                    onClick={() => window.dispatchEvent(new CustomEvent('cortex:navigate-screen', { detail: { screenId } }))}
+                                    className="px-2.5 py-1 text-[10px] font-mono text-white/70 hover:text-white transition"
+                                    style={{ border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}
+                                  >
+                                    {label}
+                                  </button>
+                                )
+                              })}
+                              {hasRefreshableWork && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewNonce(Date.now())
+                                    window.dispatchEvent(new CustomEvent('cortex:refresh'))
+                                  }}
+                                  className="px-2.5 py-1 text-[10px] font-mono text-white/70 hover:text-white transition"
+                                  style={{ border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}
+                                >
+                                  Refresh editor
+                                </button>
+                              )}
+                              {contextProjectId && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewNonce(Date.now())
+                                    setView('preview')
+                                  }}
+                                  className="px-2.5 py-1 text-[10px] font-mono text-white/70 hover:text-white transition"
+                                  style={{ border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}
+                                >
+                                  Open preview
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })()}
                         {msg.role === 'assistant' && msg.id === lastAssistantMessageId && previewUrl && (
                           <div className="mt-2.5">
                             <div

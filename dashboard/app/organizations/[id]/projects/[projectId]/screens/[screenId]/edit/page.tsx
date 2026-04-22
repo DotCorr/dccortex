@@ -1536,6 +1536,21 @@ export default function ScreenEditPage() {
     return () => window.removeEventListener('cortex:refresh', onCortexRefresh)
   }, [requestRefreshFromServer])
 
+  useEffect(() => {
+    const onNavigateScreen = (event: Event) => {
+      const detail = (event as CustomEvent<{ screenId?: string }>).detail
+      const targetScreenId = typeof detail?.screenId === 'string' ? detail.screenId : null
+      if (!targetScreenId) return
+      if (targetScreenId === screenId) {
+        requestRefreshFromServer(0)
+        return
+      }
+      router.push(`/organizations/${orgId}/projects/${projectId}/screens/${targetScreenId}/edit`)
+    }
+    window.addEventListener('cortex:navigate-screen', onNavigateScreen)
+    return () => window.removeEventListener('cortex:navigate-screen', onNavigateScreen)
+  }, [orgId, projectId, requestRefreshFromServer, router, screenId])
+
   const patchMutation = useMutation({
     mutationFn: async (payload: { layout?: Node | ScreenLayoutPayload; script?: string }) => {
       await axios.patch(`${base}/${screenId}`, payload, {
@@ -3788,8 +3803,14 @@ export default function ScreenEditPage() {
               )}
               {/* AI tab */}
               {leftPanelTab === 'ai' && (
-                <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-                  <CortexPanel embedded />
+                <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-2">
+                  <CortexPanel
+                    embedded
+                    projectId={projectId}
+                    projectName={String(projectData?.project?.name ?? '') || null}
+                    organizationId={orgId}
+                    className="h-full"
+                  />
                 </div>
               )}
               {/* Console tab */}
