@@ -12,6 +12,7 @@
 import { prisma } from '@/lib/prisma'
 import { validateApiSource } from '@/lib/cortex/api-validator'
 import { migrateLayout } from '@/lib/layout-migration'
+import { Prisma } from '@prisma/client'
 import { randomUUID } from 'crypto'
 
 export type CortexAction =
@@ -749,16 +750,17 @@ export async function executeAction(
           mergedReusables = Array.isArray(currentLayout.reusables) ? currentLayout.reusables as unknown[] : []
         }
 
-        const globalsData = {
+        const globalsData: Record<string, unknown> = {
           reusables: mergedReusables,
           globalState: action.params.globalState !== undefined ? action.params.globalState : (currentLayout.globalState ?? []),
           globalTheme: action.params.globalTheme !== undefined ? action.params.globalTheme : (currentLayout.globalTheme ?? {}),
         }
+        const nextLayout = { ...currentLayout, ...globalsData } as Prisma.InputJsonValue
         if (existing) {
           await prisma.appScreen.update({
             where: { id: existing.id },
             data: {
-              layout: { ...currentLayout, ...globalsData },
+              layout: nextLayout,
             },
           })
         } else {
@@ -767,7 +769,7 @@ export async function executeAction(
               projectId: action.params.projectId,
               name: 'Globals',
               slug: '__globals__',
-              layout: globalsData,
+              layout: globalsData as Prisma.InputJsonValue,
             },
           })
         }

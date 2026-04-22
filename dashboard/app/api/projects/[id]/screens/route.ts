@@ -44,7 +44,7 @@ export async function GET(
   context: any
 ) {
   try {
-    const { id: projectId } = context.params
+    const { id: projectId } = await Promise.resolve(context.params)
     if (!projectId) return corsJson(req, { error: 'Project ID required' }, 400)
 
     const access = await requireProjectDataAccess(projectId, false)
@@ -111,7 +111,7 @@ export async function POST(
   context: any
 ) {
   try {
-    const { id: projectId } = context.params
+    const { id: projectId } = await Promise.resolve(context.params)
     if (!projectId) return corsJson(req, { error: 'Project ID required' }, 400)
 
     const access = await requireProjectDataAccess(projectId, true)

@@ -67,6 +67,11 @@ const nextConfig = {
     ]
   },
   webpack: (config, { isServer }) => {
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      '@dccortex/runtime-kernel': path.resolve(__dirname, 'lib/runtime-kernel'),
+    }
+
     // Fixes npm packages that depend on `fs` module
     if (!isServer) {
       config.resolve.fallback = {

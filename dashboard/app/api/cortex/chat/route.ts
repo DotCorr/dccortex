@@ -159,6 +159,17 @@ function assessPromptContract(prompt: string, actions: CortexAction[], actionRes
     warnings.push('Multi-screen generation did not include reusable/global patterns (update_globals or reusableInstance). This increases maintenance risk.')
   }
 
+    // Detect chrome inconsistency: multi-screen app has inline status/tab/nav elements instead of reusableInstances
+    if (likelyMultiScreen && hasActionType('update_globals')) {
+      // Count screens that use reusableInstance vs total screens created/updated
+      const totalScreenActions = actions.filter((a) => a.type === 'create_screen' || a.type === 'update_screen').length
+      const reusableInstanceMatches = (serializedActions.match(/"type"\s*:\s*"reusableInstance"/g) ?? []).length
+      // If there are many screens but very few reusableInstances, likely inconsistent chrome
+      if (totalScreenActions >= 3 && reusableInstanceMatches < totalScreenActions) {
+        warnings.push(`Chrome consistency check: ${totalScreenActions} screens generated but only ${reusableInstanceMatches} reusableInstance references found. Shared chrome (status bar, tab bar, nav) should appear via reusableInstance on every applicable screen.`)
+      }
+    }
+
   const createApiActions = actions.filter((a) => a.type === 'create_api_source')
   const hasRelativeApiUrl = createApiActions.some((a) => {
     const url = (a.params as { url?: unknown }).url

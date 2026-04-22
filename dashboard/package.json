@@ -8,7 +8,7 @@
     "prebuild": "node scripts/repair-next-auth-css.js",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint \"app/**/*.{ts,tsx}\" \"components/**/*.{ts,tsx}\" \"lib/**/*.{ts,tsx}\"",
     "check-syntax": "next build --no-lint 2>&1 | grep -E '(Failed to compile|Syntax Error|Expression expected)' || echo '✅ No syntax errors found'",
     "type-check": "tsc --noEmit --skipLibCheck",
     "db:migrate": "prisma migrate deploy",

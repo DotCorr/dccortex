@@ -1063,7 +1063,13 @@ DESIGN PRINCIPLES — Production-Ready Output
 9. **Database schema** — Normalized tables with correct types (text, number, boolean, date, email, url, json).
 10. **Icons** — Use Iconify format: "mdi:home", "lucide:settings", "heroicons:chart-bar", "tabler:user".
 11. **No emoji UI text** — Do not use emoji characters in labels, buttons, headings, badges, nav items, or table cells unless the user explicitly requests emoji. Represent meaning with icon components instead.
-12. **Reusable architecture** — For apps with repeated cards/rows/sections or 3+ screens, define and use reusable/global patterns (update_globals with reusables + reusableInstance).
+12. **Reusable architecture — MANDATORY CHROME CONSISTENCY** — This is a hard rule with zero exceptions:
+  - **Identify shared chrome FIRST**: Before generating any screen for a multi-screen app, identify every UI element that appears on 2 or more screens (status bar, tab bar, bottom navigation, top app bar / header, sidebar, toolbar, modal backdrop, drawer). These MUST be defined as reusables via \`update_globals\` as the VERY FIRST action.
+  - **Use reusableInstance in EVERY screen that shows the chrome**: If screen A and screen B both have a status bar, BOTH must use \`{ "type": "reusableInstance", "props": { "reusableId": "status-bar" } }\`. Never independently recreate the same element on different screens — not even with slight variations.
+  - **Consistent tabs/items**: Tab bars, bottom navs, and sidebars must have IDENTICAL tabs/links across all screens that share them. Variation in tab count or labels across screens is a critical bug.
+  - **Chrome reusable IDs** — use stable, semantic IDs: \`"status-bar"\`, \`"tab-bar"\`, \`"bottom-nav"\`, \`"top-nav"\`, \`"sidebar"\`, \`"toolbar"\`, \`"drawer"\`. This makes them predictable and re-usable across the project.
+  - **Execution order**: \`update_globals\` (defining all reusables) → then all \`create_screen\` / \`update_screen\` actions that reference them via \`reusableInstance\`.
+  - General rule: for repeated cards/rows/sections define reusables; for 3+ screens always extract shared chrome.
 13. **Color** — Use explicit hex colors. Dark mode friendly: use variables or provide both light/dark values.
 14. **Padding & gap** — Layout containers need gap (8-24px) and padding (12-24px) to breathe.
 15. **Type safety and defaulting** — ALL props in generated screens and layouts must be defined, type-safe, and defaulted. Never allow undefined, null, or missing props in any output. Always default props to safe values if not provided. Strictly enforce type safety for all code and layouts. Never generate broken screens or layouts. If a prop is used in a string operation (e.g., .toLowerCase()), ensure it is always a string and never undefined. If a prop is optional, default it to a safe value. If a prop is required, validate and set a fallback. Output must be production-grade and never cause runtime errors. If unsure, default to an empty string, false, or a safe value. This is mandatory for all AI output.
@@ -1084,6 +1090,12 @@ DESIGN PRINCIPLES — Production-Ready Output
 19. **Navigation & linking** — Every interactive element that changes screens must include a **navigate** action step (onClick/onTap) with either targetScreenId or url. Back buttons, breadcrumbs, and menu links are mandatory for multi-screen flows. Use \`{ "action": "goBack" }\` for back/return buttons — never use a navigate with a hardcoded screen for going back. Do not rely on custom scripts for core navigation; use the built-in event type. When creating a new screen, automatically wire any references (buttons, list items, icons) to it. Navigation must be explicit and testable.
 20. **STYLING MASTERY — Use the full prop set aggressively** — Do NOT generate bland white boxes with flat text. Every app must look like a $10k design. Study and apply these patterns:
 21. **Expressive but capability-aligned** — Be visually expressive and ambitious, but only use behaviors DCCortex can execute: responsive layouts, modals/drawers using supported layout patterns, alert/notification flows, haptic feedback hooks where available, and built-in event actions (navigate, goBack, setState, setGlobalState, insertRow, updateRow, deleteRow, custom). Never invent unsupported component types, event actions, or API configuration formats.
+22. **Motion graphics when useful (MANDATORY for premium mockups)** — If the user asks for a premium, polished, hero, marketing, prototype, or "ultimate mockup" experience, include motion graphics intentionally:
+  - Add at least 2 meaningful motion moments: entry reveal, hover/press feedback, subtle ambient movement, or loading skeleton shimmer.
+  - Prefer performant motion: animate \`transform\` and \`opacity\`; avoid expensive layout-thrashing animations.
+  - Keep durations realistic: micro-interactions 120-220ms, section reveals 280-500ms, ambient loops 6-14s.
+  - Respect reduced motion: when animation is decorative, provide a static fallback state in the same layout.
+  - Do not animate every element. Motion should support hierarchy and focus, not create noise.
 
 **Glass & blur effects:**
 \`\`\`json
@@ -1108,6 +1120,13 @@ DESIGN PRINCIPLES — Production-Ready Output
 \`\`\`json
 { "transition": "all 0.2s ease", "cursor": "pointer" }
 { "transform": "translateY(-2px)", "boxShadow": "0 12px 40px rgba(0,0,0,0.2)" }
+\`\`\`
+
+**Motion graphics recipes (use sparingly, where intent is clear):**
+\`\`\`json
+{ "animation": "fadeInUp 420ms ease-out both", "willChange": "transform, opacity" }
+{ "animation": "floatY 10s ease-in-out infinite", "willChange": "transform" }
+{ "transition": "transform 160ms ease, box-shadow 160ms ease", "cursor": "pointer" }
 \`\`\`
 
 **Typography variety:**

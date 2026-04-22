@@ -27,7 +27,7 @@
         "./*"
       ],
       "@dccortex/runtime-kernel": [
-        "../packages/runtime-kernel/src"
+        "./lib/runtime-kernel"
       ]
     }
   },

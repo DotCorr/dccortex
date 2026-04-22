@@ -20,7 +20,6 @@ import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maxi
 import { DeviceFrameset, DeviceOptions } from 'react-device-frameset'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { LoadingBar } from '@/components/ui/loading-bar'
 import { ComponentPalette } from '@/components/builder/ComponentPalette'
 import { BuilderCanvas } from '@/components/builder/BuilderCanvas'
 import { resolveBinding, resolveExpression, getDateNowMap } from '@dccortex/runtime-kernel'
@@ -603,6 +602,16 @@ export default function ScreenEditPage() {
   const orgId = params.id as string
   const projectId = params.projectId as string
   const screenId = params.screenId as string
+
+  // If screenId is not a real UUID, redirect to the screens list immediately
+  // before making any API calls. This handles stale /screens/new/edit URLs.
+  const isValidScreenId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(screenId)
+  useEffect(() => {
+    if (!isValidScreenId) {
+      router.replace(`/organizations/${orgId}/projects/${projectId}/screens`)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [root, setRoot] = useState<Node>(defaultLayout)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -1110,8 +1119,12 @@ export default function ScreenEditPage() {
       const { data } = await axios.get(`/api/projects/${projectId}/screens/${screenId}/edit-payload`)
       return data
     },
-    enabled: !!screenId,
+    enabled: !!screenId && isValidScreenId,
     refetchOnWindowFocus: false,
+    retry: (count, error) => {
+      const status = (error as any)?.response?.status
+      return typeof status !== 'number' || status >= 500
+    },
   })
 
   useEffect(() => {
@@ -1136,7 +1149,23 @@ export default function ScreenEditPage() {
   const { data: screenData } = useQuery({
     queryKey: ['screen', screenId],
     queryFn: async () => (await axios.get(`/api/projects/${projectId}/screens/${screenId}`)).data,
+    enabled: !!screenId && isValidScreenId,
+    retry: (count, error) => {
+      const status = (error as any)?.response?.status
+      return typeof status !== 'number' || status >= 500
+    },
   })
+
+  // If the screen cannot be loaded (404 or any error), redirect back to the
+  // screens list so the redirect page can pick the correct screen (or create one).
+  useEffect(() => {
+    if (!screenError) return
+    const status = (screenError as any)?.response?.status
+    const message = String((screenError as Error)?.message ?? '')
+    if (status === 404 || message.includes('404')) {
+      router.replace(`/organizations/${orgId}/projects/${projectId}/screens`)
+    }
+  }, [screenError, orgId, projectId, router])
 
   const { data: orgData } = useQuery({
     queryKey: ['organization', orgId],
@@ -1183,7 +1212,7 @@ export default function ScreenEditPage() {
   const mutation = useMutation({
     mutationFn: (newLayout: ScreenLayoutPayload) => {
       return axios.put(
-        `/api/organizations/${orgId}/projects/${projectId}/screens/${screenId}`,
+        `/api/projects/${projectId}/screens/${screenId}`,
         newLayout
       )
     },
@@ -1218,20 +1247,8 @@ export default function ScreenEditPage() {
     // This will be implemented later
   }
 
-  if (screenIsLoading) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-gray-900">
-        <LoadingBar />
-      </div>
-    )
-  }
-
-  if (screenError) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-gray-900 text-red-500">
-        Error loading screen: {screenError.message}
-      </div>
-    )
+  if (!isValidScreenId || screenIsLoading || screenError) {
+    return null
   }
 
   const selectedNode = selectedId ? findNode(root, selectedId) : null
@@ -1240,119 +1257,111 @@ export default function ScreenEditPage() {
   const org = orgData?.organization
 
   return (
-    <DashboardLayout>
-      <PageHeader
-        title={screen?.name}
-        breadcrumb={
-          <Breadcrumb
-            items={[
-              { label: 'Organizations', href: '/organizations' },
-              { label: org?.name, href: `/organizations/${org?.id}` },
-              { label: 'Projects', href: `/organizations/${org?.id}` },
-              { label: project?.name, href: `/organizations/${org?.id}/projects/${project?.id}` },
-              { label: 'Screens', href: `/organizations/${org?.id}/projects/${project?.id}` },
-              { label: screen?.name },
-            ]}
-          />
-        }
-        actions={
-          <div className="flex items-center gap-2">
+    <DashboardLayout hideSidebar>
+      <div className="h-screen overflow-hidden flex flex-col bg-white dark:bg-[#0d1117]">
+        <div className="shrink-0 h-12 border-b border-gray-200 dark:border-[#30363d] px-3 flex items-center gap-3 select-none">
+          <div className="min-w-0 flex items-center gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+              DCCortex / {project?.name ?? 'Project'} / {screen?.name ?? 'Screen'}
+            </span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleSave}>
               <Save className="w-4 h-4 mr-2" />
               Save
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setDeviceFrameEnabled(!deviceFrameEnabled)}>
+              {deviceFrameEnabled ? 'Frame On' : 'Frame Off'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setCanvasExpanded(!canvasExpanded)}>
+              {canvasExpanded ? 'Collapse' : 'Expand'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setCanvasZoom(1)}>
+              {Math.round(canvasZoom * 100)}%
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowCanvasMesh(!showCanvasMesh)}>
+              {showCanvasMesh ? 'Mesh On' : 'Mesh Off'}
+            </Button>
           </div>
-        }
-      />
-      <ResizablePanelLayout
-        leftTree={
-            <div className="h-full overflow-y-auto">
-              <NodeTree
-                root={root}
-                selectedId={selectedId}
-                onSelect={handleNodeSelect}
-                onMove={handleMoveNode}
-                onDelete={handleDeleteNode}
-              />
-            </div>
-        }
-        leftPalette={
-            <div className="p-2">
-              <h2 className="text-lg font-semibold">Components</h2>
-              <div className="mt-2">
-                <ComponentPalette onAddComponent={handleAddComponent} />
-              </div>
-            </div>
-        }
-        center={
-            <div className="flex h-full flex-col bg-gray-100 dark:bg-gray-800" ref={canvasStageRef}>
-              <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-gray-200 dark:border-gray-700 px-4">
-                <div className="flex items-center space-x-2">
-                  <Breadcrumb
-                    items={[
-                      { label: 'Projects', href: `/organizations/${orgId}/projects` },
-                      { label: projectData?.project?.name || '...', href: `/organizations/${orgId}/projects/${projectId}` },
-                      { label: 'Screens', href: `/organizations/${orgId}/projects/${projectId}/screens` },
-                      { label: screenData?.screen?.name || '...', href: `/organizations/${orgId}/projects/${projectId}/screens/${screenId}/edit` },
-                    ]}
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <ResizablePanelLayout
+            leftTree={
+              <div className="h-full min-h-0 flex flex-col">
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <NodeTree
+                    root={root}
+                    selectedId={selectedId}
+                    onSelect={handleNodeSelect}
+                    onMove={handleMoveNode}
+                    onDelete={handleDeleteNode}
                   />
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setDeviceFrameEnabled(!deviceFrameEnabled)}>
-                    {deviceFrameEnabled ? 'Frame On' : 'Frame Off'}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setCanvasExpanded(!canvasExpanded)}>
-                    {canvasExpanded ? 'Collapse' : 'Expand'}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setCanvasZoom(1)}>
-                    {Math.round(canvasZoom * 100)}%
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setShowCanvasMesh(!showCanvasMesh)}>
-                    {showCanvasMesh ? 'Mesh On' : 'Mesh Off'}
-                  </Button>
-                </div>
-              </div>
-              <div className="relative flex-1">
-                <BuilderCanvas
-                  root={root}
-                  selectedId={selectedId}
-                  onSelect={handleNodeSelect}
-                  onUpdate={setRoot}
-                  onMove={handleMoveNode}
-                  previewMode={previewMode}
-                  onRunEvent={handleExecuteEvent}
-                  theme={effectiveTheme}
+                <GlobalReusablesPane
+                  reusables={globalReusables}
+                  promotingReusableIds={promotingReusableIds}
+                  activeReusableId={editingReusableId}
                 />
               </div>
-            </div>
-        }
-        rightPanel={
-            <div className="flex h-full flex-col">
-              <div className="flex h-12 flex-shrink-0 items-center border-b border-gray-200 dark:border-gray-700 px-4">
-                <h2 className="text-lg font-semibold">Properties</h2>
-              </div>
-              <div className="flex-grow overflow-y-auto">
-                {selectedNode ? (
-                  <PropertyPanel
-                    key={selectedNode.id}
-                    node={selectedNode}
-                    onUpdate={(newProps) => {
-                      const newRoot = updateNodeInTree(root, selectedNode.id, (n) => ({ ...n, props: newProps }))
-                      setRoot(newRoot)
-                    }}
-                    stateDefinitions={stateDefinitions}
-                    dataSources={dataSources}
-                    namedScripts={namedScripts}
+            }
+            leftPalette={
+              <ComponentPalette onAddComponent={handleAddComponent} scrollStorageKey={paletteScrollStorageKey} />
+            }
+            center={
+              <div className="flex h-full flex-col bg-gray-100 dark:bg-gray-800" ref={canvasStageRef}>
+                <div className="relative flex-1 min-h-0">
+                  <BuilderCanvas
+                    root={root}
+                    selectedId={selectedId}
+                    onSelect={handleNodeSelect}
+                    onUpdate={setRoot}
+                    onMove={handleMoveNode}
+                    previewMode={previewMode}
+                    onRunEvent={handleExecuteEvent}
+                    theme={effectiveTheme}
                   />
-                ) : (
-                  <div className="p-4 text-sm text-gray-500">Select a layer to see its properties.</div>
-                )}
+                </div>
               </div>
-            </div>
-        }
-        showLeft={true}
-        showRight={true}
-      />
+            }
+            rightPanel={
+              <div className="flex h-full flex-col min-h-0">
+                <div className="shrink-0 h-12 flex items-center border-b border-gray-200 dark:border-gray-700 px-4">
+                  <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Component Props</h2>
+                </div>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  {selectedNode ? (
+                    <PropertyPanel
+                      key={selectedNode.id}
+                      node={selectedNode}
+                      onUpdate={(newProps) => {
+                        const newRoot = updateNodeInTree(root, selectedNode.id, (n) => ({ ...n, props: newProps }))
+                        setRoot(newRoot)
+                      }}
+                      stateDefinitions={stateDefinitions}
+                      dataSources={dataSources}
+                      namedScripts={namedScripts}
+                    />
+                  ) : (
+                    <div className="p-4 text-sm text-gray-500">Select a layer to see its properties.</div>
+                  )}
+                </div>
+                <DebugConsole
+                  runtimeState={runtimeData}
+                  stateDefinitions={stateDefinitions}
+                  inspection={inspection}
+                  apiLogs={apiLogs}
+                  storageKey={debugConsoleStorageKey}
+                />
+              </div>
+            }
+            showLeft={true}
+            showRight={true}
+            storageKey={panelWidthsStorageKey}
+            onWidthsChange={() => setPanelWidthsVersion((v) => v + 1)}
+          />
+        </div>
+      </div>
     </DashboardLayout>
   )
 }
