@@ -189,7 +189,7 @@ function downloadAuditArtifact(artifact: AuditArtifact): void {
 }
 
 /* ───────────── Component ───────────── */
-export default function Cortex() {
+export default function Cortex({ embedded = false }: { embedded?: boolean }) {
   const { data: session } = useSession()
   const pathname = usePathname()
   const orgId = extractOrgId(pathname)
@@ -680,7 +680,7 @@ export default function Cortex() {
   return (
     <>
       {/* ── FLOATING ORB ── */}
-      {!open && (
+      {!embedded && !open && (
         <button
           onClick={() => setOpen(true)}
           className="fixed z-[9999] w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center transition-transform duration-200 hover:scale-105 focus:outline-none"
@@ -704,10 +704,12 @@ export default function Cortex() {
       )}
 
       {/* ── DIALOG ── */}
-      {open && (
+      {(open || embedded) && (
         <div
-          className="fixed z-[9999] flex flex-col overflow-hidden"
-          style={{
+          className={embedded ? 'flex flex-col h-full w-full overflow-hidden' : 'fixed z-[9999] flex flex-col overflow-hidden'}
+          style={embedded ? {
+            background: '#000',
+          } : {
             width: isMobileViewport ? 'auto' : dialogWidth,
             height: isMobileViewport ? 'auto' : dialogHeight,
             maxHeight: isMobileViewport ? 'none' : dialogHeight,
@@ -782,6 +784,7 @@ export default function Cortex() {
             </button>
 
             {/* Close */}
+            {!embedded && (
             <button
               onClick={() => setOpen(false)}
               className="p-1.5 text-white/30 hover:text-white/70 transition"
@@ -789,6 +792,7 @@ export default function Cortex() {
             >
               <X size={14} />
             </button>
+            )}
           </div>
 
           {/* ── MODEL PICKER DROPDOWN ── */}

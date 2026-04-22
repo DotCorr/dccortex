@@ -13,7 +13,6 @@ import { TauriDetector } from '@/components/tauri-detector'
 import { WindowControls } from '@/components/tauri-window-controls'
 import dynamic from 'next/dynamic'
 
-import CortexLoader from '@/components/cortex/CortexLoader'
 
 export const metadata: Metadata = {
   title: 'DCCortex - No-Code App Builder',
@@ -40,7 +39,6 @@ export default function RootLayout({
         <WindowControls />
         <Providers>
           {children}
-          <CortexLoader />
         </Providers>
       </body>
     </html>
