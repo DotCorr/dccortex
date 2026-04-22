@@ -16,7 +16,7 @@ import axios from 'axios'
 import { useState, useCallback, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { flushSync } from 'react-dom'
 import { useWebHaptics } from 'web-haptics/react'
-import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, ExternalLink, SlidersHorizontal, Code2 } from 'lucide-react'
+import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, ExternalLink, SlidersHorizontal, Code2, LayoutGrid, Layers, Database, Terminal } from 'lucide-react'
 import { DeviceFrameset, DeviceOptions } from 'react-device-frameset'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -1254,16 +1254,19 @@ export default function ScreenEditPage() {
     <DashboardLayout hideSidebar>
       <div className="h-screen overflow-hidden flex flex-col bg-white dark:bg-[#0d1117]">
         <div className="shrink-0 h-12 border-b border-gray-200 dark:border-[#30363d] px-3 flex items-center gap-3 select-none">
+          <div className="flex items-center gap-2 mr-1">
+            <div className="flex items-center gap-1.5">
+              <div className="h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-700" />
+              <div className="h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-700" />
+              <div className="h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-700" />
+            </div>
+          </div>
           <div className="min-w-0 flex items-center gap-2">
-            <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            <span className="text-xs text-gray-600 dark:text-gray-300 truncate">
               DCCortex / {project?.name ?? 'Project'} / {screen?.name ?? 'Screen'}
             </span>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleSave}>
-              <Save className="w-4 h-4 mr-2" />
-              Save
-            </Button>
             <Button variant="outline" size="sm" onClick={() => setDeviceFrameEnabled(!deviceFrameEnabled)}>
               {deviceFrameEnabled ? 'Frame On' : 'Frame Off'}
             </Button>
@@ -1273,17 +1276,47 @@ export default function ScreenEditPage() {
             <Button variant="outline" size="sm" onClick={() => setCanvasZoom(1)}>
               {Math.round(canvasZoom * 100)}%
             </Button>
+            <Button variant="outline" size="sm" onClick={() => { /* reserved: background mode */ }}>
+              Canvas
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setShowCanvasMesh(!showCanvasMesh)}>
               {showCanvasMesh ? 'Mesh On' : 'Mesh Off'}
             </Button>
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden flex">
+          {/* Far-left icon sidebar */}
+          <div className="shrink-0 w-12 border-r border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#0d1117] flex flex-col items-center py-2 gap-2">
+            {[
+              { id: 'components', icon: LayoutGrid, label: 'Components' },
+              { id: 'layers', icon: Layers, label: 'Layers' },
+              { id: 'symbols', icon: LayoutGrid, label: 'Symbols' },
+              { id: 'data', icon: Database, label: 'Data' },
+              { id: 'console', icon: Terminal, label: 'Console' },
+            ].map((item) => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="h-9 w-9 rounded-md border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#161b22] text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#21262d] flex items-center justify-center"
+                  title={item.label}
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              )
+            })}
+            <div className="mt-auto" />
+          </div>
+
           <ResizablePanelLayout
             leftTree={
               <div className="h-full min-h-0 flex flex-col">
-                <div className="flex-1 min-h-0 overflow-auto">
+                <div className="shrink-0 h-10 px-3 flex items-center border-b border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22]">
+                  <div className="text-[11px] font-semibold tracking-[0.18em] text-gray-500 dark:text-gray-400 uppercase">Layers</div>
+                </div>
+                <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-[#161b22]">
                   <NodeTree
                     root={root}
                     selectedId={selectedId}
@@ -1292,19 +1325,48 @@ export default function ScreenEditPage() {
                     onDelete={handleDeleteNode}
                   />
                 </div>
-                <GlobalReusablesPane
-                  reusables={globalReusables}
-                  promotingReusableIds={promotingReusableIds}
-                  activeReusableId={editingReusableId}
-                />
+                <div className="shrink-0 border-t border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] p-3">
+                  <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500 dark:text-gray-400 uppercase mb-2">Reusable Components</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(globalReusables.length ? globalReusables.slice(0, 8).map((r) => r.name) : ['Card/KPI', 'Table/Compact', 'Chart/Area']).map((name) => (
+                      <span key={name} className="px-2 py-1 rounded-md border border-gray-200 dark:border-[#30363d] text-[11px] text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-[#0d1117]">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             }
             leftPalette={
               <ComponentPalette onAddComponent={handleAddComponent} scrollStorageKey={paletteScrollStorageKey} />
             }
             center={
-              <div className="flex h-full flex-col bg-gray-100 dark:bg-gray-800" ref={canvasStageRef}>
-                <div className="relative flex-1 min-h-0">
+              <div className="flex h-full flex-col bg-gray-100 dark:bg-gray-900" ref={canvasStageRef}>
+                {/* Canvas toolbar (Viewport/Desktop, Fit, Guides) */}
+                <div className="shrink-0 h-10 border-b border-gray-200/70 dark:border-[#30363d] px-3 flex items-center gap-2 bg-white/70 dark:bg-[#0d1117]/70 backdrop-blur">
+                  <div className="inline-flex rounded-md border border-gray-200 dark:border-[#30363d] overflow-hidden">
+                    <button
+                      type="button"
+                      className={`px-2.5 py-1 text-[11px] ${previewMode ? 'bg-gray-100 dark:bg-[#161b22]' : 'bg-black text-white dark:bg-white dark:text-black'}`}
+                      onClick={() => setPreviewMode(false)}
+                    >
+                      Viewport
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-2.5 py-1 text-[11px] ${previewMode ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-gray-100 dark:bg-[#161b22] text-gray-700 dark:text-gray-200'}`}
+                      onClick={() => setPreviewMode(true)}
+                    >
+                      Desktop
+                    </button>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setCanvasZoom(1)}>Fit</Button>
+                    <Button variant="outline" size="sm" onClick={() => setShowLayoutInspector((v) => !v)}>Guides</Button>
+                  </div>
+                </div>
+
+                <div className="relative flex-1 min-h-0 overflow-hidden">
                   <BuilderCanvas
                     root={root}
                     selectedId={selectedId}
@@ -1315,13 +1377,46 @@ export default function ScreenEditPage() {
                     onRunEvent={handleExecuteEvent}
                     theme={effectiveTheme}
                   />
+
+                  {/* Bottom zoom control (visual parity with screenshot) */}
+                  <div className="absolute bottom-3 right-3 z-20 flex items-center gap-2 rounded-md border border-gray-200 dark:border-[#30363d] bg-white/80 dark:bg-[#0d1117]/80 backdrop-blur px-2 py-1">
+                    <button
+                      type="button"
+                      className="text-xs text-gray-700 dark:text-gray-200 px-1"
+                      onClick={() => setCanvasZoom((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100))}
+                      title="Zoom out"
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-gray-700 dark:text-gray-200 tabular-nums"
+                      onClick={() => setCanvasZoom(1)}
+                      title="Reset zoom"
+                    >
+                      {Math.round(canvasZoom * 100)}%
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-gray-700 dark:text-gray-200 px-1"
+                      onClick={() => setCanvasZoom((z) => Math.min(ZOOM_MAX, Math.round((z + ZOOM_STEP) * 100) / 100))}
+                      title="Zoom in"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
               </div>
             }
             rightPanel={
               <div className="flex h-full flex-col min-h-0">
-                <div className="shrink-0 h-12 flex items-center border-b border-gray-200 dark:border-gray-700 px-4">
+                <div className="shrink-0 h-12 flex items-center border-b border-gray-200 dark:border-gray-700 px-4 gap-2 bg-white dark:bg-[#161b22]">
                   <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Component Props</h2>
+                  {selectedNode && (
+                    <span className="ml-auto px-2 py-1 rounded-md border border-gray-200 dark:border-[#30363d] text-[11px] bg-gray-50 dark:bg-[#0d1117] text-gray-700 dark:text-gray-200">
+                      {String(selectedNode.type ?? '').trim() || 'Component'}
+                    </span>
+                  )}
                 </div>
                 <div className="flex-1 min-h-0 overflow-auto">
                   {selectedNode ? (
@@ -1339,6 +1434,18 @@ export default function ScreenEditPage() {
                   ) : (
                     <div className="p-4 text-sm text-gray-500">Select a layer to see its properties.</div>
                   )}
+                </div>
+                <div className="shrink-0 border-t border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] p-3">
+                  <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500 dark:text-gray-400 uppercase mb-2">AI Assistant</div>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 h-9 rounded-md border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#0d1117] px-3 text-sm text-gray-800 dark:text-gray-200"
+                      placeholder="Describe what you want to build…"
+                    />
+                    <Button variant="outline" size="sm" onClick={() => { /* wired via Cortex UI elsewhere */ }}>
+                      Send
+                    </Button>
+                  </div>
                 </div>
                 <DebugConsole
                   runtimeState={runtimeData}
