@@ -599,6 +599,7 @@ export default function ScreenEditPage() {
   const params = useParams()
   const queryClient = useQueryClient()
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
   const orgId = params.id as string
   const projectId = params.projectId as string
   const screenId = params.screenId as string
@@ -611,6 +612,12 @@ export default function ScreenEditPage() {
       router.replace(`/organizations/${orgId}/projects/${projectId}/screens`)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Prevent hydration mismatches by rendering a stable placeholder on the first paint
+  // (server + initial client render) and only mounting the full editor UI after mount.
+  useEffect(() => {
+    setMounted(true)
   }, [])
   const [root, setRoot] = useState<Node>(defaultLayout)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -1239,6 +1246,12 @@ export default function ScreenEditPage() {
 
   const handleExecuteEvent = () => {
     // This will be implemented later
+  }
+
+  if (!mounted) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-gray-900" />
+    )
   }
 
   if (!isValidScreenId || screenIsLoading || screenError) {
