@@ -22,6 +22,9 @@ import path from 'path'
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const MAX_CONTEXT_MESSAGES = 20
+const MODEL_CONNECT_TIMEOUT_MS = 20_000
+const MODEL_STREAM_IDLE_TIMEOUT_MS = 30_000
+const MODEL_STREAM_TOTAL_TIMEOUT_MS = 90_000
 
 type DebugTrace = {
   model: string
@@ -85,6 +88,20 @@ function safeLongText(input: string, max = 180_000): string {
   if (!input) return ''
   if (input.length <= max) return input
   return `${input.slice(0, max)}\n...[truncated by cortex-audit safeLongText]`
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error(message)), ms)
+      }),
+    ])
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
 }
 
 async function persistAuditArtifact(artifact: AuditArtifact): Promise<{ runId: string; relativeFile: string }> {
@@ -591,8 +608,27 @@ export async function POST(req: NextRequest) {
         let lastThinkStep = ''
         let lastThinkAt = Date.now()
 
-        const streamResult = await chat.sendMessageStream(modelInputMessage)
-        for await (const chunk of streamResult.stream) {
+        const streamResult = await withTimeout(
+          chat.sendMessageStream(modelInputMessage),
+          MODEL_CONNECT_TIMEOUT_MS,
+          'Timed out waiting for the AI model to start responding.'
+        )
+        const streamStartedAt = Date.now()
+        const streamIterator = streamResult.stream[Symbol.asyncIterator]()
+
+        while (true) {
+          if (Date.now() - streamStartedAt > MODEL_STREAM_TOTAL_TIMEOUT_MS) {
+            throw new Error('AI generation exceeded the maximum allowed duration.')
+          }
+
+          const { value, done } = await withTimeout(
+            streamIterator.next(),
+            MODEL_STREAM_IDLE_TIMEOUT_MS,
+            'Timed out waiting for the AI model to continue streaming.'
+          )
+          if (done) break
+
+          const chunk = value
           accumulatedText += chunk.text()
           const now = Date.now()
           if (now - lastThinkAt > 350) {
@@ -603,6 +639,10 @@ export async function POST(req: NextRequest) {
             }
             lastThinkAt = now
           }
+        }
+
+        if (!accumulatedText.trim()) {
+          throw new Error('AI returned an empty response.')
         }
 
         // Parse JSON from accumulated text

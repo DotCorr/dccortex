@@ -16,7 +16,7 @@ import axios from 'axios'
 import { useState, useCallback, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { flushSync } from 'react-dom'
 import { useWebHaptics } from 'web-haptics/react'
-import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, ExternalLink, SlidersHorizontal, Code2, LayoutGrid, Layers, Database, Terminal } from 'lucide-react'
+import { Save, Eye, X, Sun, Moon, RefreshCw, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, ExternalLink, SlidersHorizontal, Code2, LayoutGrid, Layers, Database, Terminal, Smartphone, Tablet, Monitor, Settings2, Users } from 'lucide-react'
 import { DeviceFrameset, DeviceOptions } from 'react-device-frameset'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -599,7 +599,6 @@ export default function ScreenEditPage() {
   const params = useParams()
   const queryClient = useQueryClient()
   const router = useRouter()
-  const [mounted, setMounted] = useState(false)
   const orgId = params.id as string
   const projectId = params.projectId as string
   const screenId = params.screenId as string
@@ -613,16 +612,10 @@ export default function ScreenEditPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  // Prevent hydration mismatches by rendering a stable placeholder on the first paint
-  // (server + initial client render) and only mounting the full editor UI after mount.
-  useEffect(() => {
-    setMounted(true)
-  }, [])
   const [root, setRoot] = useState<Node>(defaultLayout)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const [leftPanelTab, setLeftPanelTab] = useState<'layers' | 'screens'>('layers')
+  const [leftPanelTab, setLeftPanelTab] = useState<'layers' | 'screens' | 'data' | 'source' | 'console'>('layers')
   // Keep initial render deterministic for SSR hydration; hydrate from storage in effects below.
   const [previewMode, setPreviewMode] = useState(false)
   const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>({})
@@ -691,6 +684,7 @@ export default function ScreenEditPage() {
   const [presenceMode, setPresenceMode] = useState<PresenceMode>('slow')
   const [mobileAutoClosePalette, setMobileAutoClosePalette] = useState(false)
   const [panelWidthsVersion, setPanelWidthsVersion] = useState(0)
+  const handlePanelWidthsChange = useCallback(() => setPanelWidthsVersion((v) => v + 1), [])
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -781,6 +775,8 @@ export default function ScreenEditPage() {
   const [importingOrgReusableIds, setImportingOrgReusableIds] = useState<string[]>([])
   const [importingApiSourceIds, setImportingApiSourceIds] = useState<string[]>([])
   const generatedSourceRequestIdRef = useRef(0)
+  const globalsHydratedRef = useRef(false)
+  const globalsSnapshotRef = useRef('')
 
   const fetchGeneratedSource = useCallback(async (force = false) => {
     if (!projectId || !screenId) return
@@ -1105,10 +1101,18 @@ export default function ScreenEditPage() {
     }
   }, [])
 
+  const effectiveColorMode = useMemo<'light' | 'dark'>(() => {
+    const mode = globalTheme.colorMode ?? previewTheme
+    if (mode === 'adaptive') return systemDark ? 'dark' : 'light'
+    return mode === 'dark' ? 'dark' : 'light'
+  }, [globalTheme.colorMode, previewTheme, systemDark])
+
   const effectiveTheme = useMemo(() => {
-    const base = previewTheme === 'dark' ? { background: '#111827', text: '#f9fafb', surface: '#1f2937', borderColor: '#374151' } : {}
-    return { ...base, ...theme }
-  }, [theme, previewTheme])
+    const base = effectiveColorMode === 'dark'
+      ? { background: '#111827', text: '#f9fafb', surface: '#1f2937', borderColor: '#374151' }
+      : {}
+    return { ...base, ...globalTheme, ...theme }
+  }, [effectiveColorMode, globalTheme, theme])
 
   const {
     data: screenPayload,
@@ -1173,6 +1177,75 @@ export default function ScreenEditPage() {
     queryFn: async () => (await axios.get(`/api/organizations/${orgId}`)).data,
     enabled: !!orgId,
   })
+
+  const { data: projectScreensData } = useQuery({
+    queryKey: ['project-screens-nav', projectId],
+    queryFn: async () => (await axios.get(`/api/projects/${projectId}/screens`)).data,
+    enabled: !!projectId,
+  })
+
+  const { data: projectResourcesData } = useQuery({
+    queryKey: ['project-resources-nav', projectId],
+    queryFn: async () => {
+      const [datasourcesRes, assetsRes, apiSourcesRes] = await Promise.all([
+        axios.get(`/api/projects/${projectId}/datasources`).catch(() => ({ data: { datasources: [] } })),
+        axios.get(`/api/projects/${projectId}/assets`).catch(() => ({ data: { assets: [] } })),
+        axios.get(`/api/projects/${projectId}/api-sources`).catch(() => ({ data: { sources: [] } })),
+      ])
+
+      return {
+        datasources: Array.isArray((datasourcesRes as any).data?.datasources) ? (datasourcesRes as any).data.datasources : [],
+        assets: Array.isArray((assetsRes as any).data?.assets) ? (assetsRes as any).data.assets : [],
+        sources: Array.isArray((apiSourcesRes as any).data?.sources) ? (apiSourcesRes as any).data.sources : [],
+      }
+    },
+    enabled: !!projectId,
+  })
+
+  const { data: projectGlobalsData } = useQuery({
+    queryKey: ['project-globals', projectId],
+    queryFn: async () => (await axios.get(`/api/projects/${projectId}/globals`)).data,
+    enabled: !!projectId,
+  })
+
+  useEffect(() => {
+    const raw = (projectGlobalsData?.globals ?? {}) as Partial<BuilderGlobals>
+    const nextGlobals = {
+      globalReusables: Array.isArray(raw.globalReusables) ? raw.globalReusables : EMPTY_BUILDER_GLOBALS.globalReusables,
+      globalStateDefinitions: Array.isArray(raw.globalStateDefinitions) ? raw.globalStateDefinitions : EMPTY_BUILDER_GLOBALS.globalStateDefinitions,
+      globalTheme: raw.globalTheme && typeof raw.globalTheme === 'object' ? raw.globalTheme : EMPTY_BUILDER_GLOBALS.globalTheme,
+    }
+
+    setGlobalReusables(nextGlobals.globalReusables)
+    setGlobalStateDefinitions(nextGlobals.globalStateDefinitions)
+    setGlobalTheme(nextGlobals.globalTheme ?? {})
+    globalsSnapshotRef.current = JSON.stringify(nextGlobals)
+    globalsHydratedRef.current = true
+  }, [projectGlobalsData])
+
+  useEffect(() => {
+    if (!globalsHydratedRef.current || !projectId) return
+
+    const nextGlobals = {
+      globalReusables,
+      globalStateDefinitions,
+      globalTheme,
+    }
+    const serialized = JSON.stringify(nextGlobals)
+    if (serialized === globalsSnapshotRef.current) return
+
+    const timeoutId = window.setTimeout(() => {
+      void axios.put(`/api/projects/${projectId}/globals`, { globals: nextGlobals })
+        .then(() => {
+          globalsSnapshotRef.current = serialized
+        })
+        .catch((err: any) => {
+          pushEditorNotice('error', err?.response?.data?.error || err?.message || 'Failed to save project-wide builder settings.')
+        })
+    }, 500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [projectId, globalReusables, globalStateDefinitions, globalTheme, pushEditorNotice])
 
   const handleNodeSelect = (nodeId: string | null) => {
     if (editingReusableId) {
@@ -1248,172 +1321,337 @@ export default function ScreenEditPage() {
     // This will be implemented later
   }
 
-  if (!mounted) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-gray-900" />
-    )
-  }
-
   if (!isValidScreenId || screenIsLoading || screenError) {
     return null
   }
 
   const selectedNode = selectedId ? findNode(root, selectedId) : null
+  const inspectedNode = selectedNode ?? root
   const screen = screenData?.screen
   const project = projectData?.project
   const org = orgData?.organization
+  const projectScreens = Array.isArray(projectScreensData?.screens) ? projectScreensData.screens : []
+  const projectDatasources = Array.isArray(projectResourcesData?.datasources) ? projectResourcesData.datasources : []
+  const projectAssets = Array.isArray(projectResourcesData?.assets) ? projectResourcesData.assets : []
+  const projectApiSources = Array.isArray(projectResourcesData?.sources) ? projectResourcesData.sources : []
+  const resolvedSourceNames = Object.keys(runtimeData).filter((key) => runtimeData[key] != null)
+  const canvasScale = Math.max(0.2, Math.min(4, canvasFitScale * canvasZoom))
+  const showCanvasFrame = previewSize !== 'freeform' && effectiveDeviceFrameEnabled
+  const canvasSurface = (
+    <div
+      className={`relative overflow-hidden border bg-background shadow-sm ${showLayoutInspector ? 'border-border' : 'border-transparent'}`}
+      style={{
+        width: previewSize === 'freeform' ? '100%' : logicalViewport.width,
+        minWidth: previewSize === 'freeform' ? '100%' : logicalViewport.width,
+        height: previewSize === 'freeform' ? '100%' : logicalViewport.height,
+        minHeight: previewSize === 'freeform' ? '100%' : logicalViewport.height,
+        backgroundColor: canvasBgColor,
+      }}
+    >
+      {showCanvasMesh ? (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(148,163,184,0.2) 1px, transparent 0)',
+            backgroundSize: '18px 18px',
+          }}
+        />
+      ) : null}
+      {showLayoutInspector && previewSize !== 'freeform' ? (
+        <div className="pointer-events-none absolute left-3 top-3 z-20 rounded border border-border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground">
+          {logicalViewport.width} x {logicalViewport.height}
+        </div>
+      ) : null}
+      <div className="relative h-full w-full">
+        <BuilderCanvas
+          root={root}
+          selectedId={selectedId}
+          onSelect={handleNodeSelect}
+          onUpdate={setRoot}
+          onMove={handleMoveNode}
+          previewMode={previewMode}
+          onRunEvent={handleExecuteEvent}
+          theme={effectiveTheme}
+          reusables={globalReusables}
+          runtimePendingSources={runtimePendingSources}
+          runtimeResolvedSources={resolvedSourceNames}
+        />
+      </div>
+    </div>
+  )
 
   return (
     <DashboardLayout hideSidebar>
-      <div className="h-screen overflow-hidden flex flex-col bg-white dark:bg-[#0d1117]">
-        <div className="shrink-0 h-12 border-b border-gray-200 dark:border-[#30363d] px-3 flex items-center gap-3 select-none">
-          <div className="flex items-center gap-2 mr-1">
-            <div className="flex items-center gap-1.5">
-              <div className="h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-700" />
-              <div className="h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-700" />
-              <div className="h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-700" />
-            </div>
+      <div className="h-screen overflow-hidden flex flex-col bg-background text-foreground">
+        <div className="shrink-0 h-12 border-b border-border px-3 flex items-center gap-3 select-none bg-card">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span className="h-2.5 w-2.5 rounded-sm bg-muted-foreground/40" />
+            <span className="h-2.5 w-2.5 rounded-sm bg-muted-foreground/40" />
+            <span className="h-2.5 w-2.5 rounded-sm bg-muted-foreground/40" />
           </div>
           <div className="min-w-0 flex items-center gap-2">
-            <span className="text-xs text-gray-600 dark:text-gray-300 truncate">
+            <span className="text-xs text-muted-foreground truncate">
               DCCortex / {project?.name ?? 'Project'} / {screen?.name ?? 'Screen'}
             </span>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setDeviceFrameEnabled(!deviceFrameEnabled)}>
+            <Button variant="outline" size="sm" className="h-7 rounded-none" onClick={handleSave}>
+              <Save className="w-4 h-4 mr-2" />
+              {saveStatus === 'saving' ? 'Saving' : saveStatus === 'saved' ? 'Saved' : 'Save'}
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 rounded-none" onClick={() => setDeviceFrameEnabled(!deviceFrameEnabled)}>
               {deviceFrameEnabled ? 'Frame On' : 'Frame Off'}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setCanvasExpanded(!canvasExpanded)}>
+            <Button variant="outline" size="sm" className="h-7 rounded-none" onClick={() => setCanvasExpanded(!canvasExpanded)}>
               {canvasExpanded ? 'Collapse' : 'Expand'}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setCanvasZoom(1)}>
+            <Button variant="outline" size="sm" className="h-7 rounded-none" onClick={() => setCanvasZoom(1)}>
               {Math.round(canvasZoom * 100)}%
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { /* reserved: background mode */ }}>
+            <Button variant="outline" size="sm" className="h-7 rounded-none" onClick={() => setDevSettingsOpen(true)}>
               Canvas
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowCanvasMesh(!showCanvasMesh)}>
+            <Button variant="outline" size="sm" className="h-7 rounded-none" onClick={() => setShowCanvasMesh(!showCanvasMesh)}>
               {showCanvasMesh ? 'Mesh On' : 'Mesh Off'}
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 rounded-none" onClick={() => setShowGeneratedSource(true)}>
+              <Code2 className="w-4 h-4 mr-2" />
+              Source
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 rounded-none" onClick={() => setCollaboratorsDialogOpen(true)}>
+              <Users className="w-4 h-4 mr-2" />
+              {presence.length}
             </Button>
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-hidden flex">
-          {/* Far-left icon sidebar */}
-          <div className="shrink-0 w-12 border-r border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#0d1117] flex flex-col items-center py-2 gap-2">
-            {[
-              { id: 'components', icon: LayoutGrid, label: 'Components' },
-              { id: 'layers', icon: Layers, label: 'Layers' },
-              { id: 'symbols', icon: LayoutGrid, label: 'Symbols' },
-              { id: 'data', icon: Database, label: 'Data' },
-              { id: 'console', icon: Terminal, label: 'Console' },
-            ].map((item) => {
-              const Icon = item.icon
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="h-9 w-9 rounded-md border border-gray-200 dark:border-[#30363d] bg-gray-50 dark:bg-[#161b22] text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#21262d] flex items-center justify-center"
-                  title={item.label}
-                >
-                  <Icon className="h-4 w-4" />
-                </button>
-              )
-            })}
-            <div className="mt-auto" />
-          </div>
-
+        <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
           <ResizablePanelLayout
             leftTree={
-              <div className="h-full min-h-0 flex flex-col">
-                <div className="shrink-0 h-10 px-3 flex items-center border-b border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22]">
-                  <div className="text-[11px] font-semibold tracking-[0.18em] text-gray-500 dark:text-gray-400 uppercase">Layers</div>
+              <div className="h-full min-h-0 flex bg-card border-r border-border">
+                <div className="w-12 shrink-0 border-r border-border flex flex-col items-center py-2 gap-2">
+                  {[
+                    { id: 'layers', label: 'Layers', icon: Layers },
+                    { id: 'screens', label: 'Screens', icon: LayoutGrid },
+                    { id: 'data', label: 'Data', icon: Database },
+                    { id: 'source', label: 'Source', icon: Code2 },
+                    { id: 'console', label: 'Console', icon: Terminal },
+                  ].map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      title={label}
+                      onClick={() => {
+                        setLeftPanelTab(id as typeof leftPanelTab)
+                        if (id === 'source') setShowGeneratedSource(true)
+                      }}
+                      className={`h-8 w-8 border flex items-center justify-center ${leftPanelTab === id ? 'border-foreground bg-accent text-foreground' : 'border-border bg-muted text-muted-foreground hover:bg-accent'}`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </button>
+                  ))}
                 </div>
-                <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-[#161b22]">
-                  <NodeTree
-                    root={root}
-                    selectedId={selectedId}
-                    onSelect={handleNodeSelect}
-                    onMove={handleMoveNode}
-                    onDelete={handleDeleteNode}
-                  />
-                </div>
-                <div className="shrink-0 border-t border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] p-3">
-                  <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500 dark:text-gray-400 uppercase mb-2">Reusable Components</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(globalReusables.length ? globalReusables.slice(0, 8).map((r) => r.name) : ['Card/KPI', 'Table/Compact', 'Chart/Area']).map((name) => (
-                      <span key={name} className="px-2 py-1 rounded-md border border-gray-200 dark:border-[#30363d] text-[11px] text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-[#0d1117]">
-                        {name}
-                      </span>
-                    ))}
+                <div className="flex-1 min-h-0 flex flex-col">
+                  <div className="h-10 px-3 border-b border-border flex items-center justify-between text-[11px] tracking-[0.12em] text-muted-foreground">
+                    <span>{leftPanelTab === 'layers' ? 'LAYERS' : leftPanelTab === 'screens' ? 'SCREENS' : leftPanelTab === 'data' ? 'DATA' : leftPanelTab === 'source' ? 'SOURCE' : 'CONSOLE'}</span>
+                    {leftPanelTab === 'screens' ? (
+                      <button type="button" className="text-[10px] underline underline-offset-2" onClick={() => router.push(`/organizations/${orgId}/projects/${projectId}/screens`)}>
+                        Open full view
+                      </button>
+                    ) : null}
+                    {leftPanelTab === 'data' ? (
+                      <button type="button" className="text-[10px] underline underline-offset-2" onClick={() => router.push(`/organizations/${orgId}/projects/${projectId}/data`)}>
+                        Open full view
+                      </button>
+                    ) : null}
                   </div>
+
+                  {leftPanelTab === 'layers' ? (
+                    <>
+                      <div className="flex-1 min-h-0 overflow-auto p-2">
+                        <NodeTree
+                          root={root}
+                          selectedId={selectedId}
+                          onSelect={handleNodeSelect}
+                          onMove={handleMoveNode}
+                          onDelete={handleDeleteNode}
+                          globalReusables={globalReusables}
+                          storageKey={treeStorageKey}
+                        />
+                      </div>
+                      <div className="border-t border-border min-h-0">
+                        <GlobalReusablesPane
+                          reusables={globalReusables}
+                          promotingReusableIds={promotingReusableIds}
+                          activeReusableId={editingReusableId}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+
+                  {leftPanelTab === 'screens' ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
+                      {projectScreens.length > 0 ? projectScreens.map((projectScreen: any) => {
+                        const isActive = projectScreen.id === screenId
+                        return (
+                          <button
+                            key={projectScreen.id}
+                            type="button"
+                            onClick={() => router.push(`/organizations/${orgId}/projects/${projectId}/screens/${projectScreen.id}/edit`)}
+                            className={`w-full text-left border px-3 py-2 ${isActive ? 'border-foreground bg-accent text-foreground' : 'border-border bg-background text-muted-foreground hover:bg-accent'}`}
+                          >
+                            <div className="text-sm font-medium">{projectScreen.name || 'Untitled screen'}</div>
+                            <div className="text-[11px] uppercase tracking-[0.12em] opacity-70">{projectScreen.slug || 'screen'}</div>
+                          </button>
+                        )
+                      }) : (
+                        <div className="text-sm text-muted-foreground">No screens found for this project.</div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {leftPanelTab === 'data' ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-4">
+                      <div>
+                        <div className="mb-2 text-[11px] tracking-[0.12em] text-muted-foreground">DATABASE TABLES</div>
+                        <div className="space-y-2">
+                          {projectDatasources.flatMap((datasource: any) => Array.isArray(datasource.tables) ? datasource.tables.map((table: any) => ({ datasource, table })) : []).slice(0, 12).map(({ datasource, table }: any) => (
+                            <div key={table.id} className="border border-border bg-background px-3 py-2">
+                              <div className="text-sm font-medium text-foreground">{table.name}</div>
+                              <div className="text-[11px] text-muted-foreground">{datasource.name || 'Datasource'} • {table.columnCount ?? table.columns?.length ?? 0} columns</div>
+                            </div>
+                          ))}
+                          {projectDatasources.length === 0 ? <div className="text-sm text-muted-foreground">No project datasource found yet.</div> : null}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="mb-2 text-[11px] tracking-[0.12em] text-muted-foreground">API SOURCES</div>
+                        <div className="space-y-2">
+                          {projectApiSources.slice(0, 8).map((source: any) => (
+                            <div key={source.id} className="border border-border bg-background px-3 py-2">
+                              <div className="text-sm font-medium text-foreground">{source.name}</div>
+                              <div className="text-[11px] text-muted-foreground">{source.method || 'GET'} • {source.url || 'No URL configured'}</div>
+                            </div>
+                          ))}
+                          {projectApiSources.length === 0 ? <div className="text-sm text-muted-foreground">No API sources configured.</div> : null}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="mb-2 text-[11px] tracking-[0.12em] text-muted-foreground">ASSETS</div>
+                        <div className="space-y-2">
+                          {projectAssets.slice(0, 8).map((asset: any) => (
+                            <div key={asset.id} className="border border-border bg-background px-3 py-2">
+                              <div className="text-sm font-medium text-foreground truncate">{asset.name}</div>
+                              <div className="text-[11px] text-muted-foreground">{asset.mimetype || 'asset'} • {asset.size ? `${Math.round(asset.size / 1024)} KB` : 'size unknown'}</div>
+                            </div>
+                          ))}
+                          {projectAssets.length === 0 ? <div className="text-sm text-muted-foreground">No assets uploaded yet.</div> : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {leftPanelTab === 'console' ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-3">
+                      <div className="border border-border bg-background px-3 py-2">
+                        <div className="text-sm font-medium text-foreground">Collaborators</div>
+                        <div className="text-[11px] text-muted-foreground">{presence.length} active • mode {presenceMode}</div>
+                      </div>
+                      <div className="border border-border bg-background px-3 py-2">
+                        <div className="text-sm font-medium text-foreground">Recent API activity</div>
+                        <div className="mt-2 space-y-2">
+                          {apiLogs.slice(0, 6).map((log) => (
+                            <div key={log.id} className="text-[11px] text-muted-foreground border-b border-border pb-2 last:border-b-0 last:pb-0">
+                              <div className="font-medium text-foreground">{log.method} {log.url}</div>
+                              <div>Status {log.status ?? 'pending'}</div>
+                            </div>
+                          ))}
+                          {apiLogs.length === 0 ? <div className="text-sm text-muted-foreground">No API logs yet.</div> : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {leftPanelTab === 'source' ? (
+                    <div className="flex-1 min-h-0 overflow-hidden p-3 flex flex-col gap-3">
+                      <div className="border border-border bg-background px-3 py-2">
+                        <div className="text-sm font-medium text-foreground">Generated Next.js Source</div>
+                        <div className="text-[11px] text-muted-foreground">Inspect the live compiled source for this screen.</div>
+                      </div>
+                      <Button variant="outline" size="sm" className="w-fit rounded-none" onClick={() => setShowGeneratedSource(true)}>
+                        Open Source Preview
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             }
             leftPalette={
-              <ComponentPalette onAddComponent={handleAddComponent} scrollStorageKey={paletteScrollStorageKey} />
+              <div className="h-full min-h-0 bg-card border-r border-border flex flex-col">
+                <div className="h-10 px-3 border-b border-border flex items-center text-[11px] tracking-[0.12em] text-muted-foreground">COMPONENTS</div>
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
+                  <ComponentPalette onAddComponent={handleAddComponent} scrollStorageKey={paletteScrollStorageKey} />
+                </div>
+              </div>
             }
             center={
-              <div className="flex h-full flex-col bg-gray-100 dark:bg-gray-900" ref={canvasStageRef}>
-                {/* Canvas toolbar (Viewport/Desktop, Fit, Guides) */}
-                <div className="shrink-0 h-10 border-b border-gray-200/70 dark:border-[#30363d] px-3 flex items-center gap-2 bg-white/70 dark:bg-[#0d1117]/70 backdrop-blur">
-                  <div className="inline-flex rounded-md border border-gray-200 dark:border-[#30363d] overflow-hidden">
+              <div className="flex h-full flex-col bg-muted/20" ref={canvasStageRef}>
+                <div className="h-10 border-b border-border px-3 flex items-center justify-between text-xs text-muted-foreground bg-card">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      className={`px-2.5 py-1 text-[11px] ${previewMode ? 'bg-gray-100 dark:bg-[#161b22]' : 'bg-black text-white dark:bg-white dark:text-black'}`}
                       onClick={() => setPreviewMode(false)}
+                      className={`px-2 py-1 border ${!previewMode ? 'border-foreground bg-background text-foreground' : 'border-border bg-muted text-muted-foreground'}`}
                     >
                       Viewport
                     </button>
                     <button
                       type="button"
-                      className={`px-2.5 py-1 text-[11px] ${previewMode ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-gray-100 dark:bg-[#161b22] text-gray-700 dark:text-gray-200'}`}
                       onClick={() => setPreviewMode(true)}
+                      className={`px-2 py-1 border ${previewMode ? 'border-foreground bg-background text-foreground' : 'border-border bg-muted text-muted-foreground'}`}
                     >
-                      Desktop
+                      Preview
                     </button>
+                    <div className="ml-2 flex items-center gap-1">
+                      <button type="button" onClick={() => setPreviewSize('mobile')} className={`h-7 w-7 border flex items-center justify-center ${previewSize === 'mobile' ? 'border-foreground bg-background text-foreground' : 'border-border bg-muted text-muted-foreground'}`} title="Mobile viewport"><Smartphone className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => setPreviewSize('tablet')} className={`h-7 w-7 border flex items-center justify-center ${previewSize === 'tablet' ? 'border-foreground bg-background text-foreground' : 'border-border bg-muted text-muted-foreground'}`} title="Tablet viewport"><Tablet className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => setPreviewSize('desktop')} className={`h-7 w-7 border flex items-center justify-center ${previewSize === 'desktop' ? 'border-foreground bg-background text-foreground' : 'border-border bg-muted text-muted-foreground'}`} title="Desktop viewport"><Monitor className="h-3.5 w-3.5" /></button>
+                    </div>
                   </div>
-                  <div className="ml-auto flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setCanvasZoom(1)}>Fit</Button>
-                    <Button variant="outline" size="sm" onClick={() => setShowLayoutInspector((v) => !v)}>Guides</Button>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setCanvasZoom(1)} className="px-2 py-1 border border-border bg-background text-foreground">Fit</button>
+                    <button type="button" onClick={() => setShowLayoutInspector((value) => !value)} className={`px-2 py-1 border ${showLayoutInspector ? 'border-foreground bg-background text-foreground' : 'border-border bg-background text-muted-foreground'}`}>Guides</button>
                   </div>
                 </div>
-
-                <div className="relative flex-1 min-h-0 overflow-hidden">
-                  <BuilderCanvas
-                    root={root}
-                    selectedId={selectedId}
-                    onSelect={handleNodeSelect}
-                    onUpdate={setRoot}
-                    onMove={handleMoveNode}
-                    previewMode={previewMode}
-                    onRunEvent={handleExecuteEvent}
-                    theme={effectiveTheme}
-                  />
-
-                  {/* Bottom zoom control (visual parity with screenshot) */}
-                  <div className="absolute bottom-3 right-3 z-20 flex items-center gap-2 rounded-md border border-gray-200 dark:border-[#30363d] bg-white/80 dark:bg-[#0d1117]/80 backdrop-blur px-2 py-1">
+                <div className={`relative flex-1 min-h-0 overflow-auto ${canvasExpanded ? 'p-0' : 'p-6'}`} ref={canvasViewportRef}>
+                  <div className={`flex min-h-full ${canvasExpanded ? 'items-start justify-start' : 'items-start justify-center'}`}>
+                    <div style={{ transform: `scale(${canvasScale})`, transformOrigin: 'top center' }}>
+                      {showCanvasFrame ? (
+                        <DeviceFrameset device={activeFrameConfig.device as any} color={activeFrameConfig.color as any} landscape={Boolean(activeFrameConfig.landscape) as any}>
+                          {canvasSurface}
+                        </DeviceFrameset>
+                      ) : (
+                        canvasSurface
+                      )}
+                    </div>
+                  </div>
+                  <div className="absolute bottom-3 right-3 z-20 flex items-center gap-2 border border-border bg-background/90 px-2 py-1 backdrop-blur">
                     <button
                       type="button"
-                      className="text-xs text-gray-700 dark:text-gray-200 px-1"
+                      className="px-1 text-xs text-foreground"
                       onClick={() => setCanvasZoom((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100))}
-                      title="Zoom out"
                     >
-                      −
+                      -
                     </button>
-                    <button
-                      type="button"
-                      className="text-xs text-gray-700 dark:text-gray-200 tabular-nums"
-                      onClick={() => setCanvasZoom(1)}
-                      title="Reset zoom"
-                    >
+                    <button type="button" className="text-xs tabular-nums text-foreground" onClick={() => setCanvasZoom(1)}>
                       {Math.round(canvasZoom * 100)}%
                     </button>
                     <button
                       type="button"
-                      className="text-xs text-gray-700 dark:text-gray-200 px-1"
+                      className="px-1 text-xs text-foreground"
                       onClick={() => setCanvasZoom((z) => Math.min(ZOOM_MAX, Math.round((z + ZOOM_STEP) * 100) / 100))}
-                      title="Zoom in"
                     >
                       +
                     </button>
@@ -1422,41 +1660,56 @@ export default function ScreenEditPage() {
               </div>
             }
             rightPanel={
-              <div className="flex h-full flex-col min-h-0">
-                <div className="shrink-0 h-12 flex items-center border-b border-gray-200 dark:border-gray-700 px-4 gap-2 bg-white dark:bg-[#161b22]">
-                  <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Component Props</h2>
-                  {selectedNode && (
-                    <span className="ml-auto px-2 py-1 rounded-md border border-gray-200 dark:border-[#30363d] text-[11px] bg-gray-50 dark:bg-[#0d1117] text-gray-700 dark:text-gray-200">
-                      {String(selectedNode.type ?? '').trim() || 'Component'}
-                    </span>
-                  )}
+              <div className="flex h-full flex-col min-h-0 bg-card border-l border-border">
+                <div className="shrink-0 h-10 flex items-center border-b border-border px-3">
+                  <h2 className="text-sm font-medium text-foreground">Component Props</h2>
+                  <span className="ml-auto px-2 py-1 text-[11px] border border-border bg-muted text-foreground">
+                    {selectedNode?.type ?? 'Screen'}
+                  </span>
                 </div>
                 <div className="flex-1 min-h-0 overflow-auto">
-                  {selectedNode ? (
-                    <PropertyPanel
-                      key={selectedNode.id}
-                      node={selectedNode}
-                      onUpdate={(newProps) => {
-                        const newRoot = updateNodeInTree(root, selectedNode.id, (n) => ({ ...n, props: newProps }))
-                        setRoot(newRoot)
-                      }}
-                      stateDefinitions={stateDefinitions}
-                      dataSources={dataSources}
-                      namedScripts={namedScripts}
-                    />
-                  ) : (
-                    <div className="p-4 text-sm text-gray-500">Select a layer to see its properties.</div>
-                  )}
+                  <PropertyPanel
+                    key={inspectedNode.id}
+                    node={inspectedNode}
+                    onUpdate={(newProps) => {
+                      const newRoot = updateNodeInTree(root, inspectedNode.id, (n) => ({ ...n, props: newProps }))
+                      setRoot(newRoot)
+                    }}
+                    stateDefinitions={stateDefinitions}
+                    onStateDefinitionsChange={setStateDefinitions}
+                    dataSources={dataSources}
+                    onDataSourcesChange={setDataSources}
+                    runtimeData={runtimeData}
+                    namedScripts={namedScripts}
+                    theme={theme}
+                    onThemeChange={(updates) => setTheme((current) => ({ ...current, ...updates }))}
+                    globalStateDefinitions={globalStateDefinitions}
+                    onGlobalStateDefinitionsChange={setGlobalStateDefinitions}
+                    globalTheme={globalTheme}
+                    onGlobalThemeChange={(updates) => setGlobalTheme((current) => ({ ...current, ...updates }))}
+                    globalReusables={globalReusables}
+                    projectId={projectId}
+                    projectAssets={projectAssets}
+                    seoSettings={seoSettings}
+                    onSeoChange={(updates) => setSeoSettings((current) => ({ ...current, ...updates }))}
+                    screenPropDefs={screenPropDefs}
+                    onScreenPropDefsChange={setScreenPropDefs}
+                    customTypes={customTypes}
+                    onCustomTypesChange={setCustomTypes}
+                    aiProtected={aiProtected}
+                    onAiProtectedChange={setAiProtected}
+                    tabStorageKey={propertyPanelTabStorageKey}
+                    scrollStorageKey={propertyPanelScrollStorageKey}
+                  />
                 </div>
-                <div className="shrink-0 border-t border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] p-3">
-                  <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500 dark:text-gray-400 uppercase mb-2">AI Assistant</div>
+                <div className="border-t border-border p-3">
+                  <div className="text-xs tracking-[0.12em] text-muted-foreground mb-2">AI ASSISTANT</div>
                   <div className="flex gap-2">
-                    <input
-                      className="flex-1 h-9 rounded-md border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#0d1117] px-3 text-sm text-gray-800 dark:text-gray-200"
-                      placeholder="Describe what you want to build…"
-                    />
-                    <Button variant="outline" size="sm" onClick={() => { /* wired via Cortex UI elsewhere */ }}>
-                      Send
+                    <Button variant="outline" size="sm" className="rounded-none" onClick={() => setShowGeneratedSource(true)}>
+                      Review source
+                    </Button>
+                    <Button variant="outline" size="sm" className="rounded-none" onClick={() => setPackageManagerOpen(true)}>
+                      Packages
                     </Button>
                   </div>
                 </div>
@@ -1472,9 +1725,136 @@ export default function ScreenEditPage() {
             showLeft={true}
             showRight={true}
             storageKey={panelWidthsStorageKey}
-            onWidthsChange={() => setPanelWidthsVersion((v) => v + 1)}
+            onWidthsChange={handlePanelWidthsChange}
           />
         </div>
+
+        <Dialog open={devSettingsOpen} onOpenChange={setDevSettingsOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Canvas Settings</DialogTitle>
+              <DialogDescription>Configure viewport, frame, color mode, and canvas behavior for the editor preview.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-2 md:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Viewport</div>
+                <div className="flex gap-2">
+                  {[
+                    { id: 'mobile', label: 'Mobile' },
+                    { id: 'tablet', label: 'Tablet' },
+                    { id: 'desktop', label: 'Desktop' },
+                    { id: 'freeform', label: 'Freeform' },
+                  ].map((option) => (
+                    <button key={option.id} type="button" onClick={() => setPreviewSize(option.id as PreviewViewport)} className={`border px-3 py-2 text-sm ${previewSize === option.id ? 'border-foreground bg-accent text-foreground' : 'border-border bg-background text-muted-foreground'}`}>
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Color Mode</div>
+                <div className="flex gap-2">
+                  {[
+                    { id: 'light', label: 'Light' },
+                    { id: 'dark', label: 'Dark' },
+                    { id: 'adaptive', label: 'Adaptive' },
+                  ].map((option) => (
+                    <button key={option.id} type="button" onClick={() => setGlobalTheme((current) => ({ ...current, colorMode: option.id as ScreenTheme['colorMode'] }))} className={`border px-3 py-2 text-sm ${((globalTheme.colorMode ?? 'light') === option.id) ? 'border-foreground bg-accent text-foreground' : 'border-border bg-background text-muted-foreground'}`}>
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Canvas background</span>
+                <input type="color" value={canvasBgColor} onChange={(e) => setCanvasBgColor(e.target.value)} className="h-10 w-full border border-border bg-background p-1" />
+              </label>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Preview frame</div>
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={deviceFrameEnabled} onChange={(e) => setDeviceFrameEnabled(e.target.checked)} /> Enable device frame</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={showCanvasMesh} onChange={(e) => setShowCanvasMesh(e.target.checked)} /> Mesh</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={showLayoutInspector} onChange={(e) => setShowLayoutInspector(e.target.checked)} /> Guides</label>
+                </div>
+              </div>
+
+              {showCanvasFrame ? (
+                <>
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium">Device</span>
+                    <select
+                      className="h-10 w-full border border-border bg-background px-3"
+                      value={activeFrameConfig.device}
+                      onChange={(e) => setFrameConfigByCategory((current) => ({ ...current, [frameCategory]: normalizeFrameConfig(frameCategory, { ...current[frameCategory], device: e.target.value as DeviceName }) }))}
+                    >
+                      {availableDevices.map((device) => <option key={device} value={device}>{device}</option>)}
+                    </select>
+                  </label>
+                  <div className="space-y-2">
+                    <span className="text-sm font-medium">Frame options</span>
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      {activeFrameOption.colors?.length ? (
+                        <select
+                          className="h-10 border border-border bg-background px-3"
+                          value={activeFrameConfig.color ?? ''}
+                          onChange={(e) => setFrameConfigByCategory((current) => ({ ...current, [frameCategory]: normalizeFrameConfig(frameCategory, { ...current[frameCategory], color: e.target.value || undefined }) }))}
+                        >
+                          {activeFrameOption.colors.map((color) => <option key={color} value={color}>{color}</option>)}
+                        </select>
+                      ) : null}
+                      {activeFrameOption.hasLandscape ? <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(activeFrameConfig.landscape)} onChange={(e) => setFrameConfigByCategory((current) => ({ ...current, [frameCategory]: normalizeFrameConfig(frameCategory, { ...current[frameCategory], landscape: e.target.checked }) }))} /> Landscape</label> : null}
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showGeneratedSource} onOpenChange={setShowGeneratedSource}>
+          <DialogContent className="max-w-5xl">
+            <DialogHeader>
+              <DialogTitle>Generated Source</DialogTitle>
+              <DialogDescription>{generatedSourceLoading ? 'Generating live Next.js source…' : generatedSourceError ? generatedSourceError : `Nodes: ${generatedSourceNodeCount ?? 0}${generatedSourceCached ? ' • cached' : ''}`}</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[70vh] overflow-auto border border-border bg-muted/30 p-3">
+              <pre className="whitespace-pre-wrap text-xs leading-5 text-foreground">{generatedSource || 'No generated source available yet.'}</pre>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={collaboratorsDialogOpen} onOpenChange={setCollaboratorsDialogOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Collaboration</DialogTitle>
+              <DialogDescription>Presence state and remote selections for this screen editor session.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium">Presence mode</span>
+                <select className="h-10 w-full border border-border bg-background px-3" value={presenceMode} onChange={(e) => setPresenceMode(e.target.value as PresenceMode)}>
+                  <option value="off">Off</option>
+                  <option value="slow">Slow</option>
+                  <option value="panel">Panel</option>
+                </select>
+              </label>
+              <div className="border border-border bg-muted/20 p-3">
+                <div className="mb-2 text-sm font-medium">Active collaborators</div>
+                <div className="space-y-2">
+                  {presence.length > 0 ? presence.map((person) => (
+                    <div key={person.clientId} className="flex items-center justify-between border border-border bg-background px-3 py-2 text-sm">
+                      <span className="font-medium text-foreground">{person.name || person.clientId}</span>
+                      <span className="text-xs text-muted-foreground">{person.selectionId ? `Selected ${person.selectionId}` : 'Browsing'}</span>
+                    </div>
+                  )) : <div className="text-sm text-muted-foreground">No other collaborators are currently visible on this screen.</div>}
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   )

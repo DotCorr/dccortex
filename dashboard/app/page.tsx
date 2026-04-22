@@ -93,27 +93,27 @@ function RuntimeBadge() {
   )
 }
 
-/* ───────────── Hero illustration — DCCortex editor mock (dummy content) ───────────── */
+/* ───────────── Hero illustration — neutral product frame ───────────── */
 function HeroIllustration() {
   return (
     <div className="relative w-full max-w-6xl mx-auto">
       <div className="absolute -inset-10 bg-gradient-to-br from-cyan-500/10 via-transparent to-emerald-500/8 blur-3xl" />
-      <div className="relative bg-[#0d0d0d] border border-white/10 shadow-2xl shadow-black/50 overflow-hidden rounded-lg">
-        <div className="flex items-center justify-between px-3 py-2 bg-[#111] border-b border-white/[0.07]">
+      <div className="relative overflow-hidden rounded-lg border border-white/10 bg-[#0d0d0d] shadow-2xl shadow-black/50">
+        <div className="flex items-center justify-between border-b border-white/[0.07] bg-[#111] px-3 py-2">
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]" />
-              <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
             </div>
-            <div className="flex items-center gap-1.5 ml-2">
+            <div className="ml-2 flex items-center gap-1.5">
               <span className="text-[10px] text-white/30">DCCortex /</span>
-              <span className="text-[10px] text-white/70 font-medium">Project Alpha / Dashboard</span>
+              <span className="text-[10px] font-medium text-white/70">Builder Runtime</span>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-1.5 text-[9px] text-white/45">
-            {['Frame On', 'Expand', '100%', 'Canvas', 'Mesh Off'].map((item) => (
-              <span key={item} className="px-2 py-1 bg-white/5 border border-white/10 rounded">
+          <div className="hidden items-center gap-1.5 text-[9px] text-white/45 md:flex">
+            {['Preview', 'Bindings', 'Data', 'Deploy'].map((item) => (
+              <span key={item} className="rounded border border-white/10 bg-white/5 px-2 py-1">
                 {item}
               </span>
             ))}
@@ -121,35 +121,35 @@ function HeroIllustration() {
         </div>
 
         <div className="flex h-[440px]">
-          <div className="w-10 border-r border-white/[0.07] bg-[#111] hidden md:flex flex-col items-center py-2 gap-2">
+          <div className="hidden w-10 flex-col items-center gap-2 border-r border-white/[0.07] bg-[#111] py-2 md:flex">
             {[LayoutGrid, Layers, Workflow, Database, Terminal].map((Icon, idx) => (
               <span
                 key={idx}
-                className={`w-7 h-7 rounded flex items-center justify-center ${idx === 0 ? 'bg-cyan-500/15 text-cyan-400' : 'text-white/35 bg-white/[0.02]'}`}
+                className={`flex h-7 w-7 items-center justify-center rounded ${idx === 0 ? 'bg-cyan-500/15 text-cyan-400' : 'bg-white/[0.02] text-white/35'}`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className="h-3.5 w-3.5" />
               </span>
             ))}
           </div>
 
-          <div className="w-[220px] lg:w-[250px] border-r border-white/[0.07] bg-[#101215] hidden lg:flex flex-col">
-            <div className="px-3 py-2 border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/40 font-semibold">
-              Layers
+          <div className="hidden w-[220px] flex-col border-r border-white/[0.07] bg-[#101215] lg:flex lg:w-[250px]">
+            <div className="border-b border-white/[0.06] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+              Builder Surface
             </div>
-            <div className="p-2 space-y-1 text-[10px]">
-              <div className="px-2 py-1 rounded bg-white/[0.03] border border-white/[0.06] text-white/70">Screen / Dashboard</div>
+            <div className="space-y-1 p-2 text-[10px]">
+              <div className="rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-cyan-300">App Structure</div>
               <div className="ml-3 space-y-1">
-                <div className="px-2 py-1 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300">Frame / MainLayout</div>
-                <div className="px-2 py-1 rounded bg-white/[0.02] border border-white/[0.05] text-white/55">Row / KPIs</div>
-                <div className="px-2 py-1 rounded bg-white/[0.02] border border-white/[0.05] text-white/55">Chart / RevenueTrend</div>
-                <div className="px-2 py-1 rounded bg-white/[0.02] border border-white/[0.05] text-white/55">Table / Appointments</div>
+                <div className="rounded border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-white/70">Screens</div>
+                <div className="rounded border border-white/[0.05] bg-white/[0.02] px-2 py-1 text-white/55">Reusable Components</div>
+                <div className="rounded border border-white/[0.05] bg-white/[0.02] px-2 py-1 text-white/55">Data Sources</div>
+                <div className="rounded border border-white/[0.05] bg-white/[0.02] px-2 py-1 text-white/55">Event Flows</div>
               </div>
             </div>
-            <div className="mt-auto p-2 border-t border-white/[0.06]">
-              <div className="text-[9px] text-white/40 mb-1">Reusable Components</div>
+            <div className="mt-auto border-t border-white/[0.06] p-2">
+              <div className="mb-1 text-[9px] text-white/40">Shared Blocks</div>
               <div className="flex flex-wrap gap-1.5">
-                {['Card/KPI', 'Table/Compact', 'Chart/Area'].map((tag) => (
-                  <span key={tag} className="px-1.5 py-0.5 text-[8px] rounded bg-white/[0.03] border border-white/[0.08] text-white/55">
+                {['Form', 'Table', 'Chart', 'Shell'].map((tag) => (
+                  <span key={tag} className="rounded border border-white/[0.08] bg-white/[0.03] px-1.5 py-0.5 text-[8px] text-white/55">
                     {tag}
                   </span>
                 ))}
@@ -158,49 +158,63 @@ function HeroIllustration() {
           </div>
 
           <div
-            className="flex-1 bg-[#0a0a0a] relative overflow-hidden"
+            className="relative flex-1 overflow-hidden bg-[#0a0a0a]"
             style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)', backgroundSize: '22px 22px' }}
           >
-            <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[9px] text-white/45">
+            <div className="absolute left-3 right-3 top-3 flex items-center justify-between text-[9px] text-white/45">
               <div className="flex items-center gap-1.5">
-                <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">Viewport</span>
+                <span className="rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-300">Live Canvas</span>
                 <span>Desktop</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">Fit</span>
-                <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">Guides</span>
+                <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5">Fit</span>
+                <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5">Guides</span>
               </div>
             </div>
 
             <div className="absolute left-1/2 top-1/2 w-[86%] max-w-[680px] -translate-x-1/2 -translate-y-1/2">
-              <div className="border border-cyan-500/35 rounded-sm bg-[#0b0f1a] shadow-[0_0_0_1px_rgba(6,182,212,0.15)]">
-                <div className="px-3 py-1.5 border-b border-white/[0.06] flex items-center justify-between text-[9px] text-white/45">
-                  <span>Frame: Dashboard</span>
-                  <span>1280 × 768</span>
+              <div className="rounded-sm border border-cyan-500/35 bg-[#0b0f1a] shadow-[0_0_0_1px_rgba(6,182,212,0.15)]">
+                <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-1.5 text-[9px] text-white/45">
+                  <span>Generated Application Shell</span>
+                  <span>Responsive Preview</span>
                 </div>
-                <div className="p-3 space-y-2.5">
-                  <div className="grid grid-cols-4 gap-2">
-                    {["Users", "Revenue", "Conversion", "Latency"].map((label) => (
-                      <div key={label} className="h-14 rounded border border-white/[0.06] bg-[#101624] px-2 py-1.5">
-                        <div className="text-[8px] text-white/30">{label}</div>
-                        <div className="text-sm text-cyan-300 font-semibold mt-1">{label === 'Revenue' ? '$48.2k' : label === 'Users' ? '2,304' : label === 'Conversion' ? '7.8%' : '126ms'}</div>
+                <div className="space-y-2.5 p-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'UI Schema', value: 'Structured' },
+                      { label: 'Bindings', value: 'Live' },
+                      { label: 'Runtime', value: 'Ready' },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded border border-white/[0.06] bg-[#101624] px-2 py-2">
+                        <div className="text-[8px] text-white/30">{item.label}</div>
+                        <div className="mt-1 text-sm font-semibold text-cyan-300">{item.value}</div>
                       </div>
                     ))}
                   </div>
-                  <div className="grid grid-cols-[1.4fr_1fr] gap-2">
-                    <div className="h-28 rounded border border-white/[0.06] bg-[#101624] p-2">
-                      <div className="text-[8px] text-white/35 mb-2">Traffic trend</div>
-                      <div className="h-16 flex items-end gap-1">
-                        {[25, 36, 32, 48, 44, 57, 52, 63, 58].map((h, i) => (
-                          <div key={i} className="flex-1 rounded-t-sm" style={{ height: `${h}%`, background: i % 3 === 0 ? 'rgba(6,182,212,0.6)' : 'rgba(255,255,255,0.14)' }} />
+                  <div className="grid grid-cols-[1.3fr_0.9fr] gap-2">
+                    <div className="rounded border border-white/[0.06] bg-[#101624] p-2">
+                      <div className="mb-2 text-[8px] text-white/35">Composition Flow</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { icon: Sparkles, label: 'Prompt' },
+                          { icon: Layers, label: 'Layout' },
+                          { icon: Plug, label: 'Integrations' },
+                          { icon: GitBranch, label: 'Logic' },
+                          { icon: Eye, label: 'Preview' },
+                          { icon: Shield, label: 'Policies' },
+                        ].map(({ icon: Icon, label }) => (
+                          <div key={label} className="flex h-16 flex-col items-center justify-center rounded border border-white/[0.05] bg-white/[0.03] text-center">
+                            <Icon className="mb-1 h-3.5 w-3.5 text-cyan-300" />
+                            <span className="text-[8px] text-white/60">{label}</span>
+                          </div>
                         ))}
                       </div>
                     </div>
-                    <div className="h-28 rounded border border-white/[0.06] bg-[#101624] p-2">
-                      <div className="text-[8px] text-white/35 mb-2">Queue</div>
+                    <div className="rounded border border-white/[0.06] bg-[#101624] p-2">
+                      <div className="mb-2 text-[8px] text-white/35">Deployment Targets</div>
                       <div className="space-y-1">
-                        {['Sync invoices', 'Retry webhook', 'Publish release'].map((row) => (
-                          <div key={row} className="h-4 rounded bg-white/[0.04] border border-white/[0.06] text-[8px] text-white/60 px-1.5 flex items-center">
+                        {['Web app', 'API layer', 'Postgres', 'Container runtime'].map((row) => (
+                          <div key={row} className="flex h-5 items-center rounded border border-white/[0.06] bg-white/[0.04] px-1.5 text-[8px] text-white/60">
                             {row}
                           </div>
                         ))}
@@ -211,44 +225,44 @@ function HeroIllustration() {
               </div>
             </div>
 
-            <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#111]/80 border border-white/[0.08] rounded px-2 py-1">
-              <button className="text-[10px] text-white/40 hover:text-white/70 px-1">−</button>
+            <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded border border-white/[0.08] bg-[#111]/80 px-2 py-1">
+              <button className="px-1 text-[10px] text-white/40 hover:text-white/70">−</button>
               <span className="text-[9px] text-white/30">100%</span>
-              <button className="text-[10px] text-white/40 hover:text-white/70 px-1">+</button>
+              <button className="px-1 text-[10px] text-white/40 hover:text-white/70">+</button>
             </div>
           </div>
 
-          <div className="w-[230px] lg:w-[260px] border-l border-white/[0.07] bg-[#111] hidden lg:flex flex-col">
-            <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
-              <span className="text-[10px] text-white/60 font-medium">Component Props</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">Button</span>
+          <div className="hidden w-[230px] flex-col border-l border-white/[0.07] bg-[#111] lg:flex lg:w-[260px]">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
+              <span className="text-[10px] font-medium text-white/60">Inspector</span>
+              <span className="rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] text-cyan-300">Runtime</span>
             </div>
-            <div className="p-3 space-y-2 text-[9px]">
+            <div className="space-y-2 p-3 text-[9px]">
               <div>
-                <div className="text-white/35 mb-1">value</div>
-                <div className="px-2 py-1.5 rounded bg-white/[0.03] border border-white/[0.08] text-white/70">{'{{prop.ctaLabel || "Create Project"}}'}</div>
+                <div className="mb-1 text-white/35">Surface</div>
+                <div className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-white/70">Schema-driven canvas</div>
               </div>
               <div>
-                <div className="text-white/35 mb-1">icon</div>
-                <div className="px-2 py-1.5 rounded bg-white/[0.03] border border-white/[0.08] text-white/70">{'{{prop.ctaIcon || "mdi:rocket-launch"}}'}</div>
+                <div className="mb-1 text-white/35">State</div>
+                <div className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-white/70">Bindings, actions, and persistence</div>
               </div>
               <div>
-                <div className="text-white/35 mb-1">variant</div>
-                <div className="px-2 py-1.5 rounded bg-white/[0.03] border border-white/[0.08] text-white/70">primary</div>
+                <div className="mb-1 text-white/35">Output</div>
+                <div className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-white/70">UI, API, and database working together</div>
               </div>
             </div>
             <div className="mt-auto border-t border-white/[0.06] p-3">
-              <div className="text-[9px] text-white/35 mb-1.5">AI Assistant</div>
-              <div className="text-[9px] text-white/60 leading-relaxed bg-white/[0.03] border border-white/[0.08] rounded p-2">
-                "Generate a bookings dashboard with KPI cards and a reusable appointment table."
+              <div className="mb-1.5 text-[9px] text-white/35">AI Assist</div>
+              <div className="rounded border border-white/[0.08] bg-white/[0.03] p-2 text-[9px] leading-relaxed text-white/60">
+                Generate structure, wire data, then refine visually without switching tools.
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="text-center mt-4 text-[11px] text-muted-foreground">
-        DCCortex editor preview with dummy project data
+      <div className="mt-4 text-center text-[11px] text-muted-foreground">
+        Product surface preview. No fake project or sample customer data shown.
       </div>
     </div>
   )

@@ -49,6 +49,8 @@ export function ResizablePanelLayout({ leftTree, leftPalette, center, rightPanel
   const [mobileSheet, setMobileSheet] = useState<'tree' | 'palette' | 'props' | null>(null)
   const [dragging, setDragging] = useState<'tree' | 'palette' | 'panel' | null>(null)
   const hasMountedRef = useRef(false)
+  const onWidthsChangeRef = useRef(onWidthsChange)
+  useEffect(() => { onWidthsChangeRef.current = onWidthsChange })
 
   useEffect(() => {
     setWidths(loadWidths(storageKey))
@@ -61,8 +63,8 @@ export function ResizablePanelLayout({ leftTree, leftPalette, center, rightPanel
     }
     if (dragging) return
     saveWidths(storageKey, widths)
-    onWidthsChange?.()
-  }, [dragging, storageKey, widths, onWidthsChange])
+    onWidthsChangeRef.current?.()
+  }, [dragging, storageKey, widths])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -217,20 +219,20 @@ export function ResizablePanelLayout({ leftTree, leftPalette, center, rightPanel
   }
 
   return (
-    <div className="flex flex-1 min-w-0 min-h-0 overflow-hidden">
+    <div className="flex flex-1 h-full w-full min-w-0 min-h-0 overflow-hidden">
       {showLeft && (
         <>
-          <div className="shrink-0 w-0 overflow-hidden flex flex-col" style={{ width: widths.tree, minWidth: widths.tree, maxWidth: widths.tree }}>
+          <div className="shrink-0 w-0 overflow-hidden flex flex-col h-full" style={{ width: widths.tree, minWidth: widths.tree, maxWidth: widths.tree }}>
             {leftTree}
           </div>
           {resizeBar('tree')}
-          <div className="shrink-0 w-0 overflow-hidden flex flex-col" style={{ width: widths.palette, minWidth: widths.palette, maxWidth: widths.palette }}>
+          <div className="shrink-0 w-0 overflow-hidden flex flex-col h-full" style={{ width: widths.palette, minWidth: widths.palette, maxWidth: widths.palette }}>
             {renderLeftPalette(false)}
           </div>
           {resizeBar('palette')}
         </>
       )}
-      <div className="flex-1 min-w-0 flex flex-col min-h-0">{center}</div>
+      <div className="flex-1 min-w-0 flex flex-col min-h-0 h-full">{center}</div>
       {showRight && (
         <>
           {resizeBar('panel')}
