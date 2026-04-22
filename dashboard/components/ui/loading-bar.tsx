@@ -10,8 +10,6 @@
  * Minimal loading indicator matching design language
  */
 
-'use client'
-
 interface LoadingBarProps {
   fullPage?: boolean
 }
