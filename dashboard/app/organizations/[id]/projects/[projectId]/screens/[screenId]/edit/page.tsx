@@ -616,30 +616,24 @@ export default function ScreenEditPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [leftPanelTab, setLeftPanelTab] = useState<'layers' | 'screens'>('layers')
-  const [previewMode, setPreviewMode] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.previewMode ?? false)
+  // Keep initial render deterministic for SSR hydration; hydrate from storage in effects below.
+  const [previewMode, setPreviewMode] = useState(false)
   const [runtimeData, setRuntimeData] = useState<Record<string, unknown>>({})
   const [runtimePendingSources, setRuntimePendingSources] = useState<string[]>([])
-  const [previewSize, setPreviewSize] = useState<PreviewViewport>(() => {
-    const stored = loadStoredPreviewSettings(projectId, screenId)?.previewSize
-    if (stored) return stored
-    if (typeof window === 'undefined') return 'desktop'
-    if (window.innerWidth < 640) return 'mobile'
-    if (window.innerWidth < 1024) return 'tablet'
-    return 'desktop'
-  })
-  const [canvasZoom, setCanvasZoom] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.canvasZoom ?? 1)
+  const [previewSize, setPreviewSize] = useState<PreviewViewport>('desktop')
+  const [canvasZoom, setCanvasZoom] = useState(1)
   const ZOOM_STEP = 0.1
   const ZOOM_MIN = 0.25
   const ZOOM_MAX = 3
-  const [canvasBgColor, setCanvasBgColor] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.canvasBgColor ?? '#f3f4f6')
-  const [showCanvasMesh, setShowCanvasMesh] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.showCanvasMesh ?? false)
-  const [canvasExpanded, setCanvasExpanded] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.canvasExpanded ?? false)
+  const [canvasBgColor, setCanvasBgColor] = useState('#f3f4f6')
+  const [showCanvasMesh, setShowCanvasMesh] = useState(false)
+  const [canvasExpanded, setCanvasExpanded] = useState(false)
   const [devSettingsOpen, setDevSettingsOpen] = useState(false)
-  const [deviceFrameEnabled, setDeviceFrameEnabled] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.deviceFrameEnabled ?? true)
-  const [frameConfigByCategory, setFrameConfigByCategory] = useState<Record<FrameCategory, FrameConfig>>(() => loadStoredPreviewSettings(projectId, screenId)?.frameConfigByCategory ?? DEFAULT_FRAME_CONFIG_BY_CATEGORY)
-  const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>(() => loadStoredPreviewSettings(projectId, screenId)?.previewTheme ?? 'light')
-  const [apiLiveRefreshEnabled, setApiLiveRefreshEnabled] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.apiLiveRefreshEnabled ?? true)
-  const [showLayoutInspector, setShowLayoutInspector] = useState(() => loadStoredPreviewSettings(projectId, screenId)?.showLayoutInspector ?? true)
+  const [deviceFrameEnabled, setDeviceFrameEnabled] = useState(true)
+  const [frameConfigByCategory, setFrameConfigByCategory] = useState<Record<FrameCategory, FrameConfig>>(DEFAULT_FRAME_CONFIG_BY_CATEGORY)
+  const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('light')
+  const [apiLiveRefreshEnabled, setApiLiveRefreshEnabled] = useState(true)
+  const [showLayoutInspector, setShowLayoutInspector] = useState(true)
   const [theme, setTheme] = useState<ScreenTheme>(DEFAULT_THEME)
   const [script, setScript] = useState('')
   const [stateDefinitions, setStateDefinitions] = useState<StateDefinition[]>([])
