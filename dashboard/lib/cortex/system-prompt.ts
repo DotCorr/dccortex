@@ -52,6 +52,7 @@ export function buildSystemPrompt(context: {
   projectScreenSummaries?: { id: string; name: string; slug: string; layout: string | null }[]
   projectTables?: { id: string; name: string; columns: { name: string; type: string }[] }[]
   projectApiSources?: { id: string; name: string; url: string; method: string }[]
+  projectReusables?: { id: string; name: string; propsSchema?: object[] }[]
   conversationSummary?: string | null
 }) {
   const screenLayoutsCtx = (context.projectScreenSummaries ?? [])
@@ -63,6 +64,10 @@ export function buildSystemPrompt(context: {
     })
     .join('\n\n')
 
+  const reusablesCtx = (context.projectReusables ?? []).length > 0
+    ? `- Reusable Components: ${JSON.stringify(context.projectReusables, null, 2)}\n  (When updating globals, include ALL existing reusables plus any new/modified ones — use \`update_globals\` with the full merged reusables array, keyed by \'id\')` 
+    : '- Reusable Components: (none defined yet)'
+
   const projectCtx = context.projectId
     ? `
 ACTIVE PROJECT CONTEXT:
@@ -71,6 +76,7 @@ ACTIVE PROJECT CONTEXT:
 - Screens: ${JSON.stringify(context.projectScreens ?? [], null, 2)}
 - Database Tables: ${JSON.stringify(context.projectTables ?? [], null, 2)}
 - API Sources: ${JSON.stringify(context.projectApiSources ?? [], null, 2)}
+${reusablesCtx}
 
 ${screenLayoutsCtx ? `═══════════════════════════════════════════════════════
 CURRENT SCREEN LAYOUTS (you can SEE what's already built)

@@ -730,13 +730,31 @@ export async function executeAction(
         const existing = await prisma.appScreen.findFirst({
           where: { projectId: action.params.projectId, slug: '__globals__' },
         })
+        const currentLayout = (existing?.layout as Record<string, unknown>) || {}
+
+        // Merge reusables by ID (upsert) rather than replacing the whole array.
+        // This lets the AI add or update a single reusable without knowing all existing ones.
+        let mergedReusables: unknown[]
+        if (action.params.reusables !== undefined) {
+          const incoming = Array.isArray(action.params.reusables) ? action.params.reusables as Record<string, unknown>[] : []
+          const existingReusables = Array.isArray(currentLayout.reusables) ? currentLayout.reusables as Record<string, unknown>[] : []
+          const existingMap = new Map(existingReusables.map(r => [r.id as string, r]))
+          for (const r of incoming) {
+            if (r && typeof r === 'object' && typeof r.id === 'string') {
+              existingMap.set(r.id, r)
+            }
+          }
+          mergedReusables = Array.from(existingMap.values())
+        } else {
+          mergedReusables = Array.isArray(currentLayout.reusables) ? currentLayout.reusables as unknown[] : []
+        }
+
         const globalsData = {
-          reusables: action.params.reusables ?? [],
-          globalState: action.params.globalState ?? [],
-          globalTheme: action.params.globalTheme ?? {},
+          reusables: mergedReusables,
+          globalState: action.params.globalState !== undefined ? action.params.globalState : (currentLayout.globalState ?? []),
+          globalTheme: action.params.globalTheme !== undefined ? action.params.globalTheme : (currentLayout.globalTheme ?? {}),
         }
         if (existing) {
-          const currentLayout = (existing.layout as Record<string, unknown>) || {}
           await prisma.appScreen.update({
             where: { id: existing.id },
             data: {
@@ -753,7 +771,7 @@ export async function executeAction(
             },
           })
         }
-        return { type: action.type, success: true, data: { updated: 'globals' } }
+        return { type: action.type, success: true, data: { updated: 'globals', reusablesCount: mergedReusables.length } }
       }
 
       case 'update_table': {

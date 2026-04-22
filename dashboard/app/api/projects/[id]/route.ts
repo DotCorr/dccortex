@@ -19,7 +19,7 @@ export async function OPTIONS(req: NextRequest) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -31,7 +31,7 @@ export async function GET(
       return corsJson(request, { error: 'Unauthorized' }, 401)
     }
 
-    const resolvedParams = await Promise.resolve(params)
+    const resolvedParams = await Promise.resolve(context.params)
     const project = await prisma.project.findFirst({
       where: {
         id: resolvedParams.id,
@@ -84,7 +84,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -95,7 +95,7 @@ export async function PUT(
     const body = await request.json()
     const { script, scriptType, activeBuildId, builderGlobals, isPublished, organizationId, customDomain, faviconUrl, seoDefaults } = body
 
-    const resolvedParams = await Promise.resolve(params)
+    const resolvedParams = await Promise.resolve(context.params)
     const project = await prisma.project.findFirst({
       where: {
         id: resolvedParams.id,
@@ -200,7 +200,7 @@ export async function PUT(
 // DELETE /api/projects/[id] - Delete project and ALL related data
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -215,7 +215,7 @@ export async function DELETE(
     const body = await request.json().catch(() => ({}))
     const { verificationName } = body
 
-    const resolvedParams = await Promise.resolve(params)
+    const resolvedParams = await Promise.resolve(context.params)
     
     // Get project and verify ownership
     const project = await prisma.project.findFirst({

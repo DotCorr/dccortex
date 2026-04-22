@@ -1,0 +1,12 @@
+{
+  "name": "dccortex-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "dashboard",
+    "packages/*"
+  ],
+  "dependencies": {
+    "react-resizable-panels": "^4.10.0"
+  }
+}

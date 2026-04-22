@@ -401,6 +401,7 @@ export async function POST(req: NextRequest) {
     projectScreenSummaries?: { id: string; name: string; slug: string; layout: string | null }[]
     projectTables?: { id: string; name: string; columns: { name: string; type: string }[] }[]
     projectApiSources?: { id: string; name: string; url: string; method: string }[]
+    projectReusables?: { id: string; name: string; propsSchema?: object[] }[]
   } = {}
 
   const activeProjectId = projectId ?? thread.projectId
@@ -427,6 +428,18 @@ export async function POST(req: NextRequest) {
       where: { projectId: activeProjectId },
       select: { id: true, name: true, url: true, method: true },
     })
+    const globalsScreen = await prisma.appScreen.findFirst({
+      where: { projectId: activeProjectId, slug: '__globals__' },
+      select: { layout: true },
+    })
+    const existingReusables: { id: string; name: string; propsSchema?: object[] }[] =
+      Array.isArray((globalsScreen?.layout as any)?.reusables)
+        ? (globalsScreen!.layout as any).reusables.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            ...(r.propsSchema ? { propsSchema: r.propsSchema } : {}),
+          }))
+        : []
 
     projectContext = {
       projectName: project?.name ?? undefined,
@@ -441,6 +454,7 @@ export async function POST(req: NextRequest) {
         columns: t.columns.map((c) => ({ name: c.name, type: c.type })),
       })),
       projectApiSources: apiSources,
+      projectReusables: existingReusables,
     }
   }
 
@@ -459,6 +473,7 @@ export async function POST(req: NextRequest) {
         projectScreenSummaries: projectContext.projectScreenSummaries,
         projectTables: projectContext.projectTables,
         projectApiSources: projectContext.projectApiSources,
+        projectReusables: projectContext.projectReusables,
         conversationSummary: thread.summary,
       })
 

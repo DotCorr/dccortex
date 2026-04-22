@@ -14,10 +14,8 @@ export const metadata: Metadata = { title: 'App Preview' }
 
 export default async function PublicPreviewPage({
   params,
-}: {
-  params: Promise<{ projectId: string }> | { projectId: string }
-}) {
-  const { projectId } = await Promise.resolve(params)
+}: any) {
+  const { projectId } = params
   let initialProject: Awaited<ReturnType<typeof getCachedPublicProjectPayload>>['payload'] | null = null
   let initialData: Record<string, unknown> | null = null
   try {

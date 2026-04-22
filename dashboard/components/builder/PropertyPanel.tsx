@@ -84,13 +84,14 @@ import {
   CONDITION_OPS,
   type EventActionConfig,
   type EventActionType,
-} from './eventHelpers'
+} from '@dccortex/runtime-kernel'
 import { ExpressionBuilderModal } from './ExpressionBuilderModal'
 import { IconPickerModal } from './IconPickerModal'
 import { FontPickerModal } from './FontPickerModal'
 import { GradientBuilderModal } from './GradientBuilderModal'
 import { AssetPickerModal } from './AssetPickerModal'
-import { AnimationSequenceBuilder, type AnimationSequenceConfig } from './AnimationSequenceBuilder'
+import { type AnimationSequenceConfig } from '@dccortex/runtime-kernel';
+import { AnimationSequenceBuilder } from './AnimationSequenceBuilder';
 import type { ReusableDefinition, ReusablePropSchema } from './globals'
 
 const MonacoEditorBase = dynamic(() => import('@monaco-editor/react'), { ssr: false })

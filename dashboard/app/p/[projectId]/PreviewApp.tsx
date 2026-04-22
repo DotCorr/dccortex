@@ -11,9 +11,9 @@ import { Profiler, useEffect, useState, useCallback, useMemo, useRef } from 'rea
 import { useWebHaptics } from 'web-haptics/react'
 import { RefreshCw } from 'lucide-react'
 import { BuilderCanvas } from '@/components/builder/BuilderCanvas'
-import { resolveBinding, resolveExpression, getDateNowMap } from '@/components/builder/bindingResolver'
+import { resolveBinding, resolveExpression, getDateNowMap } from '@dccortex/runtime-kernel'
 import type { PublicProjectPayload } from '@/lib/public-project-cache'
-import type { EventActionConfig, EventRuntimeContext } from '@/components/builder/eventHelpers'
+import type { EventActionConfig, EventRuntimeContext } from '@dccortex/runtime-kernel'
 import type { Node } from '@/components/builder/registry'
 import type { ReusableDefinition } from '@/components/builder/globals'
 

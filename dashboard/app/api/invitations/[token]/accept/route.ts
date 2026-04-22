@@ -16,15 +16,16 @@ import { prisma } from '@/lib/prisma'
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { token: string } }
+  context: any
 ) {
+  const token = context.params.token
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const token = params.token
+    const token = context.params.token
 
     // Find invitation
     const invitation = await prisma.invitation.findUnique({

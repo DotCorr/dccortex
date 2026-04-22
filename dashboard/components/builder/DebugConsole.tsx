@@ -8,7 +8,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { resolveExpression } from './bindingResolver'
+import { resolveExpression } from '@dccortex/runtime-kernel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -18,9 +18,9 @@ async function resolveParams(params: Promise<{ id: string }> | { id: string }) {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
-  const { id: projectId } = await resolveParams(params)
+  const { id: projectId } = await resolveParams(context.params)
   const access = await requireProjectDataAccess(projectId, false)
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
@@ -33,9 +33,9 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  context: any
 ) {
-  const { id: projectId } = await resolveParams(params)
+  const { id: projectId } = await resolveParams(context.params)
   const access = await requireProjectDataAccess(projectId, true)
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
