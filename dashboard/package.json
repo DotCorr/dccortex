@@ -38,7 +38,7 @@
     "@tiptap/extension-gapcursor": "^3.14.0",
     "@tiptap/extensions": "^3.14.0",
     "@tiptap/pm": "^3.14.0",
-    "axios": "^1.15.0",
+    "axios": "^1.16.0",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
